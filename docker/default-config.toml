@@ -1,0 +1,19 @@
+[server]
+name = "My helpcore"
+url = "http://localhost:3000"
+port = 3000
+
+[logging]
+level = "info"
+
+[plugins]
+blacklist = []
+
+[[providers]]
+id = "ollama"
+name = "Ollama"
+type = "ollama"
+default_model = "qwen2.5:3b"
+roles = ["chat"]
+url = "http://ollama:11434"
+num_ctx = 4096

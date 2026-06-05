@@ -58,41 +58,24 @@ services:
     image: ghcr.io/doomedramen/helpcore:latest
     ports:
       - "3000:3000"
-    configs:
-      - source: helpcore_config
-        target: /config.toml
     volumes:
+      - ./config:/config
       - helpcore-data:/data
     environment:
-      HELPCORE_CONFIG: /config.toml
+      HELPCORE_CONFIG: /config/config.toml
       HELPCORE_DATA: /data
     restart: unless-stopped
 
 volumes:
   helpcore-data:
-
-configs:
-  helpcore_config:
-    content: |
-      [server]
-      name = "My helpcore"
-      url = "${HELPCORE_URL:-http://localhost:3000}"
-
-      [[providers]]
-      id = "ollama"
-      name = "Ollama"
-      type = "ollama"
-      default_model = "${OLLAMA_MODEL:-qwen2.5:3b}"
-      roles = ["chat"]
-      url = "http://ollama:11434"
-      num_ctx = 4096
 ```
 
-Set `HELPCORE_URL` in Dockge or your shell, then:
+Start the stack. The image creates `./config/config.toml` on first boot:
 
 ```bash
-export HELPCORE_URL=http://YOUR_SERVER_IP:3000
 docker compose up -d
+${EDITOR:-vi} config/config.toml
+docker compose restart helpcore
 docker compose logs -f helpcore   # watch for the setup URL
 ```
 

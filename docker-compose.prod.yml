@@ -1,10 +1,9 @@
 # Production deployment — pulls the pre-built image from GHCR.
 # This file is self-contained for Dockge and other source-less deployments.
-# Set HELPCORE_URL in the stack environment to the URL used from your browser.
+# On first start the image creates ./config/config.toml with sensible defaults.
 #
 #   docker compose -f docker-compose.prod.yml pull
-#   HELPCORE_URL=http://YOUR_SERVER_IP:3000 \
-#     docker compose -f docker-compose.prod.yml --profile with-ollama up -d
+#   docker compose -f docker-compose.prod.yml --profile with-ollama up -d
 #
 # To update:
 #   docker compose -f docker-compose.prod.yml pull
@@ -18,13 +17,11 @@ services:
     image: ${HELPCORE_IMAGE:-ghcr.io/doomedramen/helpcore:latest}
     ports:
       - "3000:3000"
-    configs:
-      - source: helpcore_config
-        target: /config.toml
     volumes:
+      - ./config:/config
       - helpcore_data:/data
     environment:
-      HELPCORE_CONFIG: /config.toml
+      HELPCORE_CONFIG: /config/config.toml
       HELPCORE_DATA: /data
     restart: unless-stopped
     healthcheck:
@@ -48,26 +45,3 @@ services:
 volumes:
   helpcore_data:
   ollama_data:
-
-configs:
-  helpcore_config:
-    content: |
-      [server]
-      name = "${HELPCORE_NAME:-My helpcore}"
-      url = "${HELPCORE_URL:-http://localhost:3000}"
-      port = 3000
-
-      [logging]
-      level = "${HELPCORE_LOG_LEVEL:-info}"
-
-      [plugins]
-      blacklist = []
-
-      [[providers]]
-      id = "ollama"
-      name = "Ollama"
-      type = "ollama"
-      default_model = "${OLLAMA_MODEL:-qwen2.5:3b}"
-      roles = ["chat"]
-      url = "${OLLAMA_URL:-http://ollama:11434}"
-      num_ctx = ${OLLAMA_NUM_CTX:-4096}

@@ -60,18 +60,26 @@ RUN output="$(HELPCORE_CONFIG=/__helpcore_smoke_test_missing__.toml \
 # ── Runtime ────────────────────────────────────────────────────────────────────
 FROM alpine:3
 
-RUN apk add --no-cache ca-certificates tzdata wget
+RUN apk add --no-cache ca-certificates su-exec tzdata wget
 
 RUN addgroup -S helpcore && adduser -S helpcore -G helpcore
 
 COPY --from=builder /helpcore-server /usr/local/bin/helpcore-server
 COPY --from=web-builder /web/out /usr/local/share/helpcore/web
+COPY docker/default-config.toml /usr/local/share/helpcore/default-config.toml
+COPY docker/entrypoint.sh /usr/local/bin/helpcore-entrypoint
 
-USER helpcore
+RUN chmod 0755 /usr/local/bin/helpcore-entrypoint \
+    && mkdir -p /config /data \
+    && chown helpcore:helpcore /config /data
+
+ENV HELPCORE_CONFIG=/config/config.toml \
+    HELPCORE_DATA=/data
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD wget -q -O /dev/null http://localhost:3000/api/health || exit 1
 
-ENTRYPOINT ["helpcore-server"]
+ENTRYPOINT ["helpcore-entrypoint"]
+CMD ["helpcore-server"]

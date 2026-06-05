@@ -224,9 +224,8 @@ cp config.toml.example config.toml
 ```
 
 `docker-compose.prod.yml` is intended for Dockge and other source-less servers.
-It embeds a minimal configuration directly in the Compose file and supports
-stack environment values including `HELPCORE_URL`, `OLLAMA_MODEL`,
-`OLLAMA_URL`, and `OLLAMA_NUM_CTX`.
+It mounts `./config` as a directory. On first start, the image copies its
+bundled default to `./config/config.toml`; edit that file and restart helpcore.
 
 Older releases used a bind mount; Docker could create an empty `config.toml`
 directory when the source file was missing.
