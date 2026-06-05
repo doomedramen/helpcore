@@ -6,6 +6,7 @@ import { deleteConversation, listConversations } from '@/lib/api';
 import { useAuth } from '@/context/auth';
 import type { ConversationSummary } from '@/lib/types';
 import { useRouter } from 'next/navigation';
+import ThemeToggle from './theme-toggle';
 
 interface Props {
   conversationId: string | null;
@@ -91,6 +92,10 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
 
       {/* Footer */}
       <div className="mx-3 border-t border-slate-800 mt-2 pt-2 pb-3">
+        <ThemeToggle
+          showLabel
+          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"
+        />
         <button
           onClick={handleLogout}
           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"

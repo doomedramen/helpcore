@@ -25,8 +25,8 @@ function ChatApp() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50">
-        <div className="text-sm text-slate-400">Loading…</div>
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="text-sm text-slate-400 dark:text-slate-500">Loading…</div>
       </div>
     );
   }
@@ -34,7 +34,7 @@ function ChatApp() {
   if (!accessToken) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50">
+    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Sidebar
         conversationId={conversationId}
         onSelect={id => {

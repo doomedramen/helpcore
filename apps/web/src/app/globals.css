@@ -1,5 +1,7 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   *, *::before, *::after {
     box-sizing: border-box;
@@ -10,7 +12,7 @@
   }
 
   body {
-    @apply bg-white text-slate-900 antialiased;
+    @apply bg-white text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
     font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
   }
 
@@ -20,7 +22,7 @@
   }
 
   code:not(pre code) {
-    @apply bg-slate-100 text-slate-800 rounded px-1 py-0.5 text-sm font-mono;
+    @apply bg-slate-100 text-slate-800 rounded px-1 py-0.5 text-sm font-mono dark:bg-slate-800 dark:text-slate-100;
   }
 
   /* Prose inside assistant messages */
@@ -38,28 +40,120 @@
   .prose ol { @apply list-decimal pl-5 space-y-1; }
 
   .prose blockquote {
-    @apply border-l-4 border-slate-300 pl-4 text-slate-600 italic my-3;
+    @apply border-l-4 border-slate-300 pl-4 text-slate-600 italic my-3 dark:border-slate-600 dark:text-slate-300;
   }
 
   .prose a {
-    @apply text-blue-600 underline underline-offset-2 hover:text-blue-800;
+    @apply text-blue-600 underline underline-offset-2 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300;
   }
 
   .prose table {
     @apply w-full text-sm border-collapse my-3;
   }
   .prose th {
-    @apply bg-slate-100 text-left px-3 py-1.5 font-semibold border border-slate-200;
+    @apply bg-slate-100 text-left px-3 py-1.5 font-semibold border border-slate-200 dark:bg-slate-800 dark:border-slate-700;
   }
   .prose td {
-    @apply px-3 py-1.5 border border-slate-200;
+    @apply px-3 py-1.5 border border-slate-200 dark:border-slate-700;
   }
 
   .prose hr {
-    @apply border-slate-200 my-4;
+    @apply border-slate-200 my-4 dark:border-slate-700;
   }
 
   .prose pre {
     @apply my-3;
+  }
+
+  .dark .hljs {
+    color: #c9d1d9;
+    background: #0d1117;
+  }
+
+  .dark .hljs-doctag,
+  .dark .hljs-keyword,
+  .dark .hljs-meta .hljs-keyword,
+  .dark .hljs-template-tag,
+  .dark .hljs-template-variable,
+  .dark .hljs-type,
+  .dark .hljs-variable.language_ {
+    color: #ff7b72;
+  }
+
+  .dark .hljs-title,
+  .dark .hljs-title.class_,
+  .dark .hljs-title.class_.inherited__,
+  .dark .hljs-title.function_ {
+    color: #d2a8ff;
+  }
+
+  .dark .hljs-attr,
+  .dark .hljs-attribute,
+  .dark .hljs-literal,
+  .dark .hljs-meta,
+  .dark .hljs-number,
+  .dark .hljs-operator,
+  .dark .hljs-selector-attr,
+  .dark .hljs-selector-class,
+  .dark .hljs-selector-id,
+  .dark .hljs-variable {
+    color: #79c0ff;
+  }
+
+  .dark .hljs-meta .hljs-string,
+  .dark .hljs-regexp,
+  .dark .hljs-string {
+    color: #a5d6ff;
+  }
+
+  .dark .hljs-built_in,
+  .dark .hljs-symbol {
+    color: #ffa657;
+  }
+
+  .dark .hljs-code,
+  .dark .hljs-comment,
+  .dark .hljs-formula {
+    color: #8b949e;
+  }
+
+  .dark .hljs-name,
+  .dark .hljs-quote,
+  .dark .hljs-selector-pseudo,
+  .dark .hljs-selector-tag {
+    color: #7ee787;
+  }
+
+  .dark .hljs-subst {
+    color: #c9d1d9;
+  }
+
+  .dark .hljs-section {
+    color: #1f6feb;
+    font-weight: bold;
+  }
+
+  .dark .hljs-bullet {
+    color: #f2cc60;
+  }
+
+  .dark .hljs-emphasis {
+    color: #c9d1d9;
+    font-style: italic;
+  }
+
+  .dark .hljs-strong {
+    color: #c9d1d9;
+    font-weight: bold;
+  }
+
+  .dark .hljs-addition {
+    color: #aff5b4;
+    background-color: #033a16;
+  }
+
+  .dark .hljs-deletion {
+    color: #ffdcd7;
+    background-color: #67060c;
   }
 }

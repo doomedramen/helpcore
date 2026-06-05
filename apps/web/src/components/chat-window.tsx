@@ -125,8 +125,8 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
         {messages.length === 0 ? (
           <div className="flex h-full items-center justify-center">
             <div className="text-center space-y-2">
-              <p className="text-xl font-medium text-slate-400">What can I help you with?</p>
-              <p className="text-sm text-slate-400">Start typing below to begin a conversation.</p>
+              <p className="text-xl font-medium text-slate-400 dark:text-slate-500">What can I help you with?</p>
+              <p className="text-sm text-slate-400 dark:text-slate-500">Start typing below to begin a conversation.</p>
             </div>
           </div>
         ) : (
@@ -135,7 +135,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
               <MessageBubble key={m.id} message={m} />
             ))}
             {error && (
-              <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-sm text-red-700">
+              <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300">
                 {error}
               </div>
             )}

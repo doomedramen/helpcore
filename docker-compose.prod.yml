@@ -38,8 +38,15 @@ services:
     image: ollama/ollama
     ports:
       - "11434:11434"
+    environment:
+      # Warn/error only. Set OLLAMA_DEBUG=0 to restore Ollama's info logs.
+      OLLAMA_DEBUG: "${OLLAMA_DEBUG:--1}"
     volumes:
       - ollama_data:/root/.ollama
+    logging:
+      options:
+        max-size: "10m"
+        max-file: "3"
     restart: unless-stopped
 
 volumes:
