@@ -1,11 +1,9 @@
 use axum::{
     Router,
-    body::Body,
-    http::{StatusCode, Uri, header},
-    response::{IntoResponse, Response},
     routing::{delete, get, post, put},
 };
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{api::handlers, state::AppState};
 
@@ -48,69 +46,20 @@ pub fn create(state: Arc<AppState>) -> Router {
         )
         .with_state(state);
 
-    Router::new().nest("/api", api).fallback(serve_web_ui)
-}
+    let mut router = Router::new().nest("/api", api);
 
-// Serve the Next.js static export from HELPCORE_WEB_DIR.
-// Tries: exact path → path/index.html → root index.html (SPA fallback).
-// Returns 404 if the web dir doesn't exist (dev mode without a built UI).
-async fn serve_web_ui(uri: Uri) -> Response {
+    // Serve the web UI from HELPCORE_WEB_DIR when it exists.
+    // Falls back to index.html for any path not matched by a static file,
+    // enabling client-side routing inside the Next.js SPA.
     let web_dir = std::env::var("HELPCORE_WEB_DIR")
         .unwrap_or_else(|_| "/usr/local/share/helpcore/web".to_string());
 
-    let rel = uri.path().trim_start_matches('/');
-    let base = std::path::Path::new(&web_dir);
-
-    // 1. Exact file match
-    let candidate = base.join(rel);
-    if let Ok(bytes) = tokio::fs::read(&candidate).await {
-        let mime = mime_for_path(&candidate);
-        let cache = if rel.starts_with("_next/static/") {
-            "public, max-age=31536000, immutable"
-        } else {
-            "no-cache"
-        };
-        return Response::builder()
-            .header(header::CONTENT_TYPE, mime)
-            .header(header::CACHE_CONTROL, cache)
-            .body(Body::from(bytes))
-            .unwrap();
+    if Path::new(&web_dir).is_dir() {
+        router = router.fallback_service(
+            ServeDir::new(&web_dir)
+                .not_found_service(ServeFile::new(format!("{web_dir}/index.html"))),
+        );
     }
 
-    // 2. Directory index (e.g. /chat/ → /chat/index.html)
-    let index = candidate.join("index.html");
-    if let Ok(bytes) = tokio::fs::read(&index).await {
-        return html_response(bytes);
-    }
-
-    // 3. SPA fallback — all unmatched routes get the root index.html
-    match tokio::fs::read(base.join("index.html")).await {
-        Ok(bytes) => html_response(bytes),
-        Err(_) => StatusCode::NOT_FOUND.into_response(),
-    }
-}
-
-fn html_response(bytes: Vec<u8>) -> Response {
-    Response::builder()
-        .header(header::CONTENT_TYPE, "text/html; charset=utf-8")
-        .header(header::CACHE_CONTROL, "no-cache")
-        .body(Body::from(bytes))
-        .unwrap()
-}
-
-fn mime_for_path(path: &std::path::Path) -> &'static str {
-    match path.extension().and_then(|e| e.to_str()) {
-        Some("html") => "text/html; charset=utf-8",
-        Some("js") | Some("mjs") => "application/javascript; charset=utf-8",
-        Some("css") => "text/css; charset=utf-8",
-        Some("json") => "application/json",
-        Some("svg") => "image/svg+xml",
-        Some("png") => "image/png",
-        Some("jpg") | Some("jpeg") => "image/jpeg",
-        Some("ico") => "image/x-icon",
-        Some("woff") => "font/woff",
-        Some("woff2") => "font/woff2",
-        Some("txt") => "text/plain; charset=utf-8",
-        _ => "application/octet-stream",
-    }
+    router
 }
