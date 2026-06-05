@@ -107,8 +107,8 @@ hc ask "hello, are you there?"
 ### Updating
 
 ```bash
-make prod-update
-# → pulls latest image, restarts helpcore with zero downtime
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ---
