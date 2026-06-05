@@ -46,16 +46,15 @@ See [configuration.md](configuration.md) for all options.
 ### 3. Start the stack
 
 ```bash
-# Pull the latest image and start helpcore + Ollama sidecar
-make prod-up-ollama
+docker compose -f docker-compose.prod.yml --profile with-ollama up -d
 ```
 
-This uses `docker-compose.prod.yml` which pulls `ghcr.io/martin/helpcore:latest`.
+This pulls `ghcr.io/martin/helpcore:latest` from GHCR — no build step needed.
 
 Watch the logs to confirm the server is ready:
 
 ```bash
-make prod-logs
+docker compose -f docker-compose.prod.yml logs -f
 # → INFO helpcore_server: listening on 0.0.0.0:3000
 # → INFO helpcore_server: first-run setup required — visit: http://YOUR_IP:3000/setup?token=...
 ```
@@ -65,6 +64,7 @@ make prod-logs
 ```bash
 docker compose -f docker-compose.prod.yml exec ollama ollama pull qwen2.5:3b
 ```
+
 
 Recommended models for a 4 GB RAM budget:
 
