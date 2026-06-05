@@ -79,10 +79,10 @@ PROD = docker compose -f docker-compose.prod.yml
 prod-pull: ## Pull latest image from GHCR
 	$(PROD) pull
 
-prod-up: config ## Start production stack (creates config.toml if missing)
+prod-up: ## Start production stack using its inline config
 	$(PROD) up -d
 
-prod-up-ollama: config ## Start production stack + Ollama sidecar
+prod-up-ollama: ## Start production stack + Ollama sidecar
 	$(PROD) --profile with-ollama up -d
 
 prod-down: ## Stop production stack

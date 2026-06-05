@@ -1,9 +1,10 @@
 # Production deployment — pulls the pre-built image from GHCR.
-# On your home server:
+# This file is self-contained for Dockge and other source-less deployments.
+# Set HELPCORE_URL in the stack environment to the URL used from your browser.
 #
-#   cp config.toml.example config.toml   # edit with your settings
 #   docker compose -f docker-compose.prod.yml pull
-#   docker compose -f docker-compose.prod.yml up -d
+#   HELPCORE_URL=http://YOUR_SERVER_IP:3000 \
+#     docker compose -f docker-compose.prod.yml --profile with-ollama up -d
 #
 # To update:
 #   docker compose -f docker-compose.prod.yml pull
@@ -50,4 +51,23 @@ volumes:
 
 configs:
   helpcore_config:
-    file: ./config.toml
+    content: |
+      [server]
+      name = "${HELPCORE_NAME:-My helpcore}"
+      url = "${HELPCORE_URL:-http://localhost:3000}"
+      port = 3000
+
+      [logging]
+      level = "${HELPCORE_LOG_LEVEL:-info}"
+
+      [plugins]
+      blacklist = []
+
+      [[providers]]
+      id = "ollama"
+      name = "Ollama"
+      type = "ollama"
+      default_model = "${OLLAMA_MODEL:-qwen2.5:3b}"
+      roles = ["chat"]
+      url = "${OLLAMA_URL:-http://ollama:11434}"
+      num_ctx = ${OLLAMA_NUM_CTX:-4096}

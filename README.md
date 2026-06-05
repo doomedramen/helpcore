@@ -60,7 +60,19 @@ volumes:
 
 configs:
   helpcore_config:
-    file: ./config.toml
+    content: |
+      [server]
+      name = "My helpcore"
+      url = "${HELPCORE_URL:-http://localhost:3000}"
+
+      [[providers]]
+      id = "ollama"
+      name = "Ollama"
+      type = "ollama"
+      default_model = "${OLLAMA_MODEL:-qwen2.5:3b}"
+      roles = ["chat"]
+      url = "http://ollama:11434"
+      num_ctx = 4096
 ```
 
 The Docker image bundles both the Rust API server and the Next.js web UI — no separate container needed. The web UI is served at `http://localhost:3000` and the API at `http://localhost:3000/api/`.
@@ -68,8 +80,8 @@ The Docker image bundles both the Rust API server and the Next.js web UI — no 
 Then:
 
 ```bash
-# 1. Create and edit the config when using the repository
-make config
+# 1. Set the public URL in Dockge or your shell
+export HELPCORE_URL=http://YOUR_SERVER_IP:3000
 
 # 2. Start helpcore + Ollama
 docker compose up -d

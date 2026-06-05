@@ -73,12 +73,25 @@ volumes:
 
 configs:
   helpcore_config:
-    file: ./config.toml
+    content: |
+      [server]
+      name = "My helpcore"
+      url = "${HELPCORE_URL:-http://localhost:3000}"
+
+      [[providers]]
+      id = "ollama"
+      name = "Ollama"
+      type = "ollama"
+      default_model = "${OLLAMA_MODEL:-qwen2.5:3b}"
+      roles = ["chat"]
+      url = "http://ollama:11434"
+      num_ctx = 4096
 ```
 
-Create `config.toml` in the same directory (minimum config above), then:
+Set `HELPCORE_URL` in Dockge or your shell, then:
 
 ```bash
+export HELPCORE_URL=http://YOUR_SERVER_IP:3000
 docker compose up -d
 docker compose logs -f helpcore   # watch for the setup URL
 ```

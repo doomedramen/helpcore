@@ -212,9 +212,10 @@ The Docker image sets `HELPCORE_DATA=/data` automatically.
 
 ---
 
-## Docker config file
+## Docker config
 
-Create `config.toml` on the host before running `docker compose up`:
+The repository development stack reads `config.toml` from the checkout. Create
+it before running `docker compose up`:
 
 ```bash
 make config   # safe — repairs an empty directory left by an older deployment
@@ -222,6 +223,10 @@ make config   # safe — repairs an empty directory left by an older deployment
 cp config.toml.example config.toml
 ```
 
-Current Compose files use a file-backed Compose config, so a missing file fails
-before the container starts. Older releases used a bind mount; Docker could
-create an empty `config.toml` directory when the source file was missing.
+`docker-compose.prod.yml` is intended for Dockge and other source-less servers.
+It embeds a minimal configuration directly in the Compose file and supports
+stack environment values including `HELPCORE_URL`, `OLLAMA_MODEL`,
+`OLLAMA_URL`, and `OLLAMA_NUM_CTX`.
+
+Older releases used a bind mount; Docker could create an empty `config.toml`
+directory when the source file was missing.

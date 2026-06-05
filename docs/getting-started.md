@@ -32,16 +32,18 @@ git clone https://github.com/martin/helpcore
 cd helpcore
 ```
 
-### 2. Edit config.toml
+### 2. Configure the stack
 
-The repo includes a working `config.toml`. The only value you may want to change before first start:
+The production Compose file is self-contained and does not require
+`config.toml`. Set `HELPCORE_URL` in Dockge's stack environment, or export it
+before starting Compose:
 
-```toml
-[server]
-url = "http://YOUR_SERVER_IP:3000"   # used in the setup wizard URL
+```bash
+export HELPCORE_URL=http://YOUR_SERVER_IP:3000
 ```
 
-See [configuration.md](configuration.md) for all options.
+The inline Compose config defaults to the Ollama sidecar and
+`qwen2.5:3b`. See [configuration.md](configuration.md) for all options.
 
 ### 3. Start the stack
 
@@ -199,14 +201,14 @@ Credentials are stored at `~/.helpcore/credentials` (mode 600). The CLI auto-ref
 ## Troubleshooting
 
 **"config.toml is a directory, not a file"**  
-An older Compose file created a directory when the host config was missing.
-Update the repository, stop the restart loop, and repair the empty directory:
+An older production Compose file created a directory when the host config was
+missing. The current production file uses inline configuration, so remove the
+obsolete empty directory and update the stack:
 
 ```bash
 docker compose -f docker-compose.prod.yml down
 rmdir config.toml   # succeeds only when the old Docker-created directory is empty
 git pull
-make config
 docker compose -f docker-compose.prod.yml up -d
 ```
 
