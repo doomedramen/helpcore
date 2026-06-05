@@ -1,11 +1,11 @@
 'use client';
 
-import { LogOut, MessageSquarePlus, Trash2 } from 'lucide-react';
+import { LogOut, MessageSquarePlus, Settings, Trash2 } from 'lucide-react';
 import useSWR, { useSWRConfig } from 'swr';
 import { deleteConversation, listConversations } from '@/lib/api';
 import { useAuth } from '@/context/auth';
 import type { ConversationSummary } from '@/lib/types';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import ThemeToggle from './theme-toggle';
 
 interface Props {
@@ -14,8 +14,9 @@ interface Props {
 }
 
 export default function Sidebar({ conversationId, onSelect }: Props) {
-  const { accessToken, logout } = useAuth();
+  const { accessToken, currentUser, logout } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
   const { mutate } = useSWRConfig();
 
   const { data: conversations = [] } = useSWR<ConversationSummary[]>(
@@ -92,6 +93,19 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
 
       {/* Footer */}
       <div className="mx-3 border-t border-slate-800 mt-2 pt-2 pb-3">
+        {currentUser?.role === 'admin' && (
+          <button
+            onClick={() => router.push('/admin/')}
+            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+              pathname.startsWith('/admin')
+                ? 'bg-slate-800 text-white'
+                : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+            }`}
+          >
+            <Settings size={15} className="shrink-0" />
+            Server settings
+          </button>
+        )}
         <ThemeToggle
           showLabel
           className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"

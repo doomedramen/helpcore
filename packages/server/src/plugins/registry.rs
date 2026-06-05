@@ -5,7 +5,7 @@ use anyhow::Context;
 use chrono::Utc;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
-use std::path::Path;
+use std::{collections::HashMap, path::Path, time::Duration};
 use uuid::Uuid;
 
 use crate::config::LocalPluginConfig;
@@ -38,11 +38,43 @@ pub struct InstalledPlugin {
     pub install_id: String,
     pub plugin_id: String,
     pub name: String,
+    pub description: String,
     pub version: String,
     pub tier: String,
     pub enabled: bool,
     pub skill_md: Option<String>,
     pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StoreRegistry {
+    pub plugins: Vec<StorePlugin>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StorePlugin {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub version: String,
+    pub tier: String,
+    pub author: String,
+    pub homepage: String,
+    #[serde(default)]
+    pub permissions: Vec<String>,
+    pub source: StorePluginSource,
+    pub setup_guide: Option<String>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StorePluginSource {
+    #[serde(rename = "type")]
+    pub source_type: String,
+    pub repo: Option<String>,
+    #[serde(rename = "ref")]
+    pub source_ref: Option<String>,
+    pub wasm_asset: Option<String>,
+    pub url: Option<String>,
 }
 
 // ── Manifest loading ───────────────────────────────────────────────────────────
@@ -134,7 +166,7 @@ pub fn ensure_installed(
 /// Load all enabled plugins for a user (skill fragments included).
 pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<InstalledPlugin>> {
     let mut stmt = conn.prepare_cached(
-        "SELECT pi.id, pi.plugin_id, p.name, pi.version, p.tier,
+        "SELECT pi.id, pi.plugin_id, p.name, p.manifest, pi.version, p.tier,
                 pi.enabled, pi.skill_md, pi.permissions
            FROM plugin_installs pi
            JOIN plugins p ON p.id = pi.plugin_id
@@ -143,20 +175,61 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
     )?;
     let rows = stmt
         .query_map(params![user_id], |row| {
-            let permissions_json: String = row.get(7)?;
+            let manifest_json: String = row.get(3)?;
+            let manifest: Option<Manifest> = serde_json::from_str(&manifest_json).ok();
+            let permissions_json: String = row.get(8)?;
             Ok(InstalledPlugin {
                 install_id: row.get(0)?,
                 plugin_id:  row.get(1)?,
                 name:       row.get(2)?,
-                version:    row.get(3)?,
-                tier:       row.get(4)?,
-                enabled:    row.get::<_, i32>(5)? != 0,
-                skill_md:   row.get(6)?,
+                description: manifest.map(|m| m.description).unwrap_or_default(),
+                version:    row.get(4)?,
+                tier:       row.get(5)?,
+                enabled:    row.get::<_, i32>(6)? != 0,
+                skill_md:   row.get(7)?,
                 permissions: serde_json::from_str(&permissions_json).unwrap_or_default(),
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+pub fn installed_states(
+    conn: &Connection,
+    user_id: &str,
+) -> anyhow::Result<HashMap<String, bool>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT plugin_id, enabled FROM plugin_installs WHERE user_id = ?1",
+    )?;
+    let states = stmt
+        .query_map(params![user_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? != 0))
+        })?
+        .collect::<Result<HashMap<_, _>, _>>()?;
+    Ok(states)
+}
+
+pub async fn fetch_store(registry_url: &str) -> anyhow::Result<StoreRegistry> {
+    if let Some(path) = registry_url.strip_prefix("file://") {
+        let raw = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read plugin registry {path}"))?;
+        return serde_json::from_str(&raw).context("plugin registry returned invalid JSON");
+    }
+
+    let response = reqwest::Client::builder()
+        .timeout(Duration::from_secs(10))
+        .build()?
+        .get(registry_url)
+        .send()
+        .await
+        .with_context(|| format!("failed to fetch plugin registry {registry_url}"))?
+        .error_for_status()
+        .with_context(|| format!("plugin registry {registry_url} returned an error"))?;
+
+    response
+        .json::<StoreRegistry>()
+        .await
+        .context("plugin registry returned invalid JSON")
 }
 
 /// Returns only the skill_md fragments for enabled plugins (used in context assembly).
@@ -264,6 +337,7 @@ mod tests {
             let plugins = list_enabled(conn, &uid)?;
             assert_eq!(plugins.len(), 1);
             assert_eq!(plugins[0].plugin_id, "test-plugin");
+            assert_eq!(plugins[0].description, "A test plugin");
             assert!(plugins[0].enabled);
             assert_eq!(plugins[0].skill_md.as_deref(), Some("You have test plugin enabled."));
             Ok(())

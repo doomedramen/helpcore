@@ -12,6 +12,9 @@ pub struct AuthUser {
     pub role: UserRole,
 }
 
+/// Injected into handlers restricted to server administrators.
+pub struct AdminUser(pub AuthUser);
+
 impl FromRequestParts<Arc<AppState>> for AuthUser {
     type Rejection = AppError;
 
@@ -27,6 +30,21 @@ impl FromRequestParts<Arc<AppState>> for AuthUser {
             return Ok(user);
         }
         Err(AppError::Unauthorized)
+    }
+}
+
+impl FromRequestParts<Arc<AppState>> for AdminUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &Arc<AppState>,
+    ) -> Result<Self, AppError> {
+        let user = AuthUser::from_request_parts(parts, state).await?;
+        if user.role != UserRole::Admin {
+            return Err(AppError::Forbidden);
+        }
+        Ok(Self(user))
     }
 }
 

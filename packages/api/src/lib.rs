@@ -37,6 +37,14 @@ pub struct LogoutRequest {
     pub refresh_token: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CurrentUserResponse {
+    pub id: String,
+    pub email: String,
+    pub display_name: Option<String>,
+    pub role: String,
+}
+
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -147,11 +155,13 @@ pub struct CompactResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PluginInfo {
-    pub id:      String,
-    pub name:    String,
-    pub version: String,
-    pub tier:    String,
-    pub enabled: bool,
+    pub id:          String,
+    pub name:        String,
+    pub description: String,
+    pub version:     String,
+    pub tier:        String,
+    pub permissions: Vec<String>,
+    pub enabled:     bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -170,6 +180,88 @@ pub struct PluginTokenResponse {
     pub token_id: String,
     /// The raw token value — shown only once; store it securely.
     pub token:    String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PluginStoreItem {
+    pub id:          String,
+    pub name:        String,
+    pub description: String,
+    pub version:     String,
+    pub tier:        String,
+    pub author:      String,
+    pub homepage:    String,
+    pub setup_guide: Option<String>,
+    pub permissions: Vec<String>,
+    pub installed:   bool,
+    pub enabled:     bool,
+    pub blocked:     bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PluginStoreResponse {
+    pub registry_url: String,
+    pub plugins: Vec<PluginStoreItem>,
+}
+
+// ── Admin configuration ──────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminServerConfig {
+    pub name: String,
+    pub url: String,
+    pub port: u16,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminProviderConfig {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String,
+    pub api_key_configured: bool,
+    pub url: Option<String>,
+    pub default_model: String,
+    pub roles: Vec<String>,
+    pub num_ctx: Option<u32>,
+    pub num_predict: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminConfigResponse {
+    pub config_path: String,
+    pub server: AdminServerConfig,
+    pub logging_level: String,
+    pub registry_url: String,
+    pub plugin_blacklist: Vec<String>,
+    pub providers: Vec<AdminProviderConfig>,
+    pub restart_required: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminProviderUpdate {
+    pub id: String,
+    pub name: String,
+    pub provider_type: String,
+    pub api_key: Option<String>,
+    #[serde(default)]
+    pub clear_api_key: bool,
+    pub url: Option<String>,
+    pub default_model: String,
+    #[serde(default)]
+    pub roles: Vec<String>,
+    pub num_ctx: Option<u32>,
+    pub num_predict: Option<u32>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminConfigUpdateRequest {
+    pub server: AdminServerConfig,
+    pub logging_level: String,
+    pub registry_url: String,
+    #[serde(default)]
+    pub plugin_blacklist: Vec<String>,
+    #[serde(default)]
+    pub providers: Vec<AdminProviderUpdate>,
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────────

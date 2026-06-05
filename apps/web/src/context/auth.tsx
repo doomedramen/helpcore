@@ -2,9 +2,11 @@
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import * as api from '@/lib/api';
+import type { CurrentUser } from '@/lib/types';
 
 interface AuthContextValue {
   accessToken: string | null;
+  currentUser: CurrentUser | null;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -17,22 +19,34 @@ const REFRESH_KEY = 'helpcore_refresh';
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
+  const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+
+  const loadCurrentUser = useCallback(async (token: string) => {
+    const user = await api.getCurrentUser(token);
+    setCurrentUser(user);
+    return user;
+  }, []);
 
   const refreshAccessToken = useCallback(async (): Promise<string | null> => {
     const stored = localStorage.getItem(REFRESH_KEY);
-    if (!stored) return null;
+    if (!stored) {
+      setCurrentUser(null);
+      return null;
+    }
     try {
       const { access_token, refresh_token } = await api.refresh(stored);
       localStorage.setItem(REFRESH_KEY, refresh_token);
       setAccessToken(access_token);
+      await loadCurrentUser(access_token);
       return access_token;
     } catch {
       localStorage.removeItem(REFRESH_KEY);
       setAccessToken(null);
+      setCurrentUser(null);
       return null;
     }
-  }, []);
+  }, [loadCurrentUser]);
 
   useEffect(() => {
     refreshAccessToken().finally(() => setIsLoading(false));
@@ -42,7 +56,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { access_token, refresh_token } = await api.login(email, password);
     localStorage.setItem(REFRESH_KEY, refresh_token);
     setAccessToken(access_token);
-  }, []);
+    await loadCurrentUser(access_token);
+  }, [loadCurrentUser]);
 
   const logout = useCallback(async () => {
     const stored = localStorage.getItem(REFRESH_KEY);
@@ -51,10 +66,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     localStorage.removeItem(REFRESH_KEY);
     setAccessToken(null);
+    setCurrentUser(null);
   }, [accessToken]);
 
   return (
-    <AuthContext.Provider value={{ accessToken, isLoading, login, logout, refreshAccessToken }}>
+    <AuthContext.Provider value={{
+      accessToken,
+      currentUser,
+      isLoading,
+      login,
+      logout,
+      refreshAccessToken,
+    }}>
       {children}
     </AuthContext.Provider>
   );

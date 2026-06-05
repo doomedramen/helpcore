@@ -16,6 +16,12 @@ pub fn create(state: Arc<AppState>) -> Router {
         .route("/auth/login", post(handlers::auth::login))
         .route("/auth/refresh", post(handlers::auth::refresh))
         .route("/auth/logout", post(handlers::auth::logout))
+        .route("/auth/me", get(handlers::auth::current_user))
+        // Admin
+        .route(
+            "/admin/config",
+            get(handlers::admin::get_config).put(handlers::admin::update_config),
+        )
         // Chat
         .route("/chat", post(handlers::chat::chat))
         // Conversations
@@ -38,6 +44,7 @@ pub fn create(state: Arc<AppState>) -> Router {
         )
         // Plugins
         .route("/plugins", get(handlers::plugin::list_plugins))
+        .route("/plugins/store", get(handlers::plugin::list_store))
         .route("/plugins/{id}/enable", put(handlers::plugin::set_enabled))
         .route("/plugins/{id}/tokens", post(handlers::plugin::create_token))
         .route(

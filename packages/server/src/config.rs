@@ -1,8 +1,12 @@
 use anyhow::Context;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize)]
+pub const DEFAULT_REGISTRY_URL: &str =
+    "https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.json";
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
     #[serde(default)]
@@ -13,9 +17,11 @@ pub struct Config {
     pub providers: Vec<ProviderConfig>,
     #[serde(default)]
     pub plugins: PluginsConfig,
+    #[serde(default)]
+    pub registry: RegistryConfig,
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct PluginsConfig {
     /// Plugin IDs that cannot be installed on this server.
     #[serde(default)]
@@ -27,7 +33,7 @@ pub struct PluginsConfig {
 }
 
 /// A plugin shipped alongside the helpcore installation or referenced by path.
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct LocalPluginConfig {
     /// Must match the `id` field in the plugin's manifest.toml.
     pub id: String,
@@ -39,7 +45,7 @@ pub struct LocalPluginConfig {
 
 fn default_true() -> bool { true }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServerConfig {
     pub name: String,
     pub url: String,
@@ -51,9 +57,9 @@ fn default_port() -> u16 {
     3000
 }
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct DataConfig {
-    dir: Option<String>,
+    pub dir: Option<String>,
 }
 
 impl DataConfig {
@@ -75,7 +81,7 @@ fn default_data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".helpcore/data"))
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
     pub level: String,
@@ -91,7 +97,7 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
-#[derive(Debug, Deserialize, Clone)]
+#[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProviderConfig {
     pub id: String,
     pub name: String,
@@ -111,7 +117,7 @@ pub struct ProviderConfig {
     pub num_predict: Option<u32>,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderType {
     Anthropic,
@@ -120,7 +126,32 @@ pub enum ProviderType {
     OpenaiCompatible,
 }
 
-#[derive(Debug, Deserialize, Clone, PartialEq, Eq)]
+impl ProviderType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Anthropic => "anthropic",
+            Self::Openai => "openai",
+            Self::Ollama => "ollama",
+            Self::OpenaiCompatible => "openai_compatible",
+        }
+    }
+}
+
+impl TryFrom<&str> for ProviderType {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "anthropic" => Ok(Self::Anthropic),
+            "openai" => Ok(Self::Openai),
+            "ollama" => Ok(Self::Ollama),
+            "openai_compatible" => Ok(Self::OpenaiCompatible),
+            other => anyhow::bail!("unknown provider type: {other}"),
+        }
+    }
+}
+
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderRole {
     Chat,
@@ -128,6 +159,49 @@ pub enum ProviderRole {
     ImageGen,
     VideoGen,
     Embeddings,
+}
+
+impl ProviderRole {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Chat => "chat",
+            Self::Code => "code",
+            Self::ImageGen => "image_gen",
+            Self::VideoGen => "video_gen",
+            Self::Embeddings => "embeddings",
+        }
+    }
+}
+
+impl TryFrom<&str> for ProviderRole {
+    type Error = anyhow::Error;
+
+    fn try_from(value: &str) -> anyhow::Result<Self> {
+        match value {
+            "chat" => Ok(Self::Chat),
+            "code" => Ok(Self::Code),
+            "image_gen" => Ok(Self::ImageGen),
+            "video_gen" => Ok(Self::VideoGen),
+            "embeddings" => Ok(Self::Embeddings),
+            other => anyhow::bail!("unknown provider role: {other}"),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct RegistryConfig {
+    #[serde(default = "default_registry_url")]
+    pub url: String,
+}
+
+impl Default for RegistryConfig {
+    fn default() -> Self {
+        Self { url: default_registry_url() }
+    }
+}
+
+fn default_registry_url() -> String {
+    DEFAULT_REGISTRY_URL.to_string()
 }
 
 impl Config {
@@ -145,6 +219,68 @@ impl Config {
         directories::BaseDirs::new()
             .map(|d| d.home_dir().join(".helpcore").join("config.toml"))
             .unwrap_or_else(|| PathBuf::from("config.toml"))
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        if self.server.name.trim().is_empty() {
+            anyhow::bail!("server name cannot be empty");
+        }
+        if self.server.url.trim().is_empty() {
+            anyhow::bail!("server URL cannot be empty");
+        }
+        if self.server.port == 0 {
+            anyhow::bail!("server port must be greater than zero");
+        }
+        if !matches!(self.logging.level.as_str(), "trace" | "debug" | "info" | "warn" | "error") {
+            anyhow::bail!("logging level must be trace, debug, info, warn, or error");
+        }
+        if self.registry.url.trim().is_empty() {
+            anyhow::bail!("registry URL cannot be empty");
+        }
+
+        let mut ids = HashSet::new();
+        for provider in &self.providers {
+            if provider.id.trim().is_empty() {
+                anyhow::bail!("provider ID cannot be empty");
+            }
+            if !ids.insert(provider.id.as_str()) {
+                anyhow::bail!("provider IDs must be unique");
+            }
+            if provider.name.trim().is_empty() {
+                anyhow::bail!("provider {} name cannot be empty", provider.id);
+            }
+            if provider.default_model.trim().is_empty() {
+                anyhow::bail!("provider {} default model cannot be empty", provider.id);
+            }
+            if provider.roles.is_empty() {
+                anyhow::bail!("provider {} must have at least one role", provider.id);
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+        self.validate()?;
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create config directory {}", parent.display()))?;
+        }
+
+        let content = toml::to_string_pretty(self).context("failed to serialise config")?;
+        let temp_path = path.with_extension("toml.tmp");
+        std::fs::write(&temp_path, content)
+            .with_context(|| format!("failed to write temporary config {}", temp_path.display()))?;
+
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o600))?;
+        }
+
+        std::fs::rename(&temp_path, path)
+            .with_context(|| format!("failed to replace config {}", path.display()))?;
+        Ok(())
     }
 }
 
@@ -171,6 +307,7 @@ mod tests {
         assert_eq!(cfg.server.port, 3000);
         assert!(cfg.providers.is_empty());
         assert_eq!(cfg.logging.level, "info");
+        assert_eq!(cfg.registry.url, DEFAULT_REGISTRY_URL);
     }
 
     #[test]
@@ -282,5 +419,26 @@ mod tests {
         .unwrap();
         let dir = cfg.data.resolved_dir();
         assert!(!dir.to_string_lossy().contains('~'));
+    }
+
+    #[test]
+    fn config_round_trips_to_disk() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let cfg = parse(
+            r#"
+            [server]
+            name = "Test"
+            url = "http://localhost:3000"
+
+            [registry]
+            url = "https://example.com/plugins.json"
+            "#,
+        )
+        .unwrap();
+
+        cfg.save(&path).unwrap();
+        let loaded = Config::load(&path).unwrap();
+        assert_eq!(loaded.registry.url, "https://example.com/plugins.json");
     }
 }

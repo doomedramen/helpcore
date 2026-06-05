@@ -28,7 +28,15 @@ fn test_state_with_providers(
 name = "test"
 url  = "http://localhost:3000""#)
             .unwrap();
-    Arc::new(state::AppState { config: Arc::new(cfg), db: db_pool, providers })
+    Arc::new(state::AppState {
+        config: Arc::new(cfg),
+        config_path: std::env::temp_dir().join(format!(
+            "helpcore-test-config-{}.toml",
+            uuid::Uuid::new_v4()
+        )),
+        db: db_pool,
+        providers,
+    })
 }
 
 fn app(state: Arc<helpcore_server::state::AppState>) -> axum::Router {
@@ -74,6 +82,25 @@ async fn authed_post_json(
     app.oneshot(
         Request::builder()
             .method("POST")
+            .uri(uri)
+            .header("Authorization", format!("Bearer {token}"))
+            .header(header::CONTENT_TYPE, "application/json")
+            .body(Body::from(serde_json::to_vec(&body).unwrap()))
+            .unwrap(),
+    )
+    .await
+    .unwrap()
+}
+
+async fn authed_put_json(
+    app: axum::Router,
+    uri: &str,
+    token: &str,
+    body: Value,
+) -> axum::response::Response {
+    app.oneshot(
+        Request::builder()
+            .method("PUT")
             .uri(uri)
             .header("Authorization", format!("Bearer {token}"))
             .header(header::CONTENT_TYPE, "application/json")
@@ -239,6 +266,159 @@ async fn logout_revokes_session() {
     )
     .await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn current_user_returns_admin_role() {
+    let state = test_state();
+    let tokens = do_setup(Arc::clone(&state)).await;
+    let resp = authed_get(app(state), "/api/auth/me", &tokens.access_token).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: helpcore_api::CurrentUserResponse = json_body(resp.into_body()).await;
+    assert_eq!(body.email, "admin@example.com");
+    assert_eq!(body.role, "admin");
+}
+
+#[tokio::test]
+async fn admin_can_read_and_update_config_without_exposing_api_key() {
+    let state = test_state();
+    let original = r#"
+[server]
+name = "test"
+url = "http://localhost:3000"
+
+[registry]
+url = "https://example.com/plugins.json"
+
+[[providers]]
+id = "openai"
+name = "OpenAI"
+type = "openai"
+api_key = "secret-key"
+default_model = "gpt-4o"
+roles = ["chat"]
+"#;
+    std::fs::write(&state.config_path, original).unwrap();
+    let tokens = do_setup(Arc::clone(&state)).await;
+
+    let resp = authed_get(
+        app(Arc::clone(&state)),
+        "/api/admin/config",
+        &tokens.access_token,
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: helpcore_api::AdminConfigResponse = json_body(resp.into_body()).await;
+    assert!(body.providers[0].api_key_configured);
+
+    let resp = authed_put_json(
+        app(Arc::clone(&state)),
+        "/api/admin/config",
+        &tokens.access_token,
+        json!({
+            "server": { "name": "Updated", "url": "http://localhost:4000", "port": 4000 },
+            "logging_level": "debug",
+            "registry_url": "https://example.com/new-registry.json",
+            "plugin_blacklist": ["blocked-plugin"],
+            "providers": [{
+                "id": "openai",
+                "name": "OpenAI",
+                "provider_type": "openai",
+                "api_key": null,
+                "clear_api_key": false,
+                "url": null,
+                "default_model": "gpt-4.1",
+                "roles": ["chat"],
+                "num_ctx": null,
+                "num_predict": null
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let saved = helpcore_server::config::Config::load(&state.config_path).unwrap();
+    assert_eq!(saved.server.name, "Updated");
+    assert_eq!(saved.providers[0].api_key.as_deref(), Some("secret-key"));
+    assert_eq!(saved.plugins.blacklist, vec!["blocked-plugin"]);
+}
+
+#[tokio::test]
+async fn member_cannot_read_admin_config() {
+    let state = test_state();
+    let access_token = state
+        .db
+        .call_sync(|conn| {
+            conn.execute(
+                "INSERT INTO users
+                    (id, email, password_hash, role, status, created_at, updated_at)
+                 VALUES ('member-1', 'member@example.com', 'hash', 'member', 'active', '2024-01-01', '2024-01-01')",
+                [],
+            )?;
+            Ok(helpcore_server::auth::token::create_session(conn, "member-1")?.access_token)
+        })
+        .unwrap();
+
+    let resp = authed_get(app(state), "/api/admin/config", &access_token).await;
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn plugin_store_marks_blocked_plugins() {
+    let state = test_state();
+    let registry_path = std::env::temp_dir().join(format!(
+        "helpcore-test-registry-{}.json",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::write(
+        &registry_path,
+        serde_json::to_vec(&json!({
+            "plugins": [{
+                "id": "weather",
+                "name": "Weather",
+                "description": "Weather forecasts.",
+                "version": "1.0.0",
+                "tier": "bridge",
+                "author": "test",
+                "homepage": "https://example.com/weather",
+                "permissions": ["outbound_http"],
+                "source": { "type": "github", "repo": "test/weather", "ref": "1.0.0" }
+            }]
+        }))
+        .unwrap(),
+    )
+    .unwrap();
+    std::fs::write(
+        &state.config_path,
+        format!(
+            r#"
+[server]
+name = "test"
+url = "http://localhost:3000"
+
+[plugins]
+blacklist = ["weather"]
+
+[registry]
+url = "file://{}"
+"#,
+            registry_path.display()
+        ),
+    )
+    .unwrap();
+
+    let tokens = do_setup(Arc::clone(&state)).await;
+    let resp = authed_get(
+        app(state),
+        "/api/plugins/store",
+        &tokens.access_token,
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: helpcore_api::PluginStoreResponse = json_body(resp.into_body()).await;
+    assert_eq!(body.plugins.len(), 1);
+    assert!(body.plugins[0].blocked);
+    assert!(!body.plugins[0].installed);
 }
 
 // ── conversation tests ────────────────────────────────────────────────────────

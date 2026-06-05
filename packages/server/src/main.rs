@@ -80,6 +80,7 @@ async fn main() -> anyhow::Result<()> {
 
     let state = Arc::new(state::AppState {
         config: Arc::new(config),
+        config_path,
         db: Arc::new(db),
         providers: provider_list,
     });

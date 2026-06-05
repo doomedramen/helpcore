@@ -1,0 +1,20 @@
+{
+  "plugins": [
+    {
+      "id": "home-assistant",
+      "name": "Home Assistant",
+      "description": "Control a Home Assistant instance through helpcore.",
+      "version": "1.0.0",
+      "tier": "bridge",
+      "author": "helpcore",
+      "homepage": "https://example.com/home-assistant",
+      "permissions": ["outbound_http", "user_data_read"],
+      "source": {
+        "type": "github",
+        "repo": "helpcore-plugins/home-assistant",
+        "ref": "1.0.0"
+      },
+      "setup_guide": "https://example.com/home-assistant/setup"
+    }
+  ]
+}

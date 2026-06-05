@@ -22,6 +22,9 @@ pub enum AppError {
     #[error("{0}")]
     Conflict(String),
 
+    #[error("{0}")]
+    Upstream(String),
+
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -34,6 +37,7 @@ impl IntoResponse for AppError {
             AppError::NotFound => (StatusCode::NOT_FOUND, "not_found", self.to_string()),
             AppError::BadRequest(msg) => (StatusCode::BAD_REQUEST, "bad_request", msg.clone()),
             AppError::Conflict(msg) => (StatusCode::CONFLICT, "conflict", msg.clone()),
+            AppError::Upstream(msg) => (StatusCode::BAD_GATEWAY, "upstream_error", msg.clone()),
             AppError::Internal(e) => {
                 tracing::error!(error = %e, "internal server error");
                 (

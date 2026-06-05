@@ -1,9 +1,31 @@
 use axum::{Json, extract::State, http::StatusCode};
 use std::sync::Arc;
 
-use helpcore_api::{LoginRequest, LoginResponse, LogoutRequest, RefreshRequest, RefreshResponse};
+use helpcore_api::{
+    CurrentUserResponse, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest,
+    RefreshResponse,
+};
 
-use crate::{api::error::AppError, state::AppState};
+use crate::{api::{error::AppError, extractor::AuthUser}, state::AppState};
+
+pub async fn current_user(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+) -> Result<Json<CurrentUserResponse>, AppError> {
+    let user_id = auth_user.id;
+    let user = state
+        .db
+        .call(move |conn| crate::model::user::find_by_id(conn, &user_id))
+        .await?
+        .ok_or(AppError::Unauthorized)?;
+
+    Ok(Json(CurrentUserResponse {
+        id: user.id,
+        email: user.email,
+        display_name: user.display_name,
+        role: user.role.as_str().to_string(),
+    }))
+}
 
 pub async fn login(
     State(state): State<Arc<AppState>>,

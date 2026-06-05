@@ -1,7 +1,12 @@
 import type {
+  AdminConfig,
+  AdminConfigUpdate,
   ConversationSummary,
+  CurrentUser,
   LoginResponse,
   Message,
+  PluginInfo,
+  PluginStoreResponse,
   RefreshResponse,
   SetupStatusResponse,
   SseDone,
@@ -35,6 +40,7 @@ async function req<T>(path: string, init: RequestInit = {}, token?: string): Pro
     throw new ApiError(message, resp.status);
   }
 
+  if (resp.status === 204) return undefined as T;
   return resp.json() as Promise<T>;
 }
 
@@ -59,6 +65,10 @@ export function refresh(refreshToken: string): Promise<RefreshResponse> {
     method: 'POST',
     body: JSON.stringify({ refresh_token: refreshToken }),
   });
+}
+
+export function getCurrentUser(token: string): Promise<CurrentUser> {
+  return req('/auth/me', {}, token);
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -88,6 +98,37 @@ export function getMessages(id: string, token: string): Promise<Message[]> {
 
 export function deleteConversation(id: string, token: string): Promise<void> {
   return req(`/conversations/${id}`, { method: 'DELETE' }, token);
+}
+
+// ── Admin configuration ──────────────────────────────────────────────────────
+
+export function getAdminConfig(token: string): Promise<AdminConfig> {
+  return req('/admin/config', {}, token);
+}
+
+export function updateAdminConfig(config: AdminConfigUpdate, token: string): Promise<AdminConfig> {
+  return req('/admin/config', {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  }, token);
+}
+
+// ── Plugins ──────────────────────────────────────────────────────────────────
+
+export async function listPlugins(token: string): Promise<PluginInfo[]> {
+  const response = await req<{ plugins: PluginInfo[] }>('/plugins', {}, token);
+  return response.plugins;
+}
+
+export function listPluginStore(token: string): Promise<PluginStoreResponse> {
+  return req('/plugins/store', {}, token);
+}
+
+export function setPluginEnabled(id: string, enabled: boolean, token: string): Promise<void> {
+  return req(`/plugins/${id}/enable`, {
+    method: 'PUT',
+    body: JSON.stringify({ enabled }),
+  }, token);
 }
 
 // ── Chat (SSE) ────────────────────────────────────────────────────────────────

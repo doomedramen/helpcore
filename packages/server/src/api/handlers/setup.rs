@@ -60,6 +60,14 @@ pub async fn create_admin(
         })
         .await?;
 
+    // Local plugins are loaded before first-run setup, when there may be no
+    // users yet. Run the loader again so the newly created admin receives them.
+    let local_plugins = state.config.plugins.local.clone();
+    state
+        .db
+        .call(move |conn| crate::plugins::registry::load_local_plugins(conn, &local_plugins))
+        .await?;
+
     let session = state
         .db
         .call(move |conn| crate::auth::token::create_session(conn, &user_id))

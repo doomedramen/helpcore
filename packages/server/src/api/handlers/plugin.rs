@@ -2,7 +2,8 @@ use axum::{Json, extract::{Path, State}, http::StatusCode};
 use std::sync::Arc;
 
 use helpcore_api::{
-    PluginInfo, PluginListResponse, PluginTokenRequest, PluginTokenResponse,
+    PluginInfo, PluginListResponse, PluginStoreItem, PluginStoreResponse, PluginTokenRequest,
+    PluginTokenResponse,
 };
 
 use crate::{
@@ -28,13 +29,71 @@ pub async fn list_plugins(
         .map(|p| PluginInfo {
             id:      p.plugin_id,
             name:    p.name,
+            description: p.description,
             version: p.version,
             tier:    p.tier,
+            permissions: p.permissions,
             enabled: p.enabled,
         })
         .collect();
 
     Ok(Json(PluginListResponse { plugins: items }))
+}
+
+// ── GET /plugins/store ────────────────────────────────────────────────────────
+
+pub async fn list_store(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+) -> Result<Json<PluginStoreResponse>, AppError> {
+    let config_path = state.config_path.clone();
+    let fallback = state.config.as_ref().clone();
+    let config = tokio::task::spawn_blocking(move || {
+        if config_path.is_file() {
+            crate::config::Config::load(&config_path)
+        } else {
+            Ok(fallback)
+        }
+    })
+    .await
+    .map_err(|e| AppError::Internal(anyhow::anyhow!("config load task failed: {e}")))??;
+
+    let registry_url = config.registry.url.clone();
+    let store = registry::fetch_store(&registry_url)
+        .await
+        .map_err(|e| AppError::Upstream(e.to_string()))?;
+
+    let uid = auth_user.id;
+    let installed = state
+        .db
+        .call(move |conn| registry::installed_states(conn, &uid))
+        .await?;
+    let blacklist = config.plugins.blacklist.into_iter().collect::<std::collections::HashSet<_>>();
+
+    let mut plugins = store
+        .plugins
+        .into_iter()
+        .map(|plugin| {
+            let enabled = installed.get(&plugin.id).copied().unwrap_or(false);
+            PluginStoreItem {
+                installed: installed.contains_key(&plugin.id),
+                enabled,
+                blocked: blacklist.contains(&plugin.id),
+                id: plugin.id,
+                name: plugin.name,
+                description: plugin.description,
+                version: plugin.version,
+                tier: plugin.tier,
+                author: plugin.author,
+                homepage: plugin.homepage,
+                setup_guide: plugin.setup_guide,
+                permissions: plugin.permissions,
+            }
+        })
+        .collect::<Vec<_>>();
+    plugins.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
+
+    Ok(Json(PluginStoreResponse { registry_url, plugins }))
 }
 
 // ── PUT /plugins/{id}/enable ──────────────────────────────────────────────────
