@@ -1,0 +1,15 @@
+services:
+  helpcore:
+    build: .
+    ports:
+      - "3000:3000"
+    volumes:
+      - helpcore_data:/data
+      - ./config.toml:/config.toml:ro
+    environment:
+      HELPCORE_CONFIG: /config.toml
+      HELPCORE_DATA: /data
+    restart: unless-stopped
+
+volumes:
+  helpcore_data:

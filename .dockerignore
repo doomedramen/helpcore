@@ -1,0 +1,11 @@
+target/
+references/
+apps/
+.git/
+.gitignore
+.cargo/audit.toml
+docs/
+*.md
+*.db
+config.toml
+.env

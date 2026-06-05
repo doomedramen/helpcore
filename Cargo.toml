@@ -1,0 +1,84 @@
+[workspace]
+members = ["packages/*"]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.87"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/martin/helpcore"
+
+[workspace.dependencies]
+# Internal
+helpcore-api = { path = "packages/api" }
+
+# Async
+tokio        = { version = "1.50", default-features = false }
+tokio-stream = { version = "0.1",  default-features = false }
+
+# HTTP server
+axum             = { version = "0.8", default-features = false }
+hyper            = { version = "1",   features = ["http1", "server"] }
+hyper-util       = { version = "0.1", features = ["tokio", "server-auto", "server-graceful"] }
+tower            = { version = "0.5", default-features = false }
+tower-http       = { version = "0.6", default-features = false }
+http-body-util   = { version = "0.1" }
+
+# HTTP client
+reqwest = { version = "0.12", default-features = false }
+
+# Serialization
+serde      = { version = "1.0", default-features = false }
+serde_json = { version = "1.0", default-features = false, features = ["std"] }
+
+# Errors
+anyhow    = "1.0"
+thiserror = "2.0"
+
+# Logging
+tracing            = { version = "0.1", default-features = false, features = ["std"] }
+tracing-subscriber = { version = "0.3", default-features = false }
+
+# Database
+rusqlite = { version = "0.37", features = ["bundled"] }
+
+# Auth / crypto
+argon2 = "0.5"
+rand   = "0.10"
+sha2   = { version = "0.10", default-features = false }
+hmac   = "0.12"
+hex    = "0.4"
+
+# Types
+uuid   = { version = "1.22", default-features = false }
+chrono = { version = "0.4",  default-features = false }
+
+# Config
+toml = "1.0"
+
+# CLI
+clap = { version = "4.5" }
+
+# Platform dirs
+directories = "6.0"
+
+# Concurrency
+parking_lot = "0.12"
+async-trait = "0.1"
+
+[profile.dev]
+incremental = true
+opt-level   = 0
+
+[profile.release]
+opt-level       = "z"
+lto             = "fat"
+codegen-units   = 1
+strip           = true
+panic           = "abort"
+
+[profile.ci]
+inherits      = "release"
+lto           = "thin"
+codegen-units = 16
