@@ -29,7 +29,7 @@ following up with the dentist, and reviewing the server monitoring setup.
 
 ```bash
 # 1. Clone and configure
-git clone https://github.com/martin/helpcore
+git clone https://github.com/DoomedRamen/helpcore
 cd helpcore
 make config          # creates config.toml from the example
 
@@ -59,13 +59,13 @@ The production compose file pulls pre-built images from GHCR — no build step n
 
 ```bash
 # On your home server
-git clone https://github.com/martin/helpcore
+git clone https://github.com/DoomedRamen/helpcore
 cd helpcore
 make config
 
 # Edit config.toml (Ollama URL, model, server name)
 
-make prod-up-ollama      # pulls ghcr.io/martin/helpcore:latest + Ollama
+make prod-up-ollama      # pulls ghcr.io/doomedramen/helpcore:latest + Ollama
 docker compose -f docker-compose.prod.yml exec ollama ollama pull qwen2.5:3b
 
 # First-admin setup (run from your laptop — not the server)
@@ -85,15 +85,15 @@ See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 
 ```bash
 # macOS (Apple Silicon)
-curl -L https://github.com/martin/helpcore/releases/latest/download/hc-aarch64-apple-darwin \
+curl -L https://github.com/DoomedRamen/helpcore/releases/latest/download/hc-aarch64-apple-darwin \
   -o /usr/local/bin/hc && chmod +x /usr/local/bin/hc
 
 # macOS (Intel)
-curl -L https://github.com/martin/helpcore/releases/latest/download/hc-x86_64-apple-darwin \
+curl -L https://github.com/DoomedRamen/helpcore/releases/latest/download/hc-x86_64-apple-darwin \
   -o /usr/local/bin/hc && chmod +x /usr/local/bin/hc
 
 # Linux x86_64
-curl -L https://github.com/martin/helpcore/releases/latest/download/hc-x86_64-unknown-linux-musl \
+curl -L https://github.com/DoomedRamen/helpcore/releases/latest/download/hc-x86_64-unknown-linux-musl \
   -o /usr/local/bin/hc && chmod +x /usr/local/bin/hc
 ```
 

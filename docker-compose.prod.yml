@@ -14,7 +14,7 @@
 
 services:
   helpcore:
-    image: ghcr.io/martin/helpcore:latest
+    image: ghcr.io/doomedramen/helpcore:latest
     platform: linux/amd64
     ports:
       - "3000:3000"
