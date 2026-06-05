@@ -1,0 +1,11 @@
+[server]
+name = "helpcore"
+url  = "http://localhost:3000"
+
+[[providers]]
+id            = "ollama"
+type          = "ollama"
+default_model = "qwen2.5:3b"
+roles         = ["chat"]
+url           = "http://ollama:11434"
+num_ctx       = 4096
