@@ -114,7 +114,7 @@ ExecStart=/usr/local/bin/helpcore-server
 Restart=on-failure
 User=helpcore
 Environment=HELPCORE_CONFIG=/etc/helpcore/config.toml
-Environment=HELPCORE_DATA_DIR=/var/lib/helpcore
+Environment=HELPCORE_DATA=/var/lib/helpcore
 
 [Install]
 WantedBy=multi-user.target
