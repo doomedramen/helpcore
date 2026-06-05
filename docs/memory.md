@@ -57,7 +57,7 @@ Example user profile:
 I'm a software engineer based in Melbourne, Australia.
 Currently working on helpcore — a self-hosted AI assistant server written in Rust.
 I use macOS, prefer the terminal, and write mostly Rust and Python.
-My home server runs in a Proxmox container with 4 GB RAM.
+My home server has 4 GB RAM.
 ```
 
 ---
@@ -76,7 +76,7 @@ hc memory set notes/work.md --set "Working on voice plugin. Whisper + KittenTTS.
 hc memory set projects/helpcore.md --edit
 
 # Read from stdin
-echo "# Server specs\n\nProxmox, 4 GB RAM, qwen2.5:3b" | hc memory set home/server.md
+echo "# Server specs\n\n4 GB RAM, qwen2.5:3b" | hc memory set home/server.md
 ```
 
 ### Listing and reading

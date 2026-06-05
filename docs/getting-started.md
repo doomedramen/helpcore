@@ -2,7 +2,7 @@
 
 This guide takes you from zero to a working helpcore server with a connected CLI client. It covers three scenarios:
 
-- [Docker on a home server / Proxmox](#home-server-proxmox)
+- [Docker on a home server](#home-server)
 - [Docker on your local machine (dev / testing)](#local-docker)
 - [Building from source](#building-from-source)
 
@@ -21,7 +21,7 @@ No Rust toolchain is needed if you use Docker.
 
 ---
 
-## Home server / Proxmox
+## Home server
 
 This is the recommended production setup. Pre-built images are published to GHCR on every push to `main`.
 

@@ -4,7 +4,7 @@ A self-hosted personal AI assistant server. Run it on a home server or VPS, conn
 
 ```
 $ hc ask "what's on my to-do list today?"
-Based on your notes, you have three things: the Proxmox network config, 
+Based on your notes, you have three things: the home server network config, 
 following up with the dentist, and reviewing the server monitoring setup.
 ```
 
@@ -12,7 +12,7 @@ following up with the dentist, and reviewing the server monitoring setup.
 
 ## Features
 
-- **Local-first** — runs on a Raspberry Pi or a 4 GB Proxmox container; works fine with a 3B parameter Ollama model
+- **Local-first** — runs on a Raspberry Pi or a 4 GB container; works fine with a 3B parameter Ollama model
 - **Memory system** — persistent markdown files the AI reads on every message; soul, identity, and per-user context files
 - **Conversation history** — all conversations stored in SQLite with full-text search; auto-compaction when context fills up
 - **Multiple providers** — Ollama, Anthropic, OpenAI, or any OpenAI-compatible server; switch per-request
@@ -25,35 +25,61 @@ following up with the dentist, and reviewing the server monitoring setup.
 
 ## Quick start (Docker)
 
-**Requirements:** Docker, an Ollama server somewhere on your network (or use the bundled sidecar).
+**Requirements:** Docker 24+.
+
+Save this as `docker-compose.yml` (or use the one included in the repo):
+
+```yaml
+services:
+  helpcore:
+    image: ghcr.io/doomedramen/helpcore:latest
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./config.toml:/config.toml:ro
+      - helpcore_data:/data
+    environment:
+      HELPCORE_CONFIG: /config.toml
+      HELPCORE_DATA: /data
+    restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  helpcore_data:
+  ollama_data:
+```
+
+Then:
 
 ```bash
-# 1. Clone and configure
-git clone https://github.com/DoomedRamen/helpcore
-cd helpcore
-make config          # creates config.toml from the example
+# 1. Create config.toml (the repo includes config.toml.example as a starting point)
+cp config.toml.example config.toml
+# Edit config.toml — set Ollama URL to http://ollama:11434 and choose a model
+# (see docs/configuration.md for all options)
 
-# 2. Edit config.toml — set your Ollama URL and model
-#    (see docs/configuration.md for all options)
+# 2. Start helpcore + Ollama
+docker compose up -d
 
-# 3. Start the server
-make docker-up       # helpcore only
-# or
-make docker-up-ollama  # helpcore + Ollama sidecar
-
-# 4. Pull a model (if using the bundled Ollama)
+# 3. Pull a model
 docker compose exec ollama ollama pull qwen2.5:3b
 
-# 5. Run the first-admin wizard
+# 4. Run the first-admin wizard
 hc setup --server http://localhost:3000
 
-# 6. Chat
+# 5. Chat
 hc ask "hello, what can you do?"
 ```
 
 ---
 
-## Home server / Proxmox deployment
+## Home server deployment
 
 The production compose file pulls pre-built images from GHCR — no build step needed:
 
