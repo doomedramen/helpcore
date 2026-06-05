@@ -1,4 +1,4 @@
-.PHONY: help dev check test build docker-build docker-up docker-up-ollama \
+.PHONY: help dev check test build docker-build docker-smoke-amd64 docker-up docker-up-ollama \
         docker-down docker-logs docker-shell ollama-pull config \
         prod-pull prod-up prod-up-ollama prod-down prod-logs prod-update
 
@@ -37,6 +37,9 @@ config: ## Create config.toml from config.toml.example (if not already present)
 
 docker-build: ## Build the Docker image
 	docker compose build
+
+docker-smoke-amd64: ## Build amd64 locally and run the Dockerfile startup check
+	docker buildx build --platform linux/amd64 --load -t helpcore:amd64-local .
 
 docker-up: config ## Start helpcore (creates config.toml from example if missing)
 	docker compose up -d
