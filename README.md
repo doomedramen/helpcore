@@ -59,10 +59,19 @@ volumes:
 Then:
 
 ```bash
-# 1. Create config.toml (the repo includes config.toml.example as a starting point)
-cp config.toml.example config.toml
-# Edit config.toml — set Ollama URL to http://ollama:11434 and choose a model
-# (see docs/configuration.md for all options)
+# 1. Create a minimal config.toml
+cat > config.toml << 'EOF'
+[server]
+name = "helpcore"
+url  = "http://localhost:3000"
+
+[[providers]]
+id            = "ollama"
+type          = "ollama"
+default_model = "qwen2.5:3b"
+roles         = ["chat"]
+url           = "http://ollama:11434"
+EOF
 
 # 2. Start helpcore + Ollama
 docker compose up -d
@@ -76,34 +85,6 @@ hc setup --server http://localhost:3000
 # 5. Chat
 hc ask "hello, what can you do?"
 ```
-
----
-
-## Home server deployment
-
-The production compose file pulls pre-built images from GHCR — no build step needed:
-
-```bash
-# On your home server
-git clone https://github.com/DoomedRamen/helpcore
-cd helpcore
-make config
-
-# Edit config.toml (Ollama URL, model, server name)
-
-make prod-up-ollama      # pulls ghcr.io/doomedramen/helpcore:latest + Ollama
-docker compose -f docker-compose.prod.yml exec ollama ollama pull qwen2.5:3b
-
-# First-admin setup (run from your laptop — not the server)
-hc setup --server http://your-server-ip:3000
-```
-
-To update later:
-```bash
-make prod-update   # pulls latest image, restarts with zero downtime
-```
-
-See [docs/getting-started.md](docs/getting-started.md) for a full walkthrough.
 
 ---
 
