@@ -3,11 +3,10 @@ services:
     build: .
     ports:
       - "3000:3000"
+    configs:
+      - source: helpcore_config
+        target: /config.toml
     volumes:
-      # Copy config.toml.example → config.toml and edit it before running.
-      # If this file doesn't exist, Docker creates a directory here and the
-      # server starts with a confusing error — run `make config` first.
-      - ./config.toml:/config.toml:ro
       - helpcore_data:/data
     environment:
       HELPCORE_CONFIG: /config.toml
@@ -36,3 +35,7 @@ services:
 volumes:
   helpcore_data:
   ollama_data:
+
+configs:
+  helpcore_config:
+    file: ./config.toml

@@ -28,6 +28,14 @@ build-release: ## Build release binaries for all packages
 config: ## Create config.toml from config.toml.example (if not already present)
 	@if [ -f config.toml ]; then \
 		echo "config.toml already exists — edit it directly"; \
+	elif [ -d config.toml ]; then \
+		if rmdir config.toml 2>/dev/null; then \
+			cp config.toml.example config.toml; \
+			echo "Replaced empty config.toml directory with a config file — edit it before starting the server"; \
+		else \
+			echo "Error: config.toml is a non-empty directory; move or remove it, then run 'make config' again"; \
+			exit 1; \
+		fi; \
 	else \
 		cp config.toml.example config.toml; \
 		echo "Created config.toml — edit it before starting the server"; \

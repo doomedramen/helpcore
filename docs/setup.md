@@ -55,26 +55,32 @@ Create a `docker-compose.yml` wherever you want to run the server:
 ```yaml
 services:
   helpcore:
-    image: ghcr.io/helpcore/helpcore-server:latest
+    image: ghcr.io/doomedramen/helpcore:latest
     ports:
       - "3000:3000"
+    configs:
+      - source: helpcore_config
+        target: /config.toml
     volumes:
-      - ./config.toml:/etc/helpcore/config.toml:ro
-      - helpcore-data:/var/lib/helpcore
+      - helpcore-data:/data
     environment:
-      HELPCORE_CONFIG: /etc/helpcore/config.toml
-      HELPCORE_DATA_DIR: /var/lib/helpcore
+      HELPCORE_CONFIG: /config.toml
+      HELPCORE_DATA: /data
     restart: unless-stopped
 
 volumes:
   helpcore-data:
+
+configs:
+  helpcore_config:
+    file: ./config.toml
 ```
 
 Create `config.toml` in the same directory (minimum config above), then:
 
 ```bash
-docker-compose up -d
-docker-compose logs -f helpcore   # watch for the setup URL
+docker compose up -d
+docker compose logs -f helpcore   # watch for the setup URL
 ```
 
 ### Native binary

@@ -212,14 +212,16 @@ The Docker image sets `HELPCORE_DATA=/data` automatically.
 
 ---
 
-## Docker bind mount note
+## Docker config file
 
-Docker creates a **directory** (not a file) if the bind-mount target doesn't exist on the host. This will cause helpcore to fail with "config.toml is a directory".
-
-Always create `config.toml` on the host before running `docker compose up`:
+Create `config.toml` on the host before running `docker compose up`:
 
 ```bash
-make config   # safe — skips if config.toml already exists
+make config   # safe — repairs an empty directory left by an older deployment
 # or
 cp config.toml.example config.toml
 ```
+
+Current Compose files use a file-backed Compose config, so a missing file fails
+before the container starts. Older releases used a bind mount; Docker could
+create an empty `config.toml` directory when the source file was missing.

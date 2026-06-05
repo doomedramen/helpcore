@@ -17,9 +17,11 @@ services:
     image: ghcr.io/doomedramen/helpcore:latest
     ports:
       - "3000:3000"
+    configs:
+      - source: helpcore_config
+        target: /config.toml
     volumes:
       - helpcore_data:/data
-      - ./config.toml:/config.toml:ro
     environment:
       HELPCORE_CONFIG: /config.toml
       HELPCORE_DATA: /data
@@ -45,3 +47,7 @@ services:
 volumes:
   helpcore_data:
   ollama_data:
+
+configs:
+  helpcore_config:
+    file: ./config.toml

@@ -36,8 +36,10 @@ services:
     image: ghcr.io/doomedramen/helpcore:latest
     ports:
       - "3000:3000"   # API + web UI on the same port
+    configs:
+      - source: helpcore_config
+        target: /config.toml
     volumes:
-      - ./config.toml:/config.toml:ro
       - helpcore_data:/data
     environment:
       HELPCORE_CONFIG: /config.toml
@@ -55,6 +57,10 @@ services:
 volumes:
   helpcore_data:
   ollama_data:
+
+configs:
+  helpcore_config:
+    file: ./config.toml
 ```
 
 The Docker image bundles both the Rust API server and the Next.js web UI — no separate container needed. The web UI is served at `http://localhost:3000` and the API at `http://localhost:3000/api/`.
@@ -62,23 +68,26 @@ The Docker image bundles both the Rust API server and the Next.js web UI — no 
 Then:
 
 ```bash
-# 1. Start helpcore + Ollama
+# 1. Create and edit the config when using the repository
+make config
+
+# 2. Start helpcore + Ollama
 docker compose up -d
 
-# 2. Pull a model
+# 3. Pull a model
 docker compose exec ollama ollama pull qwen2.5:3b
 
-# 3. Complete first-time setup
+# 4. Complete first-time setup
 #    On first run, helpcore prints a setup URL to its logs:
 docker compose logs helpcore | grep "Setup required"
 #    Open that URL in your browser to create the admin account,
 #    or run the CLI wizard instead:
 hc setup --server http://localhost:3000
 
-# 4. Open the web UI
+# 5. Open the web UI
 open http://localhost:3000
 
-# 5. Or chat from the terminal
+# 6. Or chat from the terminal
 hc ask "hello, what can you do?"
 ```
 

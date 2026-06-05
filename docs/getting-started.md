@@ -199,7 +199,17 @@ Credentials are stored at `~/.helpcore/credentials` (mode 600). The CLI auto-ref
 ## Troubleshooting
 
 **"config.toml is a directory, not a file"**  
-Docker bind mounts create a directory if the host file doesn't exist. Make sure you've cloned the repo (which includes `config.toml`) before running `docker compose up`.
+An older Compose file created a directory when the host config was missing.
+Update the repository, stop the restart loop, and repair the empty directory:
+
+```bash
+docker compose -f docker-compose.prod.yml down
+make config
+docker compose -f docker-compose.prod.yml up -d
+```
+
+If `make config` reports that the directory is non-empty, move it aside first
+and rerun `make config`.
 
 **"no provider configured"**  
 helpcore requires at least one `[[providers]]` block with `roles = ["chat"]` in config.toml. Restart after editing.
