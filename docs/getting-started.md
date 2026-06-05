@@ -32,26 +32,13 @@ git clone https://github.com/martin/helpcore
 cd helpcore
 ```
 
-### 2. Create config.toml
+### 2. Edit config.toml
 
-```bash
-cp config.toml.example config.toml
-```
-
-Edit `config.toml`. The minimum changes:
+The repo includes a working `config.toml`. The only value you may want to change before first start:
 
 ```toml
 [server]
-name = "My helpcore"
-url  = "http://YOUR_SERVER_IP:3000"   # used in the setup wizard URL
-
-[[providers]]
-id            = "ollama"
-type          = "ollama"
-default_model = "qwen2.5:3b"          # ~2 GB RAM
-roles         = ["chat"]
-url           = "http://ollama:11434" # Ollama sidecar on the same compose network
-num_ctx       = 4096
+url = "http://YOUR_SERVER_IP:3000"   # used in the setup wizard URL
 ```
 
 See [configuration.md](configuration.md) for all options.
