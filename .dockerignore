@@ -3,7 +3,10 @@ target/
 
 # Not needed for the Rust build
 references/
-apps/
+apps/ios/
+apps/web/node_modules/
+apps/web/.next/
+apps/web/out/
 docs/
 registry/
 plugins/
