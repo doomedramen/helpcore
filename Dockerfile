@@ -3,30 +3,39 @@
 
 FROM rust:1.87-slim AS builder
 
+ARG TARGETARCH
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
     musl-tools \
     && rm -rf /var/lib/apt/lists/*
 
-RUN rustup target add x86_64-unknown-linux-musl
-
-# Tell the `cc` crate (and Cargo's linker driver) to use musl-gcc when
-# compiling or linking for this target.  Without these, bundled C libraries
-# (rusqlite/SQLite) are compiled against glibc and the static musl binary
-# silently ends up with mixed ABIs or a link failure.
-ENV CC_x86_64_unknown_linux_musl=musl-gcc
-ENV CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc
+RUN case "$TARGETARCH" in \
+    amd64) rustup target add x86_64-unknown-linux-musl ;; \
+    arm64) rustup target add aarch64-unknown-linux-musl ;; \
+    *) echo "Unsupported TARGETARCH: $TARGETARCH" && exit 1 ;; \
+    esac
 
 WORKDIR /build
 
 COPY . .
 
-# BuildKit cache mounts keep the Cargo registry and incremental build artefacts
-# across image rebuilds, so only changed crates are recompiled each time.
-# The binary is copied out before the cache mount is released.
+# musl-gcc on amd64 targets x86_64; on arm64 it targets aarch64 natively.
+# BuildKit cache mounts keep the Cargo registry and incremental artefacts
+# across rebuilds so only changed crates are recompiled.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
     --mount=type=cache,target=/build/target \
-    cargo build --release --target x86_64-unknown-linux-musl -p helpcore-server \
- && cp target/x86_64-unknown-linux-musl/release/helpcore-server /helpcore-server
+    case "$TARGETARCH" in \
+    amd64) \
+        CC_x86_64_unknown_linux_musl=musl-gcc \
+        CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
+        cargo build --release --target x86_64-unknown-linux-musl -p helpcore-server \
+     && cp target/x86_64-unknown-linux-musl/release/helpcore-server /helpcore-server ;; \
+    arm64) \
+        CC_aarch64_unknown_linux_musl=musl-gcc \
+        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
+        cargo build --release --target aarch64-unknown-linux-musl -p helpcore-server \
+     && cp target/aarch64-unknown-linux-musl/release/helpcore-server /helpcore-server ;; \
+    esac
 
 # ── Runtime ────────────────────────────────────────────────────────────────────
 FROM alpine:3

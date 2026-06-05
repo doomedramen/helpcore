@@ -4,6 +4,7 @@ url  = "http://localhost:3000"
 
 [[providers]]
 id            = "ollama"
+name          = "Ollama"
 type          = "ollama"
 default_model = "qwen2.5:3b"
 roles         = ["chat"]

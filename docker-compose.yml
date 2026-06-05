@@ -1,9 +1,6 @@
 services:
   helpcore:
     build: .
-    # Dockerfile targets x86_64-unknown-linux-musl — declare the platform
-    # explicitly so Docker doesn't try to build ARM64 on Apple Silicon.
-    platform: linux/amd64
     ports:
       - "3000:3000"
     volumes:
