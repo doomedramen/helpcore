@@ -43,7 +43,7 @@ export default function ChatInput({ onSend, disabled, value, onChange }: Props) 
   return (
     <form
       onSubmit={handleSubmit}
-      className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-lg shadow-slate-900/5 backdrop-blur dark:border-slate-700 dark:bg-slate-900/90 dark:shadow-black/20"
+      className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-lg shadow-slate-900/5 backdrop-blur transition-colors focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 dark:border-slate-700 dark:bg-slate-900/90 dark:shadow-black/20"
     >
       <textarea
         ref={textareaRef}
@@ -52,7 +52,7 @@ export default function ChatInput({ onSend, disabled, value, onChange }: Props) 
         onKeyDown={handleKeyDown}
         disabled={disabled}
         rows={1}
-        placeholder="Message helpcore… (Enter to send, Shift+Enter for newline)"
+        placeholder="Message helpcore…"
         className="min-h-9 flex-1 resize-none overflow-hidden bg-transparent px-2.5 py-2 text-sm leading-relaxed text-slate-900 placeholder-slate-400 focus:outline-none disabled:opacity-50 dark:text-slate-100 dark:placeholder-slate-500"
       />
       <button
