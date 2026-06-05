@@ -59,30 +59,16 @@ volumes:
 Then:
 
 ```bash
-# 1. Create a minimal config.toml
-cat > config.toml << 'EOF'
-[server]
-name = "helpcore"
-url  = "http://localhost:3000"
-
-[[providers]]
-id            = "ollama"
-type          = "ollama"
-default_model = "qwen2.5:3b"
-roles         = ["chat"]
-url           = "http://ollama:11434"
-EOF
-
-# 2. Start helpcore + Ollama
+# 1. Start helpcore + Ollama
 docker compose up -d
 
-# 3. Pull a model
+# 2. Pull a model
 docker compose exec ollama ollama pull qwen2.5:3b
 
-# 4. Run the first-admin wizard
+# 3. Run the first-admin wizard
 hc setup --server http://localhost:3000
 
-# 5. Chat
+# 4. Chat
 hc ask "hello, what can you do?"
 ```
 
