@@ -1,3 +1,82 @@
-fn main() {
-    println!("helpcore starting");
+use helpcore_server::{api, auth, config, conversation as _, db, providers, state};
+
+use anyhow::Context;
+use std::sync::Arc;
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
+        )
+        .init();
+
+    let config_path = config::Config::config_path();
+    tracing::info!(path = %config_path.display(), "loading config");
+
+    let config = config::Config::load(&config_path).with_context(|| {
+        format!(
+            "failed to load config from {}. \
+             Create a config.toml or set HELPCORE_CONFIG.",
+            config_path.display()
+        )
+    })?;
+
+    let data_dir = config.data.resolved_dir();
+    std::fs::create_dir_all(&data_dir)
+        .with_context(|| format!("failed to create data dir {}", data_dir.display()))?;
+
+    let db_path = data_dir.join("helpcore.db");
+    let db = db::DbPool::open(&db_path)?;
+
+    // First-run check.
+    let server_url = config.server.url.trim_end_matches('/').to_string();
+    db.call_sync(|conn| {
+        if auth::setup::needs_setup(conn)? {
+            let token = auth::setup::generate_setup_token(conn)?;
+            let url = format!("{server_url}/setup?token={token}");
+            println!("\n  Setup required → {url}");
+            println!("  This URL expires in 15 minutes.\n");
+            tracing::info!("setup token generated — see stdout for URL");
+        }
+        Ok(())
+    })?;
+
+    // Load providers from config.
+    let mut provider_list = Vec::new();
+    for pc in &config.providers {
+        match providers::factory::build(pc) {
+            Ok(p) => {
+                tracing::info!(id = pc.id, name = pc.name, "loaded provider");
+                provider_list.push(p);
+            }
+            Err(e) => {
+                tracing::error!(id = pc.id, error = %e, "failed to load provider — skipping");
+            }
+        }
+    }
+    if provider_list.is_empty() {
+        tracing::warn!("no providers configured — POST /chat will return an error");
+    }
+
+    let state = Arc::new(state::AppState {
+        config: Arc::new(config),
+        db: Arc::new(db),
+        providers: provider_list,
+    });
+
+    let port = state.config.server.port;
+    let addr = format!("0.0.0.0:{port}");
+    let listener = tokio::net::TcpListener::bind(&addr)
+        .await
+        .with_context(|| format!("failed to bind to {addr}"))?;
+
+    tracing::info!(addr, version = env!("CARGO_PKG_VERSION"), "helpcore listening");
+
+    axum::serve(listener, api::router::create(state))
+        .await
+        .context("server error")?;
+
+    Ok(())
 }
