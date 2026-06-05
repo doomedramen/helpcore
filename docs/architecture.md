@@ -113,7 +113,7 @@ The core assembles each LLM call by composing:
 - Auth, user management, plugin install/config, conversation management, admin
 
 **Server-Sent Events (SSE)** for streaming LLM responses only:
-- `POST /chat` returns `text/event-stream`
+- `POST /api/chat` returns `text/event-stream`
 - Clients (iOS `URLSession`, browser `EventSource`, CLI `curl`) all support SSE natively
 - Works through proxies and load balancers without special configuration
 

@@ -117,12 +117,12 @@ and rich card rendering.
 
 | Endpoint | Method | Purpose |
 |---|---|---|
-| `/auth/login` | POST | Obtain a session token |
-| `/auth/logout` | POST | Revoke session |
-| `/chat` | POST | Send message, stream response (SSE) |
-| `/conversations` | GET | List conversations |
-| `/conversations/:id` | GET | Get conversation history |
-| `/conversations/:id` | DELETE | Delete conversation |
-| `/slash-commands` | GET | Discover all registered slash commands |
-| `/plugins` | GET | List installed plugins for the user |
-| `/health` | GET | Server health check |
+| `/api/auth/login` | POST | Obtain a session token |
+| `/api/auth/logout` | POST | Revoke session |
+| `/api/chat` | POST | Send message, stream response (SSE) |
+| `/api/conversations` | GET | List conversations |
+| `/api/conversations/:id` | GET | Get conversation history |
+| `/api/conversations/:id` | DELETE | Delete conversation |
+| `/api/slash-commands` | GET | Discover all registered slash commands |
+| `/api/plugins` | GET | List installed plugins for the user |
+| `/api/health` | GET | Server health check |

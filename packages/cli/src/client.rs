@@ -35,7 +35,7 @@ impl Client {
     pub async fn login(&self, email: &str, password: &str) -> anyhow::Result<LoginResponse> {
         let resp = self
             .inner
-            .post(format!("{}/auth/login", self.server_url))
+            .post(format!("{}/api/auth/login", self.server_url))
             .json(&LoginRequest { email: email.to_string(), password: password.to_string() })
             .send()
             .await
@@ -47,7 +47,7 @@ impl Client {
     pub async fn logout(&self, refresh_token: &str) -> anyhow::Result<()> {
         let resp = self
             .inner
-            .post(format!("{}/auth/logout", self.server_url))
+            .post(format!("{}/api/auth/logout", self.server_url))
             .json(&LogoutRequest { refresh_token: refresh_token.to_string() })
             .send()
             .await
@@ -59,7 +59,7 @@ impl Client {
     pub async fn refresh(&self, refresh_token: &str) -> anyhow::Result<RefreshResponse> {
         let resp = self
             .inner
-            .post(format!("{}/auth/refresh", self.server_url))
+            .post(format!("{}/api/auth/refresh", self.server_url))
             .json(&RefreshRequest { refresh_token: refresh_token.to_string() })
             .send()
             .await
@@ -72,7 +72,7 @@ impl Client {
     pub async fn setup_status(&self) -> anyhow::Result<SetupStatusResponse> {
         let resp = self
             .inner
-            .get(format!("{}/setup", self.server_url))
+            .get(format!("{}/api/setup", self.server_url))
             .send()
             .await
             .context("failed to reach server")?;
@@ -88,7 +88,7 @@ impl Client {
     ) -> anyhow::Result<LoginResponse> {
         let resp = self
             .inner
-            .post(format!("{}/setup", self.server_url))
+            .post(format!("{}/api/setup", self.server_url))
             .json(&SetupRequest {
                 token: token.to_string(),
                 email: email.to_string(),
@@ -113,7 +113,7 @@ impl Client {
     ) -> anyhow::Result<SseDone> {
         let resp = self
             .inner
-            .post(format!("{}/chat", self.server_url))
+            .post(format!("{}/api/chat", self.server_url))
             .header("Authorization", format!("Bearer {access_token}"))
             .json(request)
             .send()
@@ -139,7 +139,7 @@ impl Client {
     pub async fn list_memory(&self, access_token: &str) -> anyhow::Result<Vec<MemoryEntry>> {
         let resp = self
             .inner
-            .get(format!("{}/memory", self.server_url))
+            .get(format!("{}/api/memory", self.server_url))
             .bearer_auth(access_token)
             .send()
             .await
@@ -156,7 +156,7 @@ impl Client {
     ) -> anyhow::Result<Option<String>> {
         let resp = self
             .inner
-            .get(format!("{}/memory/{path}", self.server_url))
+            .get(format!("{}/api/memory/{path}", self.server_url))
             .bearer_auth(access_token)
             .send()
             .await
@@ -177,7 +177,7 @@ impl Client {
     ) -> anyhow::Result<()> {
         let resp = self
             .inner
-            .put(format!("{}/memory/{path}", self.server_url))
+            .put(format!("{}/api/memory/{path}", self.server_url))
             .bearer_auth(access_token)
             .json(&MemoryWriteRequest { content: content.to_string() })
             .send()
@@ -190,7 +190,7 @@ impl Client {
     pub async fn delete_memory(&self, access_token: &str, path: &str) -> anyhow::Result<bool> {
         let resp = self
             .inner
-            .delete(format!("{}/memory/{path}", self.server_url))
+            .delete(format!("{}/api/memory/{path}", self.server_url))
             .bearer_auth(access_token)
             .send()
             .await
@@ -211,7 +211,7 @@ impl Client {
     ) -> anyhow::Result<Option<String>> {
         let resp = self
             .inner
-            .get(format!("{}/personality/{name}", self.server_url))
+            .get(format!("{}/api/personality/{name}", self.server_url))
             .bearer_auth(access_token)
             .send()
             .await
@@ -234,7 +234,7 @@ impl Client {
         let resp = self
             .inner
             .post(format!(
-                "{}/conversations/{conversation_id}/compact",
+                "{}/api/conversations/{conversation_id}/compact",
                 self.server_url
             ))
             .bearer_auth(access_token)
@@ -249,7 +249,7 @@ impl Client {
     pub async fn list_plugins(&self, access_token: &str) -> anyhow::Result<Vec<PluginInfo>> {
         let resp = self
             .inner
-            .get(format!("{}/plugins", self.server_url))
+            .get(format!("{}/api/plugins", self.server_url))
             .bearer_auth(access_token)
             .send()
             .await
@@ -267,7 +267,7 @@ impl Client {
     ) -> anyhow::Result<PluginTokenResponse> {
         let resp = self
             .inner
-            .post(format!("{}/plugins/{plugin_id}/tokens", self.server_url))
+            .post(format!("{}/api/plugins/{plugin_id}/tokens", self.server_url))
             .bearer_auth(access_token)
             .json(&PluginTokenRequest { permissions })
             .send()
@@ -284,7 +284,7 @@ impl Client {
     ) -> anyhow::Result<()> {
         let resp = self
             .inner
-            .put(format!("{}/plugins/{plugin_id}/enable", self.server_url))
+            .put(format!("{}/api/plugins/{plugin_id}/enable", self.server_url))
             .bearer_auth(access_token)
             .json(&serde_json::json!({ "enabled": enabled }))
             .send()
@@ -302,7 +302,7 @@ impl Client {
     ) -> anyhow::Result<()> {
         let resp = self
             .inner
-            .put(format!("{}/personality/{name}", self.server_url))
+            .put(format!("{}/api/personality/{name}", self.server_url))
             .bearer_auth(access_token)
             .json(&PersonalityWriteRequest { content: content.to_string() })
             .send()
@@ -389,7 +389,7 @@ mod tests {
     #[tokio::test]
     async fn login_returns_tokens() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/auth/login"))
+        Mock::given(method("POST")).and(path("/api/auth/login"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "acc", "refresh_token": "ref", "token_type": "Bearer"
             })))
@@ -403,7 +403,7 @@ mod tests {
     #[tokio::test]
     async fn chat_streams_tokens_and_returns_done() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/chat"))
+        Mock::given(method("POST")).and(path("/api/chat"))
             .respond_with(ResponseTemplate::new(200)
                 .insert_header("content-type", "text/event-stream")
                 .set_body_string(
@@ -429,7 +429,7 @@ mod tests {
     #[tokio::test]
     async fn server_error_returns_err() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/auth/login"))
+        Mock::given(method("POST")).and(path("/api/auth/login"))
             .respond_with(ResponseTemplate::new(401)
                 .set_body_json(serde_json::json!({"code":"unauthorized","message":"bad creds"})))
             .mount(&server).await;
@@ -442,7 +442,7 @@ mod tests {
     #[tokio::test]
     async fn chat_401_produces_token_expired_sentinel() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/chat"))
+        Mock::given(method("POST")).and(path("/api/chat"))
             .respond_with(ResponseTemplate::new(401))
             .mount(&server).await;
 
@@ -461,18 +461,18 @@ mod tests {
     async fn refresh_returns_new_tokens() {
         let server = MockServer::start().await;
         // Simulate first chat → 401, then refresh → new tokens, then chat → 200.
-        Mock::given(method("POST")).and(path("/chat"))
+        Mock::given(method("POST")).and(path("/api/chat"))
             .and(header("authorization", "Bearer old-token"))
             .respond_with(ResponseTemplate::new(401))
             .mount(&server).await;
-        Mock::given(method("POST")).and(path("/auth/refresh"))
+        Mock::given(method("POST")).and(path("/api/auth/refresh"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "new-token",
                 "refresh_token": "new-refresh",
                 "token_type": "Bearer",
             })))
             .mount(&server).await;
-        Mock::given(method("POST")).and(path("/chat"))
+        Mock::given(method("POST")).and(path("/api/chat"))
             .and(header("authorization", "Bearer new-token"))
             .respond_with(ResponseTemplate::new(200)
                 .insert_header("content-type", "text/event-stream")

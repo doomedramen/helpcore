@@ -84,7 +84,7 @@ Web and CLI share the same session system.
 - `refresh_token` — long-lived (30 days), used only to rotate access tokens
 
 **Refresh:** when the access token expires, the client sends the refresh token
-to `POST /auth/refresh`. The server returns a new access token and a new
+to `POST /api/auth/refresh`. The server returns a new access token and a new
 refresh token. The old refresh token is immediately invalidated (single-use
 rotation).
 

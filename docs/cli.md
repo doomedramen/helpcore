@@ -147,7 +147,7 @@ Three regions:
 ### Slash commands in TUI
 
 Type `/` to see available slash commands (discovered from the server's
-`GET /slash-commands` endpoint). Registered by installed plugins.
+`GET /api/slash-commands` endpoint). Registered by installed plugins.
 
 Built-in TUI slash commands (not sent to server):
 - `/new` — start a new conversation

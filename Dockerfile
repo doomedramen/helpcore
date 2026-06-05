@@ -1,6 +1,18 @@
 # syntax=docker/dockerfile:1
 # Requires Docker BuildKit (default in Docker Desktop and Docker Engine 23+).
 
+# ── Web UI build ───────────────────────────────────────────────────────────────
+FROM node:22-alpine AS web-builder
+
+WORKDIR /web
+COPY apps/web/package*.json ./
+RUN npm ci --ignore-scripts
+
+COPY apps/web/ ./
+ENV NEXT_EXPORT=true
+RUN npm run build
+
+# ── Rust server build ──────────────────────────────────────────────────────────
 FROM rust:1.87-slim AS builder
 
 ARG TARGETARCH
@@ -45,12 +57,13 @@ RUN apk add --no-cache ca-certificates tzdata wget
 RUN addgroup -S helpcore && adduser -S helpcore -G helpcore
 
 COPY --from=builder /helpcore-server /usr/local/bin/helpcore-server
+COPY --from=web-builder /web/out /usr/local/share/helpcore/web
 
 USER helpcore
 
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD wget -q -O /dev/null http://localhost:3000/health || exit 1
+    CMD wget -q -O /dev/null http://localhost:3000/api/health || exit 1
 
 ENTRYPOINT ["helpcore-server"]

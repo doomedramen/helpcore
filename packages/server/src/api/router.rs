@@ -2,12 +2,13 @@ use axum::{
     Router,
     routing::{delete, get, post, put},
 };
-use std::sync::Arc;
+use std::{path::Path, sync::Arc};
+use tower_http::services::{ServeDir, ServeFile};
 
 use crate::{api::handlers, state::AppState};
 
 pub fn create(state: Arc<AppState>) -> Router {
-    Router::new()
+    let api = Router::new()
         .route("/health", get(handlers::health))
         // Setup
         .route("/setup", get(handlers::setup::status).post(handlers::setup::create_admin))
@@ -43,5 +44,22 @@ pub fn create(state: Arc<AppState>) -> Router {
             "/plugins/{id}/tokens/{token_id}",
             delete(handlers::plugin::revoke_token),
         )
-        .with_state(state)
+        .with_state(state);
+
+    let mut router = Router::new().nest("/api", api);
+
+    // Serve the web UI from HELPCORE_WEB_DIR when it exists.
+    // Falls back to index.html for any path not matched by a static file,
+    // enabling client-side routing inside the Next.js SPA.
+    let web_dir = std::env::var("HELPCORE_WEB_DIR")
+        .unwrap_or_else(|_| "/usr/local/share/helpcore/web".to_string());
+
+    if Path::new(&web_dir).is_dir() {
+        router = router.fallback_service(
+            ServeDir::new(&web_dir)
+                .not_found_service(ServeFile::new(format!("{web_dir}/index.html"))),
+        );
+    }
+
+    router
 }

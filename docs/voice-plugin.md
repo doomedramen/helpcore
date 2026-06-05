@@ -3,7 +3,7 @@
 The voice plugin adds speech-to-text and text-to-speech to helpcore. It runs as a standalone Docker sidecar — a Python FastAPI service that sits in front of helpcore and handles the audio pipeline.
 
 ```
-Audio in → [Whisper STT] → text → [helpcore /chat] → text → [KittenTTS] → Audio out
+Audio in → [Whisper STT] → text → [helpcore /api/chat] → text → [KittenTTS] → Audio out
 ```
 
 The AI's skill prompt is automatically injected into the context when the plugin is enabled, telling it to respond in spoken-word style (no markdown, natural sentences, concise).
@@ -46,7 +46,7 @@ On restart, the plugin is registered for all users and the skill prompt is activ
 
 ### 2. Generate a bridge token
 
-The voice service needs a token to call the helpcore `/chat` endpoint:
+The voice service needs a token to call the helpcore `/api/chat` endpoint:
 
 ```bash
 hc plugin token voice-kittentts

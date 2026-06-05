@@ -51,7 +51,7 @@ log shippers — no helpcore-specific integration needed.
 **Purpose:** security and administrative accountability. Records who did what
 to the system, for intrusion detection and access review.
 
-**Storage:** DB table (`audit_log`) — queryable, exposable via `GET /admin/audit`.
+**Storage:** DB table (`audit_log`) — queryable, exposable via `GET /api/admin/audit`.
 
 **Tamper evidence:** each row includes a hash of its content + previous row's
 hash (chain). Breaks in the chain are detectable.

@@ -89,7 +89,7 @@ async fn do_setup(state: Arc<helpcore_server::state::AppState>) -> LoginResponse
     let token = state.db.call_sync(|conn| setup::generate_setup_token(conn)).unwrap();
     let resp = post_json(
         app(Arc::clone(&state)),
-        "/setup",
+        "/api/setup",
         json!({ "token": token, "email": "admin@example.com", "password": "password123" }),
     )
     .await;
@@ -103,7 +103,7 @@ async fn do_setup(state: Arc<helpcore_server::state::AppState>) -> LoginResponse
 async fn health_returns_200() {
     let state = test_state();
     let resp = app(state)
-        .oneshot(Request::builder().uri("/health").body(Body::empty()).unwrap())
+        .oneshot(Request::builder().uri("/api/health").body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -113,7 +113,7 @@ async fn health_returns_200() {
 async fn setup_status_true_on_fresh_db() {
     let state = test_state();
     let resp = app(Arc::clone(&state))
-        .oneshot(Request::builder().uri("/setup").body(Body::empty()).unwrap())
+        .oneshot(Request::builder().uri("/api/setup").body(Body::empty()).unwrap())
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -134,7 +134,7 @@ async fn setup_status_false_after_setup() {
     let state = test_state();
     do_setup(Arc::clone(&state)).await;
     let resp = app(Arc::clone(&state))
-        .oneshot(Request::builder().uri("/setup").body(Body::empty()).unwrap())
+        .oneshot(Request::builder().uri("/api/setup").body(Body::empty()).unwrap())
         .await
         .unwrap();
     let body: SetupStatusResponse = json_body(resp.into_body()).await;
@@ -146,7 +146,7 @@ async fn setup_rejects_invalid_token() {
     let state = test_state();
     let resp = post_json(
         app(state),
-        "/setup",
+        "/api/setup",
         json!({ "token": "bad-token", "email": "a@b.com", "password": "password123" }),
     )
     .await;
@@ -159,7 +159,7 @@ async fn login_returns_tokens() {
     do_setup(Arc::clone(&state)).await;
     let resp = post_json(
         app(Arc::clone(&state)),
-        "/auth/login",
+        "/api/auth/login",
         json!({ "email": "admin@example.com", "password": "password123" }),
     )
     .await;
@@ -174,7 +174,7 @@ async fn login_rejects_wrong_password() {
     do_setup(Arc::clone(&state)).await;
     let resp = post_json(
         app(state),
-        "/auth/login",
+        "/api/auth/login",
         json!({ "email": "admin@example.com", "password": "wrong" }),
     )
     .await;
@@ -187,7 +187,7 @@ async fn login_rejects_unknown_email() {
     do_setup(Arc::clone(&state)).await;
     let resp = post_json(
         app(state),
-        "/auth/login",
+        "/api/auth/login",
         json!({ "email": "nobody@example.com", "password": "password123" }),
     )
     .await;
@@ -200,7 +200,7 @@ async fn refresh_rotates_tokens() {
     let first = do_setup(Arc::clone(&state)).await;
     let resp = post_json(
         app(Arc::clone(&state)),
-        "/auth/refresh",
+        "/api/auth/refresh",
         json!({ "refresh_token": first.refresh_token }),
     )
     .await;
@@ -214,7 +214,7 @@ async fn refresh_rejects_invalid_token() {
     let state = test_state();
     let resp = post_json(
         app(state),
-        "/auth/refresh",
+        "/api/auth/refresh",
         json!({ "refresh_token": "not-a-real-token" }),
     )
     .await;
@@ -227,14 +227,14 @@ async fn logout_revokes_session() {
     let tokens = do_setup(Arc::clone(&state)).await;
     let resp = post_json(
         app(Arc::clone(&state)),
-        "/auth/logout",
+        "/api/auth/logout",
         json!({ "refresh_token": tokens.refresh_token }),
     )
     .await;
     assert_eq!(resp.status(), StatusCode::NO_CONTENT);
     let resp = post_json(
         app(state),
-        "/auth/refresh",
+        "/api/auth/refresh",
         json!({ "refresh_token": tokens.refresh_token }),
     )
     .await;
@@ -247,7 +247,7 @@ async fn logout_revokes_session() {
 async fn list_conversations_empty_initially() {
     let state = test_state();
     let tokens = do_setup(Arc::clone(&state)).await;
-    let resp = authed_get(app(Arc::clone(&state)), "/conversations", &tokens.access_token).await;
+    let resp = authed_get(app(Arc::clone(&state)), "/api/conversations", &tokens.access_token).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let convs: Vec<ConversationSummary> = json_body(resp.into_body()).await;
     assert!(convs.is_empty());
@@ -259,7 +259,7 @@ async fn get_messages_returns_404_for_unknown() {
     let tokens = do_setup(Arc::clone(&state)).await;
     let resp = authed_get(
         app(state),
-        "/conversations/no-such-id/messages",
+        "/api/conversations/no-such-id/messages",
         &tokens.access_token,
     )
     .await;
@@ -271,7 +271,7 @@ async fn chat_requires_authentication() {
     let state = test_state();
     let resp = post_json(
         app(state),
-        "/chat",
+        "/api/chat",
         json!({ "message": "hello" }),
     )
     .await;
@@ -284,7 +284,7 @@ async fn chat_returns_error_when_no_providers() {
     let tokens = do_setup(Arc::clone(&state)).await;
     let resp = authed_post_json(
         app(state),
-        "/chat",
+        "/api/chat",
         &tokens.access_token,
         json!({ "message": "hello" }),
     )
@@ -325,7 +325,7 @@ async fn chat_streams_and_persists_conversation() {
     // POST /chat — consume the full SSE body so the DB write completes.
     let resp = authed_post_json(
         app(Arc::clone(&state)),
-        "/chat",
+        "/api/chat",
         &tokens.access_token,
         json!({ "message": "Hi!" }),
     )
@@ -340,7 +340,7 @@ async fn chat_streams_and_persists_conversation() {
     assert!(body.contains("Hello"), "expected token content");
 
     // Conversation must now appear in the list.
-    let resp = authed_get(app(Arc::clone(&state)), "/conversations", &tokens.access_token).await;
+    let resp = authed_get(app(Arc::clone(&state)), "/api/conversations", &tokens.access_token).await;
     let convs: Vec<ConversationSummary> = json_body(resp.into_body()).await;
     assert_eq!(convs.len(), 1, "expected one conversation");
     assert_eq!(convs[0].message_count, 2, "expected user + assistant messages");
@@ -349,7 +349,7 @@ async fn chat_streams_and_persists_conversation() {
     let conv_id = &convs[0].id;
     let resp = authed_get(
         app(Arc::clone(&state)),
-        &format!("/conversations/{conv_id}/messages"),
+        &format!("/api/conversations/{conv_id}/messages"),
         &tokens.access_token,
     )
     .await;
@@ -385,23 +385,23 @@ async fn conversation_continues_with_existing_id() {
     let tokens = do_setup(Arc::clone(&state)).await;
 
     // First message — creates conversation.
-    let resp = authed_post_json(app(Arc::clone(&state)), "/chat", &tokens.access_token, json!({ "message": "first" })).await;
+    let resp = authed_post_json(app(Arc::clone(&state)), "/api/chat", &tokens.access_token, json!({ "message": "first" })).await;
     to_bytes(resp.into_body(), usize::MAX).await.unwrap(); // drain
 
-    let resp = authed_get(app(Arc::clone(&state)), "/conversations", &tokens.access_token).await;
+    let resp = authed_get(app(Arc::clone(&state)), "/api/conversations", &tokens.access_token).await;
     let convs: Vec<ConversationSummary> = json_body(resp.into_body()).await;
     let conv_id = convs[0].id.clone();
 
     // Second message — continues same conversation.
     let resp = authed_post_json(
-        app(Arc::clone(&state)), "/chat", &tokens.access_token,
+        app(Arc::clone(&state)), "/api/chat", &tokens.access_token,
         json!({ "message": "second", "conversation_id": conv_id }),
     ).await;
     to_bytes(resp.into_body(), usize::MAX).await.unwrap(); // drain
 
     let resp = authed_get(
         app(Arc::clone(&state)),
-        &format!("/conversations/{conv_id}/messages"),
+        &format!("/api/conversations/{conv_id}/messages"),
         &tokens.access_token,
     ).await;
     let msgs: Vec<MessageSummary> = json_body(resp.into_body()).await;

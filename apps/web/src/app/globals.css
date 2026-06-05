@@ -1,0 +1,65 @@
+@import "tailwindcss";
+
+@layer base {
+  *, *::before, *::after {
+    box-sizing: border-box;
+  }
+
+  html, body {
+    height: 100%;
+  }
+
+  body {
+    @apply bg-white text-slate-900 antialiased;
+    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+  }
+
+  /* Code block styles (used by rehype-highlight) */
+  pre {
+    @apply rounded-lg overflow-x-auto text-sm;
+  }
+
+  code:not(pre code) {
+    @apply bg-slate-100 text-slate-800 rounded px-1 py-0.5 text-sm font-mono;
+  }
+
+  /* Prose inside assistant messages */
+  .prose h1, .prose h2, .prose h3 {
+    @apply font-semibold leading-tight mt-4 mb-2;
+  }
+  .prose h1 { @apply text-xl; }
+  .prose h2 { @apply text-lg; }
+  .prose h3 { @apply text-base; }
+
+  .prose p { @apply leading-relaxed; }
+  .prose p + p { @apply mt-3; }
+
+  .prose ul { @apply list-disc pl-5 space-y-1; }
+  .prose ol { @apply list-decimal pl-5 space-y-1; }
+
+  .prose blockquote {
+    @apply border-l-4 border-slate-300 pl-4 text-slate-600 italic my-3;
+  }
+
+  .prose a {
+    @apply text-blue-600 underline underline-offset-2 hover:text-blue-800;
+  }
+
+  .prose table {
+    @apply w-full text-sm border-collapse my-3;
+  }
+  .prose th {
+    @apply bg-slate-100 text-left px-3 py-1.5 font-semibold border border-slate-200;
+  }
+  .prose td {
+    @apply px-3 py-1.5 border border-slate-200;
+  }
+
+  .prose hr {
+    @apply border-slate-200 my-4;
+  }
+
+  .prose pre {
+    @apply my-3;
+  }
+}
