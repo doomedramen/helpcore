@@ -38,6 +38,7 @@ helpcore/               ← this repo (Cargo workspace root)
   apps/
     ios/                ← Swift client (outside Cargo workspace)
     web/                ← Next.js client (outside Cargo workspace)
+  registry/             ← plugin store registry app + plugins.json
   plugins/              ← first-party plugin examples
   docs/                 ← architecture decisions (here)
 ```

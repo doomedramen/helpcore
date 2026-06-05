@@ -1,0 +1,224 @@
+# helpcore — Conversation & Context Model
+
+Reference: `references/zeroclaw/crates/zeroclaw-runtime/src/agent/history.rs`
+Reference: `references/zeroclaw/crates/zeroclaw-memory/`
+
+---
+
+## Conversations
+
+Conversations are stored in SQLite. Each conversation belongs to one user.
+
+### Database schema
+
+#### `conversations`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | Primary key |
+| user_id | UUID | FK → users.id |
+| title | TEXT | Auto-generated from first user message (truncated to ~60 chars) |
+| provider_id | TEXT | Last used provider |
+| model | TEXT | Last used model |
+| message_count | INTEGER | Maintained as messages are inserted |
+| created_at | TIMESTAMP | |
+| updated_at | TIMESTAMP | Updated on each new message |
+
+#### `messages`
+
+| Column | Type | Notes |
+|---|---|---|
+| id | UUID | Primary key |
+| conversation_id | UUID | FK → conversations.id |
+| role | TEXT | `user`, `assistant`, `tool`, `system`, `summary` |
+| content | TEXT | Message text or tool result |
+| tool_call_id | TEXT | For `tool` role messages — links to the call |
+| tool_calls | JSON | For `assistant` messages that invoke tools |
+| provider_id | TEXT | Which provider generated this (assistant messages) |
+| model | TEXT | Which model generated this |
+| sequence | INTEGER | Ordering within the conversation |
+| created_at | TIMESTAMP | |
+
+The `summary` role is a special system-inserted message that replaces a
+compacted history segment (see Context overflow below).
+
+---
+
+## Memory
+
+Memory is a per-user filesystem of `.md` files stored on the server, searched
+at query time via SQLite FTS5. The AI manages this filesystem directly — it
+decides what to write, how to name files, and how to organise them.
+
+### Storage location
+
+```
+{data_dir}/users/{user_id}/memory/
+  alice-chen.md
+  project-eeva.md
+  obsidian-setup.md
+  home/
+    devices.md
+    automation-rules.md
+```
+
+One `.md` file per person, project, or topic. The AI owns the structure.
+
+### Organisation rules (given to the AI in its instructions)
+
+The AI is instructed to keep memory organised as follows:
+
+- **Start flat.** Put new files directly in the memory root. Add subdirectories
+  only when there are enough related files to justify one — not before.
+- **Name files clearly.** The filename should say what's inside without opening
+  it: `alice-chen.md` not `contacts/a.md`. Lowercase with hyphens. Include
+  context: `project-eeva.md`, `obsidian-user-count.md`.
+- **One thing per file.** One person, one project, one topic.
+- **Create a folder when you feel friction.** If the root is getting hard to
+  scan, that is the signal to group. Two levels of hierarchy is almost always
+  enough.
+- **Keep files current.** When information changes, update the file — don't
+  create a new one alongside the old one. Stale files erode trust.
+- **Offer to tidy up.** If the structure looks messy or redundant, say so and
+  suggest a reorganisation. Always ask before moving or renaming files.
+
+### Built-in memory tools (core-level, not plugins)
+
+The core exposes these tools to the AI for memory management:
+
+| Tool | Purpose |
+|---|---|
+| `memory_search(query)` | FTS5 search across all memory files |
+| `memory_read(path)` | Read a specific memory file |
+| `memory_write(path, content)` | Write or overwrite a memory file |
+| `memory_append(path, content)` | Append to an existing memory file |
+| `memory_list(path?)` | List files/directories in memory root or subdir |
+| `memory_move(from, to)` | Move or rename a file (ask user first) |
+| `memory_delete(path)` | Delete a file (ask user first) |
+
+All paths are relative to the user's memory root. The core enforces the
+per-user boundary — the AI cannot access another user's memory directory.
+
+### FTS5 index
+
+An FTS5 virtual table in SQLite mirrors the memory filesystem content.
+Updated whenever a file is written via `memory_write` or `memory_append`.
+Used for top-N retrieval at query time.
+
+```sql
+CREATE VIRTUAL TABLE memory_fts USING fts5(
+    content,
+    filename,
+    content='memory_files',
+    content_rowid='rowid'
+);
+
+CREATE TABLE memory_files (
+    id INTEGER PRIMARY KEY,
+    user_id UUID NOT NULL,
+    path TEXT NOT NULL,         -- relative path within user's memory dir
+    content TEXT NOT NULL,
+    updated_at TIMESTAMP NOT NULL,
+    UNIQUE (user_id, path)
+);
+```
+
+---
+
+## Context assembly
+
+Every LLM request assembles the same context structure regardless of provider
+or role. See [`docs/providers.md`](providers.md) for the full layer list.
+
+### Memory retrieval
+
+Before each request, the core performs a top-N FTS5 search against the user's
+memory files. The query is derived from the current user message plus the most
+recent exchange (for conversational continuity).
+
+Default: top 10 results, configurable per user. Results are included in the
+system prompt under a `## Memories` section.
+
+### System prompt assembly
+
+```
+## Core instructions        (hardcoded)
+## Soul                     (SOUL.md from user_personality)
+## Identity                 (IDENTITY.md from user_personality)
+## User                     (USER.md from user_personality)
+## Memories                 (top-N FTS5 results from memory files)
+## Skills                   (plugin skill fragments — one per enabled plugin)
+## Tools                    (tool definitions JSON Schema — from enabled plugins
+                             + built-in memory tools)
+## Current date             (date + timezone from user profile)
+```
+
+### Conversation history loading
+
+Messages are loaded from the `messages` table ordered by `sequence`. Summary
+messages appear inline as system messages where the compacted segment was.
+
+Tool-use/tool-result pairs are always kept atomic — orphaned tool results
+(whose call was dropped) are removed before sending to the provider, as they
+cause API 400 errors.
+
+---
+
+## Context overflow handling
+
+When the assembled context (system prompt + history + current message) would
+exceed the provider's context window, helpcore uses **AI summarisation** rather
+than silently dropping messages.
+
+### Overflow detection
+
+Token count estimated at ~4 chars/token plus ~4 tokens per message for role
+framing. If estimated tokens > provider context limit × 0.9 (10% headroom),
+overflow handling activates.
+
+### Summarisation flow
+
+```
+1. Identify the oldest third of non-system messages in the conversation
+2. Call the provider (same provider, same model) with:
+     "Summarise the following conversation segment in under 200 words,
+      preserving key decisions, facts, and context:"
+     [oldest-third messages]
+3. Receive summary text
+4. Insert a `summary` role message into the DB at the correct sequence position
+5. Mark the summarised messages as compacted (soft-delete, retained for export)
+6. Re-estimate tokens with summary replacing the segment
+7. If still over budget: trim tool result content (keep structure, truncate body)
+8. If still over budget: drop oldest tool-use/result pairs atomically
+   (emergency fallback — log a warning, this should be rare)
+```
+
+The first user message (conversation anchor) is never dropped or summarised
+away. Losing the original framing causes silent context drift.
+
+Compacted messages are retained in the DB (flagged, not deleted) so the full
+conversation history is always available for export or review, even after
+summarisation.
+
+---
+
+## Conversation title generation
+
+On the first user message of a new conversation, the core generates a title
+by truncating the message to ~60 characters at a word boundary. No extra LLM
+call is made for title generation — keep it cheap.
+
+Example: "what are some good ways to structure a rust workspace for a monorepo"
+→ "what are some good ways to structure a rust workspace…"
+
+User can rename at any time.
+
+---
+
+## Key invariants (from zeroclaw — carry forward)
+
+- Tool-use/result pairs are always dropped atomically. A tool result without
+  its call causes a provider 400 error.
+- Orphaned tool messages are removed on every history load from DB.
+- The first user message (anchor) is never dropped from context.
+- Summary messages are system messages, always at position 0 of their segment.
