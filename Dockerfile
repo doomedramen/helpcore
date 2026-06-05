@@ -19,6 +19,7 @@ ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     musl-tools \
+    lld \
     && rm -rf /var/lib/apt/lists/*
 
 RUN case "$TARGETARCH" in \
@@ -40,11 +41,13 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     amd64) \
         CC_x86_64_unknown_linux_musl=musl-gcc \
         CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
+        RUSTFLAGS="-C link-arg=-fuse-ld=lld" \
         cargo build --release --target x86_64-unknown-linux-musl -p helpcore-server \
      && cp target/x86_64-unknown-linux-musl/release/helpcore-server /helpcore-server ;; \
     arm64) \
         CC_aarch64_unknown_linux_musl=musl-gcc \
         CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
+        RUSTFLAGS="-C link-arg=-fuse-ld=lld" \
         cargo build --release --target aarch64-unknown-linux-musl -p helpcore-server \
      && cp target/aarch64-unknown-linux-musl/release/helpcore-server /helpcore-server ;; \
     esac
