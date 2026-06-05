@@ -18,8 +18,9 @@ following up with the dentist, and reviewing the server monitoring setup.
 - **Multiple providers** — Ollama, Anthropic, OpenAI, or any OpenAI-compatible server; switch per-request
 - **Plugin system** — extend via bridge plugins (standalone services); scoped tokens, skill injection into context
 - **Voice plugin** — Whisper STT + KittenTTS in a Docker sidecar; full voice chat loop
+- **Web UI** — Next.js chat interface served from the same port as the API; no separate container
 - **Pre-built Docker images** — CI pushes to GHCR on every merge; `docker compose pull && docker compose up` to update
-- **Token auto-refresh** — CLI handles access token expiry silently
+- **Token auto-refresh** — CLI and web UI both handle access token expiry silently
 
 ---
 
@@ -34,7 +35,7 @@ services:
   helpcore:
     image: ghcr.io/doomedramen/helpcore:latest
     ports:
-      - "3000:3000"
+      - "3000:3000"   # API + web UI on the same port
     volumes:
       - ./config.toml:/config.toml:ro
       - helpcore_data:/data
@@ -56,6 +57,8 @@ volumes:
   ollama_data:
 ```
 
+The Docker image bundles both the Rust API server and the Next.js web UI — no separate container needed. The web UI is served at `http://localhost:3000` and the API at `http://localhost:3000/api/`.
+
 Then:
 
 ```bash
@@ -65,10 +68,17 @@ docker compose up -d
 # 2. Pull a model
 docker compose exec ollama ollama pull qwen2.5:3b
 
-# 3. Run the first-admin wizard
+# 3. Complete first-time setup
+#    On first run, helpcore prints a setup URL to its logs:
+docker compose logs helpcore | grep "Setup required"
+#    Open that URL in your browser to create the admin account,
+#    or run the CLI wizard instead:
 hc setup --server http://localhost:3000
 
-# 4. Chat
+# 4. Open the web UI
+open http://localhost:3000
+
+# 5. Or chat from the terminal
 hc ask "hello, what can you do?"
 ```
 
