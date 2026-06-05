@@ -15,7 +15,7 @@
 
 services:
   helpcore:
-    image: ghcr.io/doomedramen/helpcore:latest
+    image: ${HELPCORE_IMAGE:-ghcr.io/doomedramen/helpcore:latest}
     ports:
       - "3000:3000"
     configs:
