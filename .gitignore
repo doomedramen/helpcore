@@ -1,7 +1,6 @@
 references/zeroclaw/
 .DS_Store
 /target/
-config.toml
 *.db
 /data/
 .env
