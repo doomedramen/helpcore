@@ -121,18 +121,11 @@ For development or testing on your own machine.
 git clone https://github.com/martin/helpcore
 cd helpcore
 
-# Configure
-make config   # copies config.toml.example → config.toml
-
-# Edit config.toml — set your Ollama URL
-# If Ollama is running natively: url = "http://localhost:11434"
-# If using the Docker sidecar:   url = "http://ollama:11434"
-
 # Start (helpcore + Ollama sidecar)
-make docker-up-ollama
+docker compose --profile with-ollama up -d
 
-# Or just helpcore (if you already have Ollama running)
-make docker-up
+# Or just helpcore (if you already have Ollama running elsewhere)
+docker compose up -d
 
 # Pull a model (if using the sidecar)
 docker compose exec ollama ollama pull qwen2.5:3b
@@ -147,9 +140,9 @@ hc ask "test message"
 Useful commands:
 
 ```bash
-make docker-logs    # tail helpcore logs
-make docker-shell   # shell inside the helpcore container
-make docker-down    # stop everything
+docker compose logs -f          # tail helpcore logs
+docker compose exec helpcore sh  # shell inside the helpcore container
+docker compose down              # stop everything
 ```
 
 ---
@@ -165,9 +158,7 @@ cd helpcore
 # Build everything
 cargo build --release --workspace
 
-# Run the server (needs config.toml in the current directory)
-cp config.toml.example config.toml
-# Edit config.toml...
+# Run the server (uses config.toml in the current directory)
 ./target/release/helpcore-server
 
 # CLI
@@ -208,7 +199,7 @@ Credentials are stored at `~/.helpcore/credentials` (mode 600). The CLI auto-ref
 ## Troubleshooting
 
 **"config.toml is a directory, not a file"**  
-Docker bind mounts will create a directory if the host file doesn't exist yet. Run `make config` first, then `docker compose up`.
+Docker bind mounts create a directory if the host file doesn't exist. Make sure you've cloned the repo (which includes `config.toml`) before running `docker compose up`.
 
 **"no provider configured"**  
 helpcore requires at least one `[[providers]]` block with `roles = ["chat"]` in config.toml. Restart after editing.
