@@ -19,7 +19,6 @@ ARG TARGETARCH
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     musl-tools \
-    lld \
     && rm -rf /var/lib/apt/lists/*
 
 RUN case "$TARGETARCH" in \
@@ -32,7 +31,9 @@ WORKDIR /build
 
 COPY . .
 
-# musl-gcc on amd64 targets x86_64; on arm64 it targets aarch64 natively.
+# Use musl-gcc for bundled C dependencies such as SQLite, but do not set it as
+# rustc's linker. musl-gcc cannot link Rust's default static PIE correctly and
+# produces an executable that segfaults in musl before main.
 # BuildKit cache mounts keep the Cargo registry and incremental artefacts
 # across rebuilds so only changed crates are recompiled.
 RUN --mount=type=cache,target=/usr/local/cargo/registry \
@@ -40,17 +41,21 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     case "$TARGETARCH" in \
     amd64) \
         CC_x86_64_unknown_linux_musl=musl-gcc \
-        CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-        RUSTFLAGS="-C link-arg=-fuse-ld=lld" \
         cargo build --release --target x86_64-unknown-linux-musl -p helpcore-server \
      && cp target/x86_64-unknown-linux-musl/release/helpcore-server /helpcore-server ;; \
     arm64) \
         CC_aarch64_unknown_linux_musl=musl-gcc \
-        CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER=musl-gcc \
-        RUSTFLAGS="-C link-arg=-fuse-ld=lld" \
         cargo build --release --target aarch64-unknown-linux-musl -p helpcore-server \
      && cp target/aarch64-unknown-linux-musl/release/helpcore-server /helpcore-server ;; \
     esac
+
+# Prove the target executable reaches Rust main. A loader-startup crash emits no
+# application error, while a healthy binary reports the deliberately missing
+# config file.
+RUN output="$(HELPCORE_CONFIG=/__helpcore_smoke_test_missing__.toml \
+        /helpcore-server 2>&1 || true)" \
+    && printf '%s\n' "$output" \
+    && printf '%s\n' "$output" | grep -q "failed to load config"
 
 # ── Runtime ────────────────────────────────────────────────────────────────────
 FROM alpine:3
