@@ -204,12 +204,14 @@ Update the repository, stop the restart loop, and repair the empty directory:
 
 ```bash
 docker compose -f docker-compose.prod.yml down
+rmdir config.toml   # succeeds only when the old Docker-created directory is empty
+git pull
 make config
 docker compose -f docker-compose.prod.yml up -d
 ```
 
-If `make config` reports that the directory is non-empty, move it aside first
-and rerun `make config`.
+If `rmdir` reports that the directory is non-empty, move it aside and inspect
+its contents before running `git pull`.
 
 **"no provider configured"**  
 helpcore requires at least one `[[providers]]` block with `roles = ["chat"]` in config.toml. Restart after editing.
