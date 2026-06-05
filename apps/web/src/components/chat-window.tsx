@@ -144,7 +144,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
         )}
       </div>
 
-      <div className="max-w-3xl mx-auto w-full">
+      <div className="mx-auto w-full max-w-3xl px-4 pb-4 pt-2">
         <ChatInput
           value={inputValue}
           onChange={setInputValue}
