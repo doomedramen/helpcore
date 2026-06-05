@@ -76,6 +76,13 @@ RUN chmod 0755 /usr/local/bin/helpcore-entrypoint \
 ENV HELPCORE_CONFIG=/config/config.toml \
     HELPCORE_DATA=/data
 
+# Verify first-boot initialization and privilege dropping inside the final image.
+RUN HELPCORE_CONFIG=/tmp/helpcore-smoke/config.toml \
+    HELPCORE_DATA=/tmp/helpcore-smoke/data \
+    helpcore-entrypoint sh -c \
+        'test -f "$HELPCORE_CONFIG" && test "$(id -u)" = "100"' \
+    && rm -rf /tmp/helpcore-smoke
+
 EXPOSE 3000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
