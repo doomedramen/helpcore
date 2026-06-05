@@ -19,6 +19,8 @@ pub fn build(config: &ProviderConfig) -> anyhow::Result<Arc<dyn ChatProvider>> {
                 &config.name,
                 base_url,
                 &config.default_model,
+                config.num_ctx,
+                config.num_predict,
             ))
         }
         ref t => anyhow::bail!("provider type {:?} is not yet implemented", t),
@@ -41,6 +43,8 @@ mod tests {
             url: Some("http://localhost:11434".to_string()),
             default_model: "llama3".to_string(),
             roles: vec![ProviderRole::Chat],
+            num_ctx: None,
+            num_predict: None,
         }
     }
 

@@ -21,6 +21,10 @@ pub trait ChatProvider: Send + Sync {
     fn name(&self) -> &str;
     fn default_model(&self) -> &str;
 
+    /// The maximum context window in tokens for this provider/model.
+    /// Used to decide when to auto-compact conversation history.
+    fn context_limit(&self) -> u32;
+
     async fn complete(
         &self,
         messages: &[ChatMessage],

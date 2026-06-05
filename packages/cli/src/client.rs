@@ -4,9 +4,17 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 
 use helpcore_api::{
-    ChatRequest, LoginRequest, LoginResponse, LogoutRequest, RefreshRequest, RefreshResponse,
-    SetupRequest, SetupStatusResponse, SseChunk, SseDone,
+    ChatRequest, CompactResponse, LoginRequest, LoginResponse, LogoutRequest,
+    MemoryEntry, MemoryListResponse, MemoryReadResponse, MemoryWriteRequest,
+    PersonalityResponse, PersonalityWriteRequest,
+    PluginInfo, PluginListResponse, PluginTokenRequest, PluginTokenResponse,
+    RefreshRequest, RefreshResponse, SetupRequest, SetupStatusResponse, SseChunk, SseDone,
 };
+
+/// Sentinel string returned by `chat()` on a 401 so callers can detect an
+/// expired access token and attempt a refresh without string-matching on
+/// localised error messages.
+const TOKEN_EXPIRED: &str = "access_token_expired";
 
 /// Thin HTTP client for the helpcore server API.
 pub struct Client {
@@ -113,11 +121,195 @@ impl Client {
             .context("failed to reach server")?;
 
         if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
-            bail!("session expired — run 'helpcore login' to authenticate");
+            bail!(TOKEN_EXPIRED);
         }
 
         let resp = require_success(resp).await?;
         parse_sse(resp, &mut on_chunk).await
+    }
+
+    /// Returns true when `e` is the sentinel error emitted by `chat()` on a 401.
+    /// Use this to decide whether to attempt a token refresh and retry.
+    pub fn is_token_expired(e: &anyhow::Error) -> bool {
+        e.to_string() == TOKEN_EXPIRED
+    }
+
+    // ── Memory ────────────────────────────────────────────────────────────────
+
+    pub async fn list_memory(&self, access_token: &str) -> anyhow::Result<Vec<MemoryEntry>> {
+        let resp = self
+            .inner
+            .get(format!("{}/memory", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        let body: MemoryListResponse =
+            require_success(resp).await?.json().await.context("invalid memory list response")?;
+        Ok(body.files)
+    }
+
+    pub async fn get_memory(
+        &self,
+        access_token: &str,
+        path: &str,
+    ) -> anyhow::Result<Option<String>> {
+        let resp = self
+            .inner
+            .get(format!("{}/memory/{path}", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let body: MemoryReadResponse =
+            require_success(resp).await?.json().await.context("invalid memory response")?;
+        Ok(Some(body.content))
+    }
+
+    pub async fn set_memory(
+        &self,
+        access_token: &str,
+        path: &str,
+        content: &str,
+    ) -> anyhow::Result<()> {
+        let resp = self
+            .inner
+            .put(format!("{}/memory/{path}", self.server_url))
+            .bearer_auth(access_token)
+            .json(&MemoryWriteRequest { content: content.to_string() })
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp).await?;
+        Ok(())
+    }
+
+    pub async fn delete_memory(&self, access_token: &str, path: &str) -> anyhow::Result<bool> {
+        let resp = self
+            .inner
+            .delete(format!("{}/memory/{path}", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(false);
+        }
+        require_success(resp).await?;
+        Ok(true)
+    }
+
+    // ── Personality ───────────────────────────────────────────────────────────
+
+    pub async fn get_personality(
+        &self,
+        access_token: &str,
+        name: &str,
+    ) -> anyhow::Result<Option<String>> {
+        let resp = self
+            .inner
+            .get(format!("{}/personality/{name}", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        let body: PersonalityResponse =
+            require_success(resp).await?.json().await.context("invalid personality response")?;
+        Ok(Some(body.content))
+    }
+
+    // ── Compact ───────────────────────────────────────────────────────────────
+
+    pub async fn compact(
+        &self,
+        access_token: &str,
+        conversation_id: &str,
+    ) -> anyhow::Result<CompactResponse> {
+        let resp = self
+            .inner
+            .post(format!(
+                "{}/conversations/{conversation_id}/compact",
+                self.server_url
+            ))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp).await?.json().await.context("invalid compact response")
+    }
+
+    // ── Plugins ───────────────────────────────────────────────────────────────
+
+    pub async fn list_plugins(&self, access_token: &str) -> anyhow::Result<Vec<PluginInfo>> {
+        let resp = self
+            .inner
+            .get(format!("{}/plugins", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        let body: PluginListResponse =
+            require_success(resp).await?.json().await.context("invalid plugin list response")?;
+        Ok(body.plugins)
+    }
+
+    pub async fn create_plugin_token(
+        &self,
+        access_token: &str,
+        plugin_id: &str,
+        permissions: Vec<String>,
+    ) -> anyhow::Result<PluginTokenResponse> {
+        let resp = self
+            .inner
+            .post(format!("{}/plugins/{plugin_id}/tokens", self.server_url))
+            .bearer_auth(access_token)
+            .json(&PluginTokenRequest { permissions })
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp).await?.json().await.context("invalid token response")
+    }
+
+    pub async fn set_plugin_enabled(
+        &self,
+        access_token: &str,
+        plugin_id: &str,
+        enabled: bool,
+    ) -> anyhow::Result<()> {
+        let resp = self
+            .inner
+            .put(format!("{}/plugins/{plugin_id}/enable", self.server_url))
+            .bearer_auth(access_token)
+            .json(&serde_json::json!({ "enabled": enabled }))
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp).await?;
+        Ok(())
+    }
+
+    pub async fn set_personality(
+        &self,
+        access_token: &str,
+        name: &str,
+        content: &str,
+    ) -> anyhow::Result<()> {
+        let resp = self
+            .inner
+            .put(format!("{}/personality/{name}", self.server_url))
+            .bearer_auth(access_token)
+            .json(&PersonalityWriteRequest { content: content.to_string() })
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp).await?;
+        Ok(())
     }
 }
 
@@ -189,7 +381,10 @@ async fn require_success(resp: reqwest::Response) -> anyhow::Result<reqwest::Res
 #[cfg(test)]
 mod tests {
     use super::*;
-    use wiremock::{Mock, MockServer, ResponseTemplate, matchers::{method, path}};
+    use wiremock::{
+        Mock, MockServer, ResponseTemplate,
+        matchers::{header, method, path},
+    };
 
     #[tokio::test]
     async fn login_returns_tokens() {
@@ -242,5 +437,66 @@ mod tests {
         let client = Client::new(server.uri());
         let err = client.login("a@b.com", "wrong").await.unwrap_err();
         assert!(err.to_string().contains("bad creds"));
+    }
+
+    #[tokio::test]
+    async fn chat_401_produces_token_expired_sentinel() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST")).and(path("/chat"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server).await;
+
+        let client = Client::new(server.uri());
+        let err = client.chat("expired", &ChatRequest {
+            conversation_id: None,
+            message: "hi".to_string(),
+            provider_id: None,
+            model: None,
+        }, |_| {}).await.unwrap_err();
+
+        assert!(Client::is_token_expired(&err), "expected token-expired sentinel, got: {err}");
+    }
+
+    #[tokio::test]
+    async fn refresh_returns_new_tokens() {
+        let server = MockServer::start().await;
+        // Simulate first chat → 401, then refresh → new tokens, then chat → 200.
+        Mock::given(method("POST")).and(path("/chat"))
+            .and(header("authorization", "Bearer old-token"))
+            .respond_with(ResponseTemplate::new(401))
+            .mount(&server).await;
+        Mock::given(method("POST")).and(path("/auth/refresh"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
+                "access_token": "new-token",
+                "refresh_token": "new-refresh",
+                "token_type": "Bearer",
+            })))
+            .mount(&server).await;
+        Mock::given(method("POST")).and(path("/chat"))
+            .and(header("authorization", "Bearer new-token"))
+            .respond_with(ResponseTemplate::new(200)
+                .insert_header("content-type", "text/event-stream")
+                .set_body_string(
+                    "event: done\ndata: {\"conversation_id\":\"c1\",\"message_id\":\"m1\"}\n\n"
+                ))
+            .mount(&server).await;
+
+        let client = Client::new(server.uri());
+        let request = ChatRequest {
+            conversation_id: None,
+            message: "hi".to_string(),
+            provider_id: None,
+            model: None,
+        };
+
+        // Caller detects 401, refreshes, retries.
+        let first_err = client.chat("old-token", &request, |_| {}).await.unwrap_err();
+        assert!(Client::is_token_expired(&first_err));
+
+        let tokens = client.refresh("old-refresh").await.unwrap();
+        assert_eq!(tokens.access_token, "new-token");
+
+        let done = client.chat("new-token", &request, |_| {}).await.unwrap();
+        assert_eq!(done.conversation_id, "c1");
     }
 }

@@ -22,16 +22,27 @@ pub struct OllamaProvider {
     name: String,
     base_url: String,
     default_model: String,
+    num_ctx: u32,
+    num_predict: i32,
     client: Client,
 }
 
 impl OllamaProvider {
-    pub fn new(id: &str, name: &str, base_url: &str, default_model: &str) -> Self {
+    pub fn new(
+        id: &str,
+        name: &str,
+        base_url: &str,
+        default_model: &str,
+        num_ctx: Option<u32>,
+        num_predict: Option<u32>,
+    ) -> Self {
         Self {
             id: id.to_string(),
             name: name.to_string(),
             base_url: base_url.trim_end_matches('/').to_string(),
             default_model: default_model.to_string(),
+            num_ctx: num_ctx.unwrap_or(DEFAULT_NUM_CTX),
+            num_predict: num_predict.map(|n| n as i32).unwrap_or(DEFAULT_NUM_PREDICT),
             client: Client::new(),
         }
     }
@@ -71,6 +82,7 @@ impl ChatProvider for OllamaProvider {
     fn id(&self) -> &str { &self.id }
     fn name(&self) -> &str { &self.name }
     fn default_model(&self) -> &str { &self.default_model }
+    fn context_limit(&self) -> u32 { self.num_ctx }
 
     async fn complete(
         &self,
@@ -85,8 +97,8 @@ impl ChatProvider for OllamaProvider {
             messages,
             stream: true,
             options: OllamaOptions {
-                num_ctx: DEFAULT_NUM_CTX,
-                num_predict: DEFAULT_NUM_PREDICT,
+                num_ctx: self.num_ctx,
+                num_predict: self.num_predict,
             },
         };
 
@@ -194,7 +206,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3");
+        let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
         let messages = vec![ChatMessage::user("hi")];
         let mut stream = provider.complete(&messages, None).await.unwrap();
 
@@ -221,7 +233,7 @@ mod tests {
             .await;
 
         let provider =
-            OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3");
+            OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
         let messages = vec![ChatMessage::user("hello")];
         let mut stream = provider.complete(&messages, Some("mistral")).await.unwrap();
 
@@ -245,7 +257,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3");
+        let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
         let result = provider.complete(&[ChatMessage::user("hi")], None).await;
         assert!(matches!(result, Err(ProviderError::Unavailable)));
     }

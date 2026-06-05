@@ -1,4 +1,4 @@
-use helpcore_server::{api, auth, config, conversation as _, db, providers, state};
+use helpcore_server::{api, auth, config, db, plugins, providers, state};
 
 use anyhow::Context;
 use std::sync::Arc;
@@ -15,10 +15,23 @@ async fn main() -> anyhow::Result<()> {
     let config_path = config::Config::config_path();
     tracing::info!(path = %config_path.display(), "loading config");
 
+    // Guard against the docker-compose bind-mount foot-gun: if the host file
+    // doesn't exist Docker creates a *directory* at the mount path, which
+    // gives an opaque "is a directory" read error.  Surface it clearly.
+    if config_path.is_dir() {
+        anyhow::bail!(
+            "{} is a directory, not a file.\n\
+             If you are using Docker, make sure you have created config.toml \
+             (cp config.toml.example config.toml) before running `docker compose up`.",
+            config_path.display()
+        );
+    }
+
     let config = config::Config::load(&config_path).with_context(|| {
         format!(
             "failed to load config from {}. \
-             Create a config.toml or set HELPCORE_CONFIG.",
+             Copy config.toml.example → config.toml and edit it, \
+             or set HELPCORE_CONFIG to the path of your config file.",
             config_path.display()
         )
     })?;
@@ -41,6 +54,11 @@ async fn main() -> anyhow::Result<()> {
             tracing::info!("setup token generated — see stdout for URL");
         }
         Ok(())
+    })?;
+
+    // Load local plugins (registers them in DB for all users).
+    db.call_sync(|conn| {
+        plugins::registry::load_local_plugins(conn, &config.plugins.local)
     })?;
 
     // Load providers from config.

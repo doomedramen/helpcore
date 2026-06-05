@@ -1,15 +1,41 @@
 services:
   helpcore:
     build: .
+    # Dockerfile targets x86_64-unknown-linux-musl — declare the platform
+    # explicitly so Docker doesn't try to build ARM64 on Apple Silicon.
+    platform: linux/amd64
     ports:
       - "3000:3000"
     volumes:
-      - helpcore_data:/data
+      # Copy config.toml.example → config.toml and edit it before running.
+      # If this file doesn't exist, Docker creates a directory here and the
+      # server starts with a confusing error — run `make config` first.
       - ./config.toml:/config.toml:ro
+      - helpcore_data:/data
     environment:
       HELPCORE_CONFIG: /config.toml
       HELPCORE_DATA: /data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # Optional: run Ollama alongside helpcore.
+  # Start with: docker compose --profile with-ollama up
+  # Then pull a model: docker compose exec ollama ollama pull llama3
+  # Set url = "http://ollama:11434" in the [[providers]] section of config.toml.
+  ollama:
+    profiles: [with-ollama]
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
 
 volumes:
   helpcore_data:
+  ollama_data:

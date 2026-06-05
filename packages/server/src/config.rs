@@ -11,7 +11,33 @@ pub struct Config {
     pub logging: LoggingConfig,
     #[serde(default)]
     pub providers: Vec<ProviderConfig>,
+    #[serde(default)]
+    pub plugins: PluginsConfig,
 }
+
+#[derive(Debug, Deserialize, Default)]
+pub struct PluginsConfig {
+    /// Plugin IDs that cannot be installed on this server.
+    #[serde(default)]
+    pub blacklist: Vec<String>,
+    /// Local plugins loaded from the filesystem at startup.
+    /// Useful for development and self-hosted plugins.
+    #[serde(default)]
+    pub local: Vec<LocalPluginConfig>,
+}
+
+/// A plugin shipped alongside the helpcore installation or referenced by path.
+#[derive(Debug, Deserialize, Clone)]
+pub struct LocalPluginConfig {
+    /// Must match the `id` field in the plugin's manifest.toml.
+    pub id: String,
+    /// Filesystem path to the plugin directory (containing manifest.toml).
+    pub path: String,
+    #[serde(default = "default_true")]
+    pub enabled: bool,
+}
+
+fn default_true() -> bool { true }
 
 #[derive(Debug, Deserialize)]
 pub struct ServerConfig {
@@ -32,6 +58,10 @@ pub struct DataConfig {
 
 impl DataConfig {
     pub fn resolved_dir(&self) -> PathBuf {
+        // HELPCORE_DATA env var takes precedence (used by Docker Compose).
+        if let Ok(env_dir) = std::env::var("HELPCORE_DATA") {
+            return PathBuf::from(env_dir);
+        }
         match &self.dir {
             Some(dir) => PathBuf::from(shellexpand::tilde(dir.as_str()).as_ref()),
             None => default_data_dir(),
@@ -72,6 +102,13 @@ pub struct ProviderConfig {
     pub default_model: String,
     #[serde(default)]
     pub roles: Vec<ProviderRole>,
+    /// Context window size in tokens. Defaults to provider-specific values
+    /// when omitted. Set this explicitly for small models: most 3B models
+    /// have a 4096-token window; the server default of 8192 wastes RAM.
+    pub num_ctx: Option<u32>,
+    /// Maximum number of tokens to generate per response. Leave unset to use
+    /// the provider's default.
+    pub num_predict: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Clone, PartialEq, Eq)]

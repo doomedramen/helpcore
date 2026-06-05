@@ -4,5 +4,6 @@ pub mod config;
 pub mod conversation;
 pub mod db;
 pub mod model;
+pub mod plugins;
 pub mod providers;
 pub mod state;

@@ -1,0 +1,239 @@
+# Getting started
+
+This guide takes you from zero to a working helpcore server with a connected CLI client. It covers three scenarios:
+
+- [Docker on a home server / Proxmox](#home-server-proxmox)
+- [Docker on your local machine (dev / testing)](#local-docker)
+- [Building from source](#building-from-source)
+
+---
+
+## Requirements
+
+| Component | Minimum |
+|---|---|
+| Docker | 24+ |
+| RAM (server) | 2 GB without Ollama; 4 GB with `qwen2.5:3b` |
+| Disk (server) | 1 GB for helpcore + ~2 GB per Ollama model |
+| `hc` CLI | any machine with network access to the server |
+
+No Rust toolchain is needed if you use Docker.
+
+---
+
+## Home server / Proxmox
+
+This is the recommended production setup. Pre-built images are published to GHCR on every push to `main`.
+
+### 1. Clone the repo on the server
+
+```bash
+git clone https://github.com/martin/helpcore
+cd helpcore
+```
+
+### 2. Create config.toml
+
+```bash
+cp config.toml.example config.toml
+```
+
+Edit `config.toml`. The minimum changes:
+
+```toml
+[server]
+name = "My helpcore"
+url  = "http://YOUR_SERVER_IP:3000"   # used in the setup wizard URL
+
+[[providers]]
+id            = "ollama"
+type          = "ollama"
+default_model = "qwen2.5:3b"          # ~2 GB RAM
+roles         = ["chat"]
+url           = "http://ollama:11434" # Ollama sidecar on the same compose network
+num_ctx       = 4096
+```
+
+See [configuration.md](configuration.md) for all options.
+
+### 3. Start the stack
+
+```bash
+# Pull the latest image and start helpcore + Ollama sidecar
+make prod-up-ollama
+```
+
+This uses `docker-compose.prod.yml` which pulls `ghcr.io/martin/helpcore:latest`.
+
+Watch the logs to confirm the server is ready:
+
+```bash
+make prod-logs
+# → INFO helpcore_server: listening on 0.0.0.0:3000
+# → INFO helpcore_server: first-run setup required — visit: http://YOUR_IP:3000/setup?token=...
+```
+
+### 4. Pull an Ollama model
+
+```bash
+docker compose -f docker-compose.prod.yml exec ollama ollama pull qwen2.5:3b
+```
+
+Recommended models for a 4 GB RAM budget:
+
+| Model | RAM | Notes |
+|---|---|---|
+| `qwen2.5:3b` | ~2 GB | Good all-rounder, fast |
+| `phi3.5:mini` | ~2.2 GB | Strong reasoning |
+| `gemma2:2b` | ~1.6 GB | Tightest fit |
+| `llama3.2:3b` | ~2 GB | General purpose |
+
+### 5. Install the CLI on your laptop
+
+```bash
+# macOS Apple Silicon
+curl -L https://github.com/martin/helpcore/releases/latest/download/hc-aarch64-apple-darwin \
+  -o /usr/local/bin/hc && chmod +x /usr/local/bin/hc
+```
+
+See the [CLI reference](cli-reference.md) for other platforms and build-from-source instructions.
+
+### 6. Run the first-admin setup wizard
+
+Copy the setup URL from the server logs (or navigate to `http://YOUR_SERVER_IP:3000/setup`), then:
+
+```bash
+hc setup --server http://YOUR_SERVER_IP:3000
+```
+
+The wizard will:
+1. Verify the one-time setup token
+2. Prompt for your admin email and password
+3. Log you in and store credentials at `~/.helpcore/credentials`
+
+### 7. Send your first message
+
+```bash
+hc ask "hello, are you there?"
+```
+
+### Updating
+
+```bash
+make prod-update
+# → pulls latest image, restarts helpcore with zero downtime
+```
+
+---
+
+## Local Docker
+
+For development or testing on your own machine.
+
+```bash
+git clone https://github.com/martin/helpcore
+cd helpcore
+
+# Configure
+make config   # copies config.toml.example → config.toml
+
+# Edit config.toml — set your Ollama URL
+# If Ollama is running natively: url = "http://localhost:11434"
+# If using the Docker sidecar:   url = "http://ollama:11434"
+
+# Start (helpcore + Ollama sidecar)
+make docker-up-ollama
+
+# Or just helpcore (if you already have Ollama running)
+make docker-up
+
+# Pull a model (if using the sidecar)
+docker compose exec ollama ollama pull qwen2.5:3b
+
+# Setup
+hc setup --server http://localhost:3000
+
+# Chat
+hc ask "test message"
+```
+
+Useful commands:
+
+```bash
+make docker-logs    # tail helpcore logs
+make docker-shell   # shell inside the helpcore container
+make docker-down    # stop everything
+```
+
+---
+
+## Building from source
+
+Requirements: Rust 1.87+.
+
+```bash
+git clone https://github.com/martin/helpcore
+cd helpcore
+
+# Build everything
+cargo build --release --workspace
+
+# Run the server (needs config.toml in the current directory)
+cp config.toml.example config.toml
+# Edit config.toml...
+./target/release/helpcore-server
+
+# CLI
+./target/release/helpcore ask "hello"
+# Optionally symlink: ln -s $(pwd)/target/release/helpcore /usr/local/bin/hc
+```
+
+### Cross-compiling for Linux (musl, from macOS)
+
+The Docker image is built as a static musl binary. To build the same locally:
+
+```bash
+# Install musl target and tools
+rustup target add x86_64-unknown-linux-musl
+brew install filosottile/musl-cross/musl-cross
+
+# Build
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER=x86_64-linux-musl-gcc \
+CC_x86_64_unknown_linux_musl=x86_64-linux-musl-gcc \
+cargo build --release --target x86_64-unknown-linux-musl -p helpcore-server
+```
+
+---
+
+## Connecting to a remote server
+
+If the server is already set up and you just need to connect the CLI:
+
+```bash
+hc login --server http://YOUR_SERVER:3000
+# Enter your email and password when prompted
+```
+
+Credentials are stored at `~/.helpcore/credentials` (mode 600). The CLI auto-refreshes the access token when it expires — you only need to log in once.
+
+---
+
+## Troubleshooting
+
+**"config.toml is a directory, not a file"**  
+Docker bind mounts will create a directory if the host file doesn't exist yet. Run `make config` first, then `docker compose up`.
+
+**"no provider configured"**  
+helpcore requires at least one `[[providers]]` block with `roles = ["chat"]` in config.toml. Restart after editing.
+
+**Ollama connection refused**  
+Check `url` in the provider config. Common values:
+- Native Ollama on the same host: `http://localhost:11434`
+- Docker sidecar on the same compose network: `http://ollama:11434`
+- Docker Desktop host: `http://host.docker.internal:11434`
+
+**Model not found in Ollama**  
+Pull it first: `ollama pull qwen2.5:3b` (or `docker compose exec ollama ollama pull qwen2.5:3b`).
+
+**CLI "not logged in" after token expiry**  
+Token auto-refresh should handle this. If it fails, re-run `hc login`.

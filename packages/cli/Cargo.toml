@@ -28,10 +28,10 @@ reqwest      = { workspace = true, features = ["json", "rustls-tls", "stream"] }
 rpassword    = { workspace = true }
 serde        = { workspace = true, features = ["derive"] }
 serde_json   = { workspace = true }
+tempfile     = { workspace = true }
 tokio        = { workspace = true, features = ["rt-multi-thread", "macros", "io-util"] }
 tokio-util   = { workspace = true, features = ["io"] }
 toml         = { workspace = true }
 
 [dev-dependencies]
-tempfile = { workspace = true }
 wiremock = { workspace = true }

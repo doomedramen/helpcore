@@ -1,11 +1,28 @@
+# Build artefacts
 target/
+
+# Not needed for the Rust build
 references/
 apps/
+docs/
+registry/
+plugins/
+
+# Git
 .git/
 .gitignore
-.cargo/audit.toml
-docs/
-*.md
-*.db
+.gitattributes
+
+# Sensitive / local
 config.toml
 .env
+*.db
+/data/
+
+# Tooling
+.cargo/audit.toml
+.claude/
+
+# Docs (all markdown except prompt files needed at compile time)
+*.md
+!prompts/*.md

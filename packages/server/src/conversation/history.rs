@@ -155,6 +155,76 @@ pub fn insert_assistant_message(
     Ok(id)
 }
 
+/// A message row returned for compaction analysis (includes the compacted flag).
+pub struct CompactableMessage {
+    pub id: String,
+    pub role: String,
+    pub content: String,
+    pub sequence: i64,
+}
+
+/// Returns all non-compacted, non-summary messages ordered by sequence.
+/// The first message (the conversation anchor) is tagged — it must not be compacted.
+pub fn load_compactable_messages(
+    conn: &Connection,
+    conversation_id: &str,
+) -> anyhow::Result<Vec<CompactableMessage>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT id, role, content, sequence
+           FROM messages
+          WHERE conversation_id = ?1
+            AND compacted = 0
+            AND role != 'summary'
+          ORDER BY sequence ASC",
+    )?;
+    let rows = stmt
+        .query_map([conversation_id], |row| {
+            Ok(CompactableMessage {
+                id:       row.get(0)?,
+                role:     row.get(1)?,
+                content:  row.get(2)?,
+                sequence: row.get(3)?,
+            })
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+/// Marks a set of messages as compacted (soft-delete — rows are retained for export).
+pub fn mark_compacted(conn: &Connection, ids: &[String]) -> anyhow::Result<()> {
+    for id in ids {
+        conn.execute(
+            "UPDATE messages SET compacted = 1 WHERE id = ?1",
+            [id],
+        )?;
+    }
+    Ok(())
+}
+
+/// Inserts a `summary` role message at an explicit sequence position.
+/// Does NOT use message_count + 1 for the sequence — the caller provides it
+/// so the summary slots in where the compacted segment started.
+pub fn insert_summary_message(
+    conn: &Connection,
+    conversation_id: &str,
+    content: &str,
+    sequence: i64,
+) -> anyhow::Result<String> {
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, sequence, created_at)
+         VALUES (?1, ?2, 'summary', ?3, ?4, ?5)",
+        rusqlite::params![id, conversation_id, content, sequence, now],
+    )?;
+    // Bump message_count so future sequence numbers stay monotonically increasing.
+    conn.execute(
+        "UPDATE conversations SET message_count = message_count + 1, updated_at = ?1 WHERE id = ?2",
+        rusqlite::params![now, conversation_id],
+    )?;
+    Ok(id)
+}
+
 /// Lists conversations for a user, newest first.
 pub fn list_conversations(
     conn: &Connection,

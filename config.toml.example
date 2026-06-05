@@ -1,0 +1,113 @@
+# helpcore — example configuration
+# Copy to config.toml and edit before starting the server.
+# Quick start: cp config.toml.example config.toml  (or: make config)
+
+[server]
+# Human-readable name shown in the setup wizard.
+name = "My helpcore"
+
+# Public base URL of this server (used in the first-run setup URL).
+url  = "http://localhost:3000"
+
+# Port to listen on. Must match the EXPOSE / ports mapping in docker-compose.
+port = 3000
+
+[data]
+# Where helpcore stores its database and user data.
+#
+# Docker:  leave this commented out — HELPCORE_DATA=/data is set by
+#          docker-compose and takes precedence.
+#
+# Native:  uncomment and set an absolute path, or leave commented out to use
+#          the default (~/.helpcore/data on macOS/Linux).
+#
+# dir = "/data"
+
+[logging]
+# Log level: trace | debug | info | warn | error
+level = "info"
+
+[plugins]
+# Plugin IDs that can never be installed on this server, regardless of who asks.
+blacklist = []
+
+# ── Providers ──────────────────────────────────────────────────────────────────
+# At least one provider with role "chat" is required for /chat to work.
+# Multiple providers can be listed; the first matching role is used unless
+# the client specifies a provider_id.
+
+# ── Recommended for low-RAM home servers (4 GB free) ─────────────────────────
+# qwen2.5:3b  — ~2 GB RAM, excellent instruction following for size
+# phi3.5:mini — ~2.2 GB RAM, strong reasoning
+# gemma2:2b   — ~1.6 GB RAM, fits in very tight setups
+#
+# Pull with:  ollama pull qwen2.5:3b
+#             (or: docker compose exec ollama ollama pull qwen2.5:3b)
+
+[[providers]]
+id            = "ollama"
+name          = "Ollama"
+type          = "ollama"
+default_model = "qwen2.5:3b"
+roles         = ["chat"]
+
+# Context window — set to match your model's actual window.
+# qwen2.5:3b and most 3B models: 4096 (some support up to 8192)
+# phi3.5:mini: 4096
+# llama3.2:3b: 4096
+# Leave unset to use the server default of 8192.
+num_ctx = 4096
+
+# Max tokens to generate per response. Unset = 2048 (server default).
+# num_predict = 2048
+
+# ── Ollama URL variants ────────────────────────────────────────────────────────
+# Running Ollama directly on the host (native or Docker host network):
+url = "http://localhost:11434"
+
+# Running helpcore AND Ollama via docker-compose --profile with-ollama:
+# url = "http://ollama:11434"
+
+# helpcore in Docker, Ollama on the host (Docker Desktop):
+# url = "http://host.docker.internal:11434"
+
+
+# ── Larger models (if you have the RAM) ───────────────────────────────────────
+# [[providers]]
+# id            = "ollama-big"
+# name          = "Ollama (large)"
+# type          = "ollama"
+# default_model = "llama3.1:8b"   # ~6 GB RAM
+# roles         = ["chat", "code"]
+# url           = "http://localhost:11434"
+# num_ctx       = 8192
+
+
+# ── Anthropic ─────────────────────────────────────────────────────────────────
+# [[providers]]
+# id            = "anthropic"
+# name          = "Anthropic Claude"
+# type          = "anthropic"
+# api_key       = "sk-ant-..."
+# default_model = "claude-opus-4-5"
+# roles         = ["chat", "code"]
+
+
+# ── OpenAI ────────────────────────────────────────────────────────────────────
+# [[providers]]
+# id            = "openai"
+# name          = "OpenAI"
+# type          = "openai"
+# api_key       = "sk-..."
+# default_model = "gpt-4o"
+# roles         = ["chat"]
+
+
+# ── Any OpenAI-compatible server (LM Studio, vLLM, etc.) ─────────────────────
+# [[providers]]
+# id            = "lm-studio"
+# name          = "LM Studio"
+# type          = "openai_compatible"
+# url           = "http://localhost:1234/v1"
+# default_model = "local-model"
+# roles         = ["chat"]

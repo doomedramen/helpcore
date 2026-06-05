@@ -31,15 +31,10 @@ impl ReliableProvider {
 
 #[async_trait]
 impl ChatProvider for ReliableProvider {
-    fn id(&self) -> &str {
-        self.inner.id()
-    }
-    fn name(&self) -> &str {
-        self.inner.name()
-    }
-    fn default_model(&self) -> &str {
-        self.inner.default_model()
-    }
+    fn id(&self) -> &str { self.inner.id() }
+    fn name(&self) -> &str { self.inner.name() }
+    fn default_model(&self) -> &str { self.inner.default_model() }
+    fn context_limit(&self) -> u32 { self.inner.context_limit() }
 
     async fn complete(
         &self,
@@ -111,6 +106,7 @@ mod tests {
         fn id(&self) -> &str { "flaky" }
         fn name(&self) -> &str { "Flaky" }
         fn default_model(&self) -> &str { "test" }
+        fn context_limit(&self) -> u32 { 4096 }
 
         async fn complete(
             &self,
@@ -130,13 +126,14 @@ mod tests {
         }
     }
 
-    struct AlwaysFailProvider(ProviderError);
+    struct AlwaysFailProvider;
 
     #[async_trait]
     impl ChatProvider for AlwaysFailProvider {
         fn id(&self) -> &str { "fail" }
         fn name(&self) -> &str { "Fail" }
         fn default_model(&self) -> &str { "test" }
+        fn context_limit(&self) -> u32 { 4096 }
         async fn complete(&self, _: &[ChatMessage], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
             Err(ProviderError::Unavailable)
         }
@@ -166,7 +163,7 @@ mod tests {
 
     #[tokio::test]
     async fn exhausts_retries_and_returns_error() {
-        let inner = Arc::new(AlwaysFailProvider(ProviderError::Unavailable));
+        let inner = Arc::new(AlwaysFailProvider);
         let reliable = fast_reliable(inner);
         let result = reliable.complete(&[ChatMessage::user("hi")], None).await;
         assert!(result.is_err());
@@ -180,6 +177,7 @@ mod tests {
             fn id(&self) -> &str { "authfail" }
             fn name(&self) -> &str { "AuthFail" }
             fn default_model(&self) -> &str { "test" }
+            fn context_limit(&self) -> u32 { 4096 }
             async fn complete(&self, _: &[ChatMessage], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
                 Err(ProviderError::AuthenticationFailed)
             }

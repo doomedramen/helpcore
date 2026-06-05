@@ -309,6 +309,7 @@ async fn chat_streams_and_persists_conversation() {
         fn id(&self) -> &str { "mock" }
         fn name(&self) -> &str { "Mock" }
         fn default_model(&self) -> &str { "mock-model" }
+        fn context_limit(&self) -> u32 { 8192 }
         async fn complete(&self, _: &[ChatMessage], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
             Ok(Box::pin(stream::iter(vec![
                 Ok(StreamChunk::delta("Hello")),
@@ -374,6 +375,7 @@ async fn conversation_continues_with_existing_id() {
         fn id(&self) -> &str { "mock" }
         fn name(&self) -> &str { "Mock" }
         fn default_model(&self) -> &str { "mock-model" }
+        fn context_limit(&self) -> u32 { 8192 }
         async fn complete(&self, _: &[ChatMessage], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
             Ok(Box::pin(stream::iter(vec![Ok(StreamChunk::delta("reply")), Ok(StreamChunk::done())])))
         }

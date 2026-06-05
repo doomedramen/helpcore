@@ -12,6 +12,8 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (5, include_str!("migrations/0005_messages.sql")),
     (6, include_str!("migrations/0006_audit_log.sql")),
     (7, include_str!("migrations/0007_setup_tokens.sql")),
+    (8, include_str!("migrations/0008_memory.sql")),
+    (9, include_str!("migrations/0009_plugins.sql")),
 ];
 
 pub struct DbPool {
@@ -138,7 +140,11 @@ pub mod tests {
                 .query_map([], |row| row.get(0))?
                 .collect::<Result<_, _>>()?;
 
-            for expected in &["users", "sessions", "api_keys", "conversations", "messages", "audit_log", "setup_tokens"] {
+            for expected in &[
+                "users", "sessions", "api_keys", "conversations", "messages",
+                "audit_log", "setup_tokens", "user_personality", "memory_files",
+                "plugins", "plugin_installs", "plugin_tokens",
+            ] {
                 assert!(
                     tables.contains(&expected.to_string()),
                     "missing table: {expected}"

@@ -11,7 +11,7 @@ pub async fn run(setup_url: Option<&str>, server_flag: Option<&str>) -> anyhow::
     let (server, token) = if let Some(url_str) = setup_url {
         extract_server_and_token(url_str)?
     } else {
-        let mut creds = Credentials::load()?;
+        let creds = Credentials::load()?;
         let server = creds
             .resolve_server(server_flag)
             .unwrap_or_else(|| {

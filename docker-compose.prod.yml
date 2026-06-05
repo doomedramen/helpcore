@@ -1,0 +1,48 @@
+# Production deployment — pulls the pre-built image from GHCR.
+# On your home server:
+#
+#   cp config.toml.example config.toml   # edit with your settings
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# To update:
+#   docker compose -f docker-compose.prod.yml pull
+#   docker compose -f docker-compose.prod.yml up -d
+#
+# With Ollama sidecar:
+#   docker compose -f docker-compose.prod.yml --profile with-ollama up -d
+
+services:
+  helpcore:
+    image: ghcr.io/martin/helpcore:latest
+    platform: linux/amd64
+    ports:
+      - "3000:3000"
+    volumes:
+      - helpcore_data:/data
+      - ./config.toml:/config.toml:ro
+    environment:
+      HELPCORE_CONFIG: /config.toml
+      HELPCORE_DATA: /data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+
+  # Optional Ollama sidecar — start with --profile with-ollama
+  # Then: docker compose -f docker-compose.prod.yml exec ollama ollama pull qwen2.5:3b
+  ollama:
+    profiles: [with-ollama]
+    image: ollama/ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  helpcore_data:
+  ollama_data:

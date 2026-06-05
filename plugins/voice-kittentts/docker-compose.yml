@@ -1,0 +1,50 @@
+# Sidecar reference — paste the voice-kittentts service block into your
+# helpcore docker-compose.prod.yml to run it alongside helpcore.
+#
+# Prerequisites:
+#   1. Add to config.toml on the helpcore server:
+#
+#        [[plugins.local]]
+#        id      = "voice-kittentts"
+#        path    = "plugins/voice-kittentts"
+#        enabled = true
+#
+#   2. Restart helpcore, then generate a scoped bridge token:
+#
+#        hc plugin token voice-kittentts
+#        # → hcp_abc123...
+#
+#   3. Set HELPCORE_TOKEN below (or in a .env file alongside this compose file).
+#
+#   4. Mount your whisper.cpp binary and model file.
+#      Build whisper.cpp from https://github.com/ggerganov/whisper.cpp and
+#      download a model with: ./models/download-ggml-model.sh base.en
+#
+# Usage (standalone, from the plugins/voice-kittentts directory):
+#   docker compose up --build
+#
+# When merging into docker-compose.prod.yml, make sure the voice-kittentts
+# service is on the same Docker network as the helpcore service.
+
+services:
+  voice-kittentts:
+    build: ./service
+    ports:
+      - "8080:8080"
+    environment:
+      HELPCORE_URL: http://helpcore:3000
+      HELPCORE_TOKEN: "hcp_REPLACE_ME"   # output of: hc plugin token voice-kittentts
+      WHISPER_BIN: /whisper/whisper-cli
+      WHISPER_MODEL: /whisper/models/ggml-base.en.bin
+      KITTEN_MODEL: KittenML/kitten-tts-mini-0.8
+      KITTEN_VOICE: Jasper
+      PORT: "8080"
+    volumes:
+      - ./whisper:/whisper:ro            # whisper.cpp binary + models
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 60s                  # KittenTTS model load takes time
