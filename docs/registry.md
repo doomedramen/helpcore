@@ -16,7 +16,7 @@ costs, no maintenance overhead.
 Default registry URL (set in `config.toml`):
 
 ```
-https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.json
+https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json
 ```
 
 Operators can point `[registry] url` at their own JSON file to run a private
@@ -38,16 +38,16 @@ implemented yet; the install flows below describe the intended design.
   "description": "Control your Home Assistant instance through the AI.",
   "version": "1.0.0",
   "tier": "bridge",
-  "author": "martinsmith",
-  "homepage": "https://github.com/martinsmith/helpcore-plugin-home-assistant",
+  "author": "doomedramen",
+  "homepage": "https://github.com/doomedramen/helpcore-plugin-home-assistant",
   "permissions": ["outbound_http"],
   "source": {
     "type": "github",
-    "repo": "martinsmith/helpcore-plugin-home-assistant",
+    "repo": "doomedramen/helpcore-plugin-home-assistant",
     "ref": "1.1.1",
     "wasm_asset": "plugin.wasm"
   },
-  "setup_guide": "https://github.com/martinsmith/helpcore-plugin-home-assistant#setup"
+  "setup_guide": "https://github.com/doomedramen/helpcore-plugin-home-assistant#setup"
 }
 ```
 

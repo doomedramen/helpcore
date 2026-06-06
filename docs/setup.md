@@ -85,7 +85,7 @@ Download the latest Linux binary from the releases page, or build from source:
 
 ```bash
 # Prebuilt
-curl -L https://github.com/martinsmith/helpcore/releases/latest/download/helpcore-server-linux-x86_64 \
+curl -L https://github.com/doomedramen/helpcore/releases/latest/download/helpcore-server-linux-x86_64 \
   -o helpcore-server && chmod +x helpcore-server
 
 # From source (requires Rust + cross for Linux target on macOS)
@@ -200,7 +200,7 @@ Install the `helpcore` CLI binary on your local machine:
 
 ```bash
 # macOS (native)
-curl -L https://github.com/martinsmith/helpcore/releases/latest/download/helpcore-macos-arm64 \
+curl -L https://github.com/doomedramen/helpcore/releases/latest/download/helpcore-macos-arm64 \
   -o /usr/local/bin/helpcore && chmod +x /usr/local/bin/helpcore
 
 # Alias

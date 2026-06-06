@@ -92,7 +92,7 @@ The plugin is registered for every existing user when helpcore starts. The `skil
 
 ```toml
 [registry]
-url = "https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.json"
+url = "https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json"
 ```
 
 | Key | Default | Description |

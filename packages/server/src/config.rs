@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_REGISTRY_URL: &str =
-    "https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.json";
+    "https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {

@@ -132,7 +132,7 @@ url  = "https://helpcore.example.com"
 blacklist = ["untrusted-plugin-id"]  # plugins that cannot be installed on this server
 
 [registry]
-url = "https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.json"
+url = "https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json"
 ```
 
 The blacklist is enforced before any install attempt. Blacklisted plugins are
@@ -167,7 +167,7 @@ at another compatible JSON file to run a private catalog.
     "repo": "helpcore-plugins/home-assistant"
   },
   "permissions": ["outbound_http"],
-  "author": "martinsmith"
+  "author": "doomedramen"
 }
 ```
 
