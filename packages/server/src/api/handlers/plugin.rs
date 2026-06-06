@@ -219,6 +219,13 @@ pub async fn update_plugin(
         ));
     }
 
+    let version_path = package::plugin_root(&state.data_dir, &auth_user.id, &plugin_id)
+        .join("versions")
+        .join(&plugin.version);
+    if version_path.exists() {
+        let _ = std::fs::remove_dir_all(&version_path);
+    }
+
     let package = package::install_store_package(&state.data_dir, &auth_user.id, &plugin)
         .await
         .map_err(|error| AppError::BadRequest(error.to_string()))?;
