@@ -74,11 +74,14 @@ pub struct StorePlugin {
     pub description: String,
     pub version: String,
     pub tier: String,
+    #[serde(default)]
     pub author: String,
+    #[serde(default)]
     pub homepage: String,
     #[serde(default)]
     pub permissions: Vec<String>,
-    pub source: StorePluginSource,
+    #[serde(default)]
+    pub source: Option<StorePluginSource>,
     pub setup_guide: Option<String>,
     pub package: Option<StorePluginPackage>,
 }
