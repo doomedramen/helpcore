@@ -6,6 +6,7 @@ import type {
   LoginResponse,
   Message,
   PluginInfo,
+  PluginListResponse,
   PluginStoreResponse,
   RefreshResponse,
   SetupStatusResponse,
@@ -142,9 +143,8 @@ export function updateAdminConfig(config: AdminConfigUpdate, token: string): Pro
 
 // ── Plugins ──────────────────────────────────────────────────────────────────
 
-export async function listPlugins(token: string): Promise<PluginInfo[]> {
-  const response = await req<{ plugins: PluginInfo[] }>('/plugins', {}, token);
-  return response.plugins;
+export async function listPlugins(token: string): Promise<PluginListResponse> {
+  return req<PluginListResponse>('/plugins', {}, token);
 }
 
 export function listPluginStore(token: string): Promise<PluginStoreResponse> {

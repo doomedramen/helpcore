@@ -50,6 +50,17 @@ pub async fn list_plugins(
         .call(move |conn| registry::list_enabled(conn, &uid))
         .await?;
 
+    let mut capabilities = Vec::new();
+    for p in &installed {
+        if p.enabled {
+            for feature in &p.manifest.provides {
+                if !capabilities.contains(feature) {
+                    capabilities.push(feature.clone());
+                }
+            }
+        }
+    }
+
     let plugins = installed
         .into_iter()
         .map(|plugin| {
@@ -76,6 +87,7 @@ pub async fn list_plugins(
                 available_version,
                 tier: plugin.tier,
                 permissions: plugin.permissions,
+                provides: plugin.manifest.provides.clone(),
                 enabled: plugin.enabled,
                 configured,
                 update_available,
@@ -86,7 +98,7 @@ pub async fn list_plugins(
         })
         .collect();
 
-    Ok(Json(PluginListResponse { plugins }))
+    Ok(Json(PluginListResponse { plugins, capabilities }))
 }
 
 pub async fn list_store(
@@ -131,6 +143,7 @@ pub async fn list_store(
                 homepage: plugin.homepage,
                 setup_guide: plugin.setup_guide,
                 permissions: plugin.permissions,
+                provides: plugin.provides,
             }
         })
         .collect::<Vec<_>>();

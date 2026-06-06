@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
-import { chat, getMessages, retryMessage, cancelGeneration, ApiError } from '@/lib/api';
+import { chat, getMessages, listPlugins, retryMessage, cancelGeneration, ApiError } from '@/lib/api';
 import { useAuth } from '@/context/auth';
 import type { Message, SseDone, SseStarted } from '@/lib/types';
 import MessageBubble from './message-bubble';
@@ -55,6 +55,12 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       keepPreviousData: false,
     },
   );
+
+  const { data: pluginCaps } = useSWR(
+    accessToken ? ['/api/plugins/caps', accessToken] : null,
+    ([, token]) => listPlugins(token),
+  );
+  const hasAudio = pluginCaps?.capabilities.includes('audio') ?? false;
 
   // Track the actively-generating conversation separately so we never show
   // the stop button for stale data from a different conversation.
@@ -264,6 +270,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                 onRetry={retry}
                 retrying={retryingId === message.id}
                 accessToken={accessToken ?? ''}
+                hasAudio={hasAudio}
               />
             ))}
             {visibleError && (

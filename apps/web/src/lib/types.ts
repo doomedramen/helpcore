@@ -73,6 +73,11 @@ export interface SecretStatus { configured: boolean; }
 export type ConfigValue = ConfigScalar | SecretStatus;
 export type ConfigValues = Record<string, ConfigValue>;
 
+export interface PluginListResponse {
+  plugins: PluginInfo[];
+  capabilities: string[];
+}
+
 export interface PluginInfo {
   id: string;
   name: string;
@@ -82,6 +87,7 @@ export interface PluginInfo {
   available_version: string | null;
   tier: 'wasm' | 'bridge';
   permissions: string[];
+  provides: string[];
   enabled: boolean;
   configured: boolean;
   update_available: boolean;
@@ -101,6 +107,7 @@ export interface PluginStoreItem {
   homepage: string;
   setup_guide: string | null;
   permissions: string[];
+  provides: string[];
   installable: boolean;
   installed: boolean;
   enabled: boolean;

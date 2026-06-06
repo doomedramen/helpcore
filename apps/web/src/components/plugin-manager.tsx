@@ -25,7 +25,7 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
     mutate: refreshInstalled,
   } = useSWR(
     ['/api/plugins', accessToken],
-    ([, token]) => listPlugins(token),
+    ([, token]) => listPlugins(token).then(r => r.plugins),
   );
   const {
     data: store,

@@ -229,6 +229,8 @@ pub struct PluginInfo {
     pub available_version: Option<String>,
     pub tier:        String,
     pub permissions: Vec<String>,
+    #[serde(default)]
+    pub provides: Vec<String>,
     pub enabled:     bool,
     pub configured:  bool,
     pub update_available: bool,
@@ -243,6 +245,8 @@ pub struct PluginInfo {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PluginListResponse {
     pub plugins: Vec<PluginInfo>,
+    /// Capabilities available across all installed plugins (e.g. "audio").
+    pub capabilities: Vec<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -269,6 +273,8 @@ pub struct PluginStoreItem {
     pub homepage:    String,
     pub setup_guide: Option<String>,
     pub permissions: Vec<String>,
+    #[serde(default)]
+    pub provides: Vec<String>,
     pub installable: bool,
     pub installed:   bool,
     pub enabled:     bool,

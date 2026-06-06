@@ -30,6 +30,9 @@ pub struct Manifest {
     /// User-configurable fields declared by the plugin.
     #[serde(default)]
     pub config_schema: Vec<ConfigField>,
+    /// Features this plugin provides (e.g. "audio").
+    #[serde(default)]
+    pub provides: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -84,6 +87,8 @@ pub struct StorePlugin {
     pub homepage: String,
     #[serde(default)]
     pub permissions: Vec<String>,
+    #[serde(default)]
+    pub provides: Vec<String>,
     #[serde(default)]
     pub source: Option<StorePluginSource>,
     pub setup_guide: Option<String>,
@@ -317,6 +322,7 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
                 bridge: None,
                 allowed_hosts: Vec::new(),
                 config_schema: Vec::new(),
+                provides: Vec::new(),
             });
             let tools_json: String = row.get(10)?;
             let config_json: String = row.get(11)?;

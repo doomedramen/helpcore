@@ -29,9 +29,10 @@ interface Props {
   onRetry?: (messageId: string) => void;
   retrying?: boolean;
   accessToken: string;
+  hasAudio?: boolean;
 }
 
-export default function MessageBubble({ message, onRetry, retrying = false, accessToken }: Props) {
+export default function MessageBubble({ message, onRetry, retrying = false, accessToken, hasAudio = false }: Props) {
   const isUser = message.role === 'user';
 
   if (isUser) {
@@ -108,7 +109,7 @@ export default function MessageBubble({ message, onRetry, retrying = false, acce
     };
   }, []);
 
-  const canSpeak = message.status === 'complete' && !!message.content;
+  const canSpeak = hasAudio && message.status === 'complete' && !!message.content;
 
   if (!isUser && !active && !retryable && !message.content) return null;
 
