@@ -78,7 +78,7 @@ export default function ChatInput({
           <SelectTrigger size="sm" className="max-w-full text-xs">
             <SelectValue placeholder="No chat providers available" />
           </SelectTrigger>
-          <SelectContent>
+          <SelectContent side="top">
             {providers.map(provider => (
               <SelectItem key={provider.id} value={provider.id}>
                 {provider.name} · {provider.default_model}
