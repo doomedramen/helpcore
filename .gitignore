@@ -5,3 +5,4 @@ references/zeroclaw/
 /data/
 .env
 /plugins/homeassistant/target
+/plugins/voice/bridge/target

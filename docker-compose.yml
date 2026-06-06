@@ -37,6 +37,35 @@ services:
         max-file: "3"
     restart: unless-stopped
 
+  # ── Voice (STT / TTS services) ───────────────────────────────────────────────
+  # Start with: docker compose --profile voice up
+  # Run the voice bridge binary separately; point it at these services.
+
+  # Speaches: OpenAI-compatible STT (faster-whisper) + TTS (Piper/Kokoro) — CPU only.
+  # https://github.com/speaches-ai/speaches
+  speaches:
+    profiles: [voice]
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - speaches_data:/home/user/.cache
+    restart: unless-stopped
+
+  # Optional: artibex/piper-http (standalone Piper TTS, simple GET API).
+  # Start with: docker compose --profile voice-piper up
+  # Then set TTS_BACKEND=piper_http and TTS_URL=http://piper:5000 in voice-bridge.
+  # Voice list: https://github.com/rhasspy/piper/blob/master/VOICES.md
+  piper:
+    profiles: [voice-piper]
+    image: artibex/piper-http:latest
+    ports:
+      - "5000:5000"
+    environment:
+      MODEL_DOWNLOAD_LINK: "${PIPER_MODEL_URL:-https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx}"
+    restart: unless-stopped
+
 volumes:
   helpcore_data:
   ollama_data:
+  speaches_data:

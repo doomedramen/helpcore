@@ -42,7 +42,9 @@ async function req<T>(path: string, init: RequestInit = {}, token?: string): Pro
   }
 
   if (resp.status === 204) return undefined as T;
-  return resp.json() as Promise<T>;
+  const text = await resp.text();
+  if (!text) return undefined as T;
+  return JSON.parse(text) as T;
 }
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
