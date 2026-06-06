@@ -473,6 +473,38 @@ pub async fn delete_conversation(
     if deleted { Ok(StatusCode::NO_CONTENT) } else { Err(AppError::NotFound) }
 }
 
+// ── POST /conversations/:id/cancel ───────────────────────────────────────────
+
+pub async fn cancel_conversation(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Path(conv_id): Path<String>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user_id = auth_user.id.clone();
+    let cid = conv_id.clone();
+
+    let cid2 = cid.clone();
+    let exists = state
+        .db
+        .call(move |conn| {
+            let c: Option<ConversationSummary> =
+                history::get_conversation(conn, &cid, &user_id)?;
+            Ok(c.is_some())
+        })
+        .await?;
+
+    if !exists {
+        return Err(AppError::NotFound);
+    }
+
+    let interrupted = state
+        .db
+        .call(move |conn| history::interrupt_active_messages_for_conversation(conn, &cid2))
+        .await?;
+
+    Ok(Json(serde_json::json!({ "interrupted": interrupted })))
+}
+
 // ── POST /conversations/:id/compact ──────────────────────────────────────────
 
 pub async fn compact_conversation(

@@ -3,11 +3,17 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
-import { chat, getMessages, retryMessage, ApiError } from '@/lib/api';
+import { chat, getMessages, retryMessage, cancelGeneration, ApiError } from '@/lib/api';
 import { useAuth } from '@/context/auth';
 import type { Message, SseDone, SseStarted } from '@/lib/types';
 import MessageBubble from './message-bubble';
 import ChatInput from './chat-input';
+import { Pencil, Trash2 } from 'lucide-react';
+
+interface QueueItem {
+  id: string;
+  text: string;
+}
 
 interface Props {
   conversationId: string | null;
@@ -18,15 +24,19 @@ const isActive = (message: Message) => (
   message.status === 'pending' || message.status === 'streaming'
 );
 
+let nextQueueId = 1;
+
 export default function ChatWindow({ conversationId, onConversationCreated }: Props) {
   const { accessToken, refreshAccessToken } = useAuth();
   const router = useRouter();
   const { mutate: mutateGlobal } = useSWRConfig();
   const bottomRef = useRef<HTMLDivElement>(null);
   const [inputValue, setInputValue] = useState('');
-  const [submitting, setSubmitting] = useState(false);
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState('');
+  const [queue, setQueue] = useState<QueueItem[]>([]);
+  const abortRef = useRef<AbortController | null>(null);
+  const processingRef = useRef(false);
 
   const messageKey = accessToken && conversationId
     ? [`/conversations/${conversationId}/messages`, accessToken] as const
@@ -49,7 +59,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, queue]);
 
   const refreshConversation = useCallback(async (id: string) => {
     if (!accessToken) return;
@@ -104,43 +114,108 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   }, [accessToken, refreshAccessToken, router]);
 
   const sendMessage = useCallback(async (text: string) => {
-    setSubmitting(true);
     setError('');
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       await runWithRefresh(token => chat({
         message: text,
         conversation_id: conversationId ?? undefined,
         token,
         ...streamHandlers(conversationId ?? undefined),
+        signal: controller.signal,
       }));
     } catch (caught) {
+      if (caught instanceof DOMException && caught.name === 'AbortError') {
+        return;
+      }
       setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
       if (conversationId) await refreshMessages();
     } finally {
-      setSubmitting(false);
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
     }
   }, [conversationId, refreshMessages, runWithRefresh, streamHandlers]);
+
+  // Auto-process queue: when no active generation, send the oldest queued item
+  useEffect(() => {
+    if (!active && queue.length > 0 && !processingRef.current) {
+      processingRef.current = true;
+      const [first, ...rest] = queue;
+      setQueue(rest);
+      sendMessage(first.text).finally(() => {
+        processingRef.current = false;
+      });
+    }
+  }, [active, queue, sendMessage]);
+
+  const handleSend = useCallback((text: string) => {
+    const id = String(nextQueueId++);
+    setQueue(prev => [...prev, { id, text }]);
+  }, []);
+
+  const handleStop = useCallback(async () => {
+    setError('');
+    abortRef.current?.abort();
+    abortRef.current = null;
+    if (conversationId && accessToken) {
+      try {
+        await cancelGeneration(conversationId, accessToken);
+        await refreshMessages();
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          const fresh = await refreshAccessToken();
+          if (fresh) {
+            await cancelGeneration(conversationId, fresh);
+            await refreshMessages();
+          }
+        }
+      }
+    }
+  }, [conversationId, accessToken, refreshMessages, refreshAccessToken]);
+
+  const handleEditQueueItem = useCallback((id: string) => {
+    const item = queue.find(q => q.id === id);
+    if (item) {
+      setInputValue(item.text);
+      setQueue(prev => prev.filter(q => q.id !== id));
+    }
+  }, [queue]);
+
+  const handleDeleteQueueItem = useCallback((id: string) => {
+    setQueue(prev => prev.filter(q => q.id !== id));
+  }, []);
 
   const retry = useCallback(async (messageId: string) => {
     if (!conversationId) return;
     setRetryingId(messageId);
     setError('');
+    const controller = new AbortController();
+    abortRef.current = controller;
     try {
       await runWithRefresh(token => retryMessage({
         conversationId,
         messageId,
         token,
         ...streamHandlers(conversationId),
+        signal: controller.signal,
       }));
     } catch (caught) {
+      if (caught instanceof DOMException && caught.name === 'AbortError') {
+        return;
+      }
       setError(caught instanceof ApiError ? caught.message : 'Could not retry the response.');
       await refreshMessages();
     } finally {
+      if (abortRef.current === controller) {
+        abortRef.current = null;
+      }
       setRetryingId(null);
     }
   }, [conversationId, refreshMessages, runWithRefresh, streamHandlers]);
 
-  const empty = !historyLoading && messages.length === 0;
+  const empty = !historyLoading && messages.length === 0 && queue.length === 0;
   const visibleError = error || (historyError instanceof Error ? historyError.message : '');
 
   return (
@@ -172,6 +247,32 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                 {visibleError}
               </div>
             )}
+            {queue.map(item => (
+              <div
+                key={item.id}
+                className="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400"
+              >
+                <div className="flex-1 whitespace-pre-wrap leading-relaxed">{item.text}</div>
+                <div className="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    onClick={() => handleEditQueueItem(item.id)}
+                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                    aria-label="Edit message"
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDeleteQueueItem(item.id)}
+                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                    aria-label="Delete message"
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              </div>
+            ))}
             <div ref={bottomRef} />
           </div>
         )}
@@ -181,8 +282,10 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
         <ChatInput
           value={inputValue}
           onChange={setInputValue}
-          onSend={sendMessage}
-          disabled={active || submitting || retryingId !== null}
+          onSend={handleSend}
+          onStop={handleStop}
+          disabled={retryingId !== null}
+          active={active}
         />
       </div>
     </div>

@@ -425,10 +425,27 @@ pub fn interrupt_active_messages(conn: &Connection) -> anyhow::Result<usize> {
     Ok(conn.execute(
         "UPDATE messages
          SET status = 'interrupted',
-             error = 'The server restarted while this response was being generated.',
-             updated_at = ?1
+              error = 'The server restarted while this response was being generated.',
+              updated_at = ?1
          WHERE role = 'assistant' AND status IN ('pending', 'streaming')",
         [now],
+    )?)
+}
+
+pub fn interrupt_active_messages_for_conversation(
+    conn: &Connection,
+    conversation_id: &str,
+) -> anyhow::Result<usize> {
+    let now = Utc::now().to_rfc3339();
+    Ok(conn.execute(
+        "UPDATE messages
+         SET status = 'interrupted',
+             error = 'Generation was cancelled by the user.',
+             updated_at = ?1
+         WHERE conversation_id = ?2
+           AND role = 'assistant'
+           AND status IN ('pending', 'streaming')",
+        rusqlite::params![now, conversation_id],
     )?)
 }
 

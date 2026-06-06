@@ -33,6 +33,7 @@ pub fn create(state: Arc<AppState>) -> Router {
         )
         .route("/conversations/{id}", delete(handlers::chat::delete_conversation))
         .route("/conversations/{id}/compact", post(handlers::chat::compact_conversation))
+        .route("/conversations/{id}/cancel", post(handlers::chat::cancel_conversation))
         // Personality
         .route(
             "/personality/{name}",

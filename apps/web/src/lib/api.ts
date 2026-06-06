@@ -103,6 +103,10 @@ export function deleteConversation(id: string, token: string): Promise<void> {
   return req(`/conversations/${id}`, { method: 'DELETE' }, token);
 }
 
+export function cancelGeneration(id: string, token: string): Promise<void> {
+  return req(`/conversations/${id}/cancel`, { method: 'POST' }, token);
+}
+
 export function retryMessage(args: {
   conversationId: string;
   messageId: string;
