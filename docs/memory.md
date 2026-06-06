@@ -70,7 +70,7 @@ Memory files are arbitrary markdown files you create under any path. They're loa
 
 ```bash
 # Write directly
-hc memory set notes/work.md --set "Working on voice plugin. Whisper + KittenTTS."
+hc memory set notes/work.md --set "Working on the home server project."
 
 # Open in $EDITOR (creates if it doesn't exist)
 hc memory set projects/helpcore.md --edit

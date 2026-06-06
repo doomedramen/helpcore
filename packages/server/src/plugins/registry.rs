@@ -471,19 +471,19 @@ mod tests {
     fn load_manifest_from_dir() {
         let dir = tempfile::tempdir().unwrap();
         let manifest_content = r#"
-id = "voice-kittentts"
-name = "Voice"
+id = "test-bridge-plugin"
+name = "Test Bridge"
 version = "0.1.0"
-description = "Voice plugin"
+description = "A test bridge plugin"
 tier = "bridge"
 permissions = ["outbound_http"]
 "#;
         std::fs::write(dir.path().join("manifest.toml"), manifest_content).unwrap();
         let mut skill_file = std::fs::File::create(dir.path().join("skill.md")).unwrap();
-        skill_file.write_all(b"Keep responses spoken-word-friendly.").unwrap();
+        skill_file.write_all(b"Test skill content.").unwrap();
 
         let (manifest, skill) = load_manifest(dir.path()).unwrap();
-        assert_eq!(manifest.id, "voice-kittentts");
-        assert_eq!(skill.as_deref(), Some("Keep responses spoken-word-friendly."));
+        assert_eq!(manifest.id, "test-bridge-plugin");
+        assert_eq!(skill.as_deref(), Some("Test skill content."));
     }
 }

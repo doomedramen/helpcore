@@ -17,7 +17,6 @@ following up with the dentist, and reviewing the server monitoring setup.
 - **Conversation history** — all conversations stored in SQLite with full-text search; auto-compaction when context fills up
 - **Multiple providers** — Ollama, Anthropic, OpenAI, or any OpenAI-compatible server; switch per-request
 - **Plugin system** — extend via bridge plugins (standalone services); scoped tokens, skill injection into context
-- **Voice plugin** — Whisper STT + KittenTTS in a Docker sidecar; full voice chat loop
 - **Web UI** — Next.js chat, per-user plugin store, and admin settings served from the same port as the API
 - **Pre-built Docker images** — CI pushes to GHCR on every merge; `docker compose pull && docker compose up` to update
 - **Token auto-refresh** — CLI and web UI both handle access token expiry silently
@@ -147,20 +146,18 @@ Plugins are registered in `config.toml` and auto-loaded at startup:
 
 ```toml
 [[plugins.local]]
-id      = "voice-kittentts"
-path    = "plugins/voice-kittentts"
+id      = "my-plugin"
+path    = "plugins/my-plugin"
 enabled = true
 ```
 
 Manage via CLI:
 ```bash
-hc plugin ls                          # list installed plugins
-hc plugin token voice-kittentts       # generate scoped bridge token
-hc plugin enable  voice-kittentts
-hc plugin disable voice-kittentts
+hc plugin ls            # list installed plugins
+hc plugin token my-plugin   # generate scoped bridge token
+hc plugin enable  my-plugin
+hc plugin disable my-plugin
 ```
-
-See [docs/voice-plugin.md](docs/voice-plugin.md) for the voice plugin setup.
 
 ---
 
@@ -172,7 +169,7 @@ See [docs/voice-plugin.md](docs/voice-plugin.md) for the voice plugin setup.
 | [Configuration](docs/configuration.md) | config.toml reference |
 | [CLI reference](docs/cli-reference.md) | Every `hc` command |
 | [Memory & personality](docs/memory.md) | Soul, identity, memory files |
-| [Voice plugin](docs/voice-plugin.md) | Whisper + KittenTTS setup |
+
 
 ---
 

@@ -174,7 +174,7 @@ enum PluginCommands {
     },
     /// Generate a scoped bearer token for a bridge plugin
     Token {
-        /// Plugin ID (e.g. voice-kittentts)
+        /// Plugin ID (e.g. home-assistant-bridge)
         plugin_id: String,
         /// Permissions to grant (space-separated, e.g. outbound_http)
         #[arg(long, value_delimiter = ',')]

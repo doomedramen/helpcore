@@ -1,6 +1,6 @@
 -- Registry cache: metadata for plugins the server knows about.
 CREATE TABLE IF NOT EXISTS plugins (
-    id         TEXT NOT NULL PRIMARY KEY,   -- e.g. "voice-kittentts"
+    id         TEXT NOT NULL PRIMARY KEY,   -- e.g. "home-assistant-bridge"
     name       TEXT NOT NULL,
     version    TEXT NOT NULL,
     manifest   TEXT NOT NULL,              -- full manifest.toml as JSON

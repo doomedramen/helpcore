@@ -67,10 +67,10 @@ hc memory rm notes.md           # delete a memory file
 
 ### Plugin management
 ```bash
-hc plugin ls                      # list installed plugins
-hc plugin token voice-kittentts   # generate a bridge plugin token
-hc plugin enable voice-kittentts  # enable a plugin
-hc plugin disable voice-kittentts # disable a plugin
+hc plugin ls                     # list installed plugins
+hc plugin token my-plugin        # generate a bridge plugin token
+hc plugin enable my-plugin       # enable a plugin
+hc plugin disable my-plugin      # disable a plugin
 ```
 
 ---

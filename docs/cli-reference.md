@@ -206,7 +206,7 @@ List all plugins registered on the server for your account.
 
 ```bash
 hc plugin ls
-# → voice-kittentts  Voice Conversations  v0.1.0  bridge  enabled
+# → my-bridge-plugin  My Bridge  v1.0.0  bridge  enabled
 ```
 
 ### `hc plugin token <plugin-id>`
@@ -214,7 +214,7 @@ hc plugin ls
 Generate a scoped bearer token for a bridge plugin. Tokens are `hcp_`-prefixed and can only call the APIs the plugin was granted access to.
 
 ```bash
-hc plugin token voice-kittentts
+hc plugin token my-bridge-plugin
 # → hcp_abc123...
 ```
 
@@ -229,7 +229,7 @@ Copy the token into the bridge service's `HELPCORE_TOKEN` environment variable.
 Enable a plugin for your account.
 
 ```bash
-hc plugin enable voice-kittentts
+hc plugin enable my-bridge-plugin
 ```
 
 ### `hc plugin disable <plugin-id>`
@@ -237,7 +237,7 @@ hc plugin enable voice-kittentts
 Disable a plugin without uninstalling it.
 
 ```bash
-hc plugin disable voice-kittentts
+hc plugin disable my-bridge-plugin
 ```
 
 ---

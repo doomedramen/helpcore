@@ -70,8 +70,8 @@ Each local plugin needs a `[[plugins.local]]` block pointing to a directory cont
 
 ```toml
 [[plugins.local]]
-id      = "voice-kittentts"
-path    = "plugins/voice-kittentts"   # relative to the server working directory
+id      = "my-plugin"
+path    = "plugins/my-plugin"   # relative to the server working directory
 enabled = true
 ```
 

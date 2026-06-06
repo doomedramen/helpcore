@@ -245,21 +245,35 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
               />
               <div className="mt-4 border-t border-slate-200 pt-3 dark:border-slate-800">
                 {!plugin.installed && (
-                  <button
-                    type="button"
-                    disabled={working !== null || !plugin.installable}
-                    onClick={() => act(
-                      `install:${plugin.id}`,
-                      () => installPlugin(plugin.id, plugin.permissions, accessToken),
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={working !== null || !plugin.installable}
+                      onClick={() => act(
+                        `install:${plugin.id}`,
+                        () => installPlugin(plugin.id, plugin.permissions, accessToken),
+                      )}
+                      className={primaryButtonClass}
+                    >
+                      {plugin.blocked
+                        ? 'Blocked by server'
+                        : plugin.installable
+                          ? working === `install:${plugin.id}` ? 'Installing…' : 'Install'
+                          : plugin.tier === 'bridge'
+                            ? 'Bridge service'
+                            : 'Package unavailable'}
+                    </button>
+                    {!plugin.installable && plugin.tier === 'bridge' && (
+                      <span className="text-xs text-slate-400 dark:text-slate-500">
+                        Deployed separately by admin.
+                        {plugin.setup_guide && (
+                          <a href={plugin.setup_guide} target="_blank" rel="noreferrer" className="ml-1 text-blue-500 hover:underline">
+                            Setup guide
+                          </a>
+                        )}
+                      </span>
                     )}
-                    className={primaryButtonClass}
-                  >
-                    {plugin.blocked
-                      ? 'Blocked by server'
-                      : plugin.installable
-                        ? working === `install:${plugin.id}` ? 'Installing…' : 'Install'
-                        : 'Package unavailable'}
-                  </button>
+                  </div>
                 )}
                 {plugin.installed && plugin.update_available && (
                   <button
