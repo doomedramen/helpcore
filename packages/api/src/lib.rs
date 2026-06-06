@@ -18,6 +18,8 @@ pub struct LoginResponse {
     pub access_token: String,
     pub refresh_token: String,
     pub token_type: String,
+    #[serde(default)]
+    pub force_password_change: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -43,6 +45,52 @@ pub struct CurrentUserResponse {
     pub email: String,
     pub display_name: Option<String>,
     pub role: String,
+    pub timezone: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct UpdateMeRequest {
+    pub display_name: Option<String>,
+    pub timezone: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ChangePasswordRequest {
+    pub current_password: String,
+    pub new_password: String,
+}
+
+// ── API Keys ──────────────────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateApiKeyRequest {
+    pub name: String,
+    /// Optional ISO-8601 expiry date.
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct CreateApiKeyResponse {
+    pub id: String,
+    pub name: String,
+    pub key_prefix: String,
+    /// The full key value — shown only once. Store it securely.
+    pub key: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ApiKeyInfo {
+    pub id: String,
+    pub name: String,
+    pub key_prefix: String,
+    pub created_at: String,
+    pub last_used_at: Option<String>,
+    pub expires_at: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListApiKeysResponse {
+    pub keys: Vec<ApiKeyInfo>,
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
@@ -382,6 +430,62 @@ pub struct AdminConfigUpdateRequest {
     pub plugin_blacklist: Vec<String>,
     #[serde(default)]
     pub providers: Vec<AdminProviderUpdate>,
+}
+
+// ── Admin user management ─────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminUserSummary {
+    pub id: String,
+    pub email: String,
+    pub display_name: Option<String>,
+    pub role: String,
+    pub status: String,
+    pub created_at: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminCreateUserRequest {
+    pub email: String,
+    pub password: String,
+    pub display_name: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminUpdateUserRequest {
+    /// "active" or "deactivated"
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminResetPasswordRequest {
+    pub password: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct AdminListUsersResponse {
+    pub users: Vec<AdminUserSummary>,
+}
+
+// ── Admin provider grants ─────────────────────────────────────────────────────
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProviderGrantInfo {
+    pub provider_id: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ListProviderGrantsResponse {
+    pub grants: Vec<ProviderGrantInfo>,
+    /// Provider IDs that have no explicit grant (default: enabled).
+    pub ungrated_providers: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SetProviderGrantsRequest {
+    /// Each entry sets the enabled state for a provider. Omitted providers are left unchanged.
+    pub grants: Vec<ProviderGrantInfo>,
 }
 
 // ── Errors ────────────────────────────────────────────────────────────────────

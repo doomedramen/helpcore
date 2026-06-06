@@ -496,12 +496,12 @@ async fn invalid_provider_save_preserves_file_and_live_registry() {
             "registry_url": helpcore_server::config::DEFAULT_REGISTRY_URL,
             "plugin_blacklist": [],
             "providers": [{
-                "id": "unsupported",
-                "name": "Unsupported",
+                "id": "missing-key",
+                "name": "Missing key",
                 "provider_type": "openai",
-                "api_key": "secret",
+                "api_key": null,
                 "clear_api_key": false,
-                "url": "https://api.openai.com",
+                "url": null,
                 "default_model": "gpt-4.1",
                 "roles": ["chat"],
                 "num_ctx": null,
@@ -519,6 +519,86 @@ async fn invalid_provider_save_preserves_file_and_live_registry() {
             helpcore_server::config::ProviderRole::Chat,
         )
         .is_some());
+}
+
+#[tokio::test]
+async fn admin_accepts_hosted_and_compatible_provider_types() {
+    let state = test_state();
+    let tokens = do_setup(Arc::clone(&state)).await;
+
+    let resp = authed_put_json(
+        app(Arc::clone(&state)),
+        "/api/admin/config",
+        &tokens.access_token,
+        json!({
+            "server": { "name": "test", "url": "http://localhost:3000", "port": 3000 },
+            "logging_level": "info",
+            "registry_url": helpcore_server::config::DEFAULT_REGISTRY_URL,
+            "plugin_blacklist": [],
+            "providers": [
+                {
+                    "id": "openai",
+                    "name": "OpenAI",
+                    "provider_type": "openai",
+                    "api_key": "openai-secret",
+                    "clear_api_key": false,
+                    "url": null,
+                    "default_model": "gpt-test",
+                    "roles": ["chat"],
+                    "num_ctx": null,
+                    "num_predict": null
+                },
+                {
+                    "id": "anthropic",
+                    "name": "Anthropic",
+                    "provider_type": "anthropic",
+                    "api_key": "anthropic-secret",
+                    "clear_api_key": false,
+                    "url": null,
+                    "default_model": "claude-test",
+                    "roles": ["chat"],
+                    "num_ctx": null,
+                    "num_predict": null
+                },
+                {
+                    "id": "deepseek",
+                    "name": "DeepSeek",
+                    "provider_type": "deepseek",
+                    "api_key": "deepseek-secret",
+                    "clear_api_key": false,
+                    "url": null,
+                    "default_model": "deepseek-chat",
+                    "roles": ["chat"],
+                    "num_ctx": null,
+                    "num_predict": null
+                },
+                {
+                    "id": "compatible",
+                    "name": "Compatible",
+                    "provider_type": "openai_compatible",
+                    "api_key": null,
+                    "clear_api_key": false,
+                    "url": "http://localhost:1234/v1",
+                    "default_model": "local-model",
+                    "roles": ["chat"],
+                    "num_ctx": null,
+                    "num_predict": null
+                }
+            ]
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: AdminConfigResponse = json_body(resp.into_body()).await;
+    assert_eq!(body.providers.len(), 4);
+    assert!(body.providers.iter().take(3).all(|provider| provider.api_key_configured));
+
+    let saved = helpcore_server::config::Config::load(&state.config_path).unwrap();
+    assert_eq!(saved.providers[2].provider_type.as_str(), "deepseek");
+    assert_eq!(
+        saved.providers[3].url.as_deref(),
+        Some("http://localhost:1234/v1")
+    );
 }
 
 #[tokio::test]

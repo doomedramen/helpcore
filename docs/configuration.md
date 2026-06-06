@@ -123,11 +123,13 @@ num_ctx       = 4096
 |---|---|---|
 | `id` | yes | Unique identifier; clients use this to select a provider |
 | `name` | yes | Human-readable display name |
-| `type` | yes | Provider type: `ollama`, `anthropic`, `openai`, `openai_compatible` |
+| `type` | yes | Provider type: `ollama`, `anthropic`, `openai`, `deepseek`, `openai_compatible` |
 | `default_model` | yes | Model used when the client doesn't specify one |
 | `roles` | yes | List of roles this provider serves; at least one must be `"chat"` |
-| `num_ctx` | no | Context window size in tokens (Ollama default: 8192). Set to match the model's actual window. |
-| `num_predict` | no | Max tokens to generate per response (Ollama default: 2048) |
+| `api_key` | hosted providers | Required for `openai`, `anthropic`, and `deepseek`; optional for local compatible servers |
+| `url` | compatible providers | Required for `openai_compatible`; optional endpoint override for hosted providers |
+| `num_ctx` | no | Context window used for auto-compaction. Defaults: Ollama 8192, Anthropic 200000, OpenAI-compatible providers 128000. Set it to the selected model's actual limit. |
+| `num_predict` | no | Max tokens generated per response. Defaults: Ollama 2048, hosted/compatible providers 4096. |
 
 ### Ollama
 
@@ -155,8 +157,71 @@ num_ctx       = 4096
 | helpcore in Docker, Ollama on Docker Desktop host | `http://host.docker.internal:11434` |
 | helpcore in Docker, Ollama on a separate server | `http://192.168.1.x:11434` |
 
-> Currently only `ollama` is implemented. `anthropic`, `openai`, and
-> `openai_compatible` are declared in config but not yet supported.
+### OpenAI API
+
+```toml
+[[providers]]
+id            = "openai"
+name          = "OpenAI"
+type          = "openai"
+api_key       = "sk-..."
+default_model = "gpt-4o"
+roles         = ["chat", "code"]
+num_ctx       = 128000
+num_predict   = 4096
+```
+
+The official endpoint is used when `url` is omitted. This requires an OpenAI
+API key; ChatGPT subscriptions do not provide API authentication.
+
+### Anthropic
+
+```toml
+[[providers]]
+id            = "anthropic"
+name          = "Anthropic Claude"
+type          = "anthropic"
+api_key       = "sk-ant-..."
+default_model = "claude-opus-4-5"
+roles         = ["chat", "code"]
+num_ctx       = 200000
+num_predict   = 4096
+```
+
+Anthropic uses its native Messages API, including streamed `tool_use` and
+`tool_result` blocks.
+
+### DeepSeek
+
+```toml
+[[providers]]
+id            = "deepseek"
+name          = "DeepSeek"
+type          = "deepseek"
+api_key       = "sk-..."
+default_model = "deepseek-chat"
+roles         = ["chat", "code"]
+num_ctx       = 128000
+num_predict   = 4096
+```
+
+DeepSeek uses the shared OpenAI-compatible transport with its official endpoint.
+
+### OpenAI-compatible servers
+
+```toml
+[[providers]]
+id            = "lm-studio"
+name          = "LM Studio"
+type          = "openai_compatible"
+url           = "http://localhost:1234/v1"
+default_model = "local-model"
+roles         = ["chat"]
+num_ctx       = 8192
+```
+
+Set `api_key` only when the server or gateway requires one. The configured URL
+is treated as the API base and `/chat/completions` is appended.
 
 ---
 

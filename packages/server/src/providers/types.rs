@@ -23,6 +23,8 @@ pub struct ChatMessage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_calls: Option<Vec<ToolCall>>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub tool_name: Option<String>,
 }
 
@@ -41,14 +43,20 @@ impl ChatMessage {
             role: "assistant".to_string(),
             content: content.into(),
             tool_calls: Some(tool_calls),
+            tool_call_id: None,
             tool_name: None,
         }
     }
-    pub fn tool(name: impl Into<String>, content: impl Into<String>) -> Self {
+    pub fn tool(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        content: impl Into<String>,
+    ) -> Self {
         Self {
             role: "tool".to_string(),
             content: content.into(),
             tool_calls: None,
+            tool_call_id: Some(id.into()),
             tool_name: Some(name.into()),
         }
     }
@@ -57,6 +65,7 @@ impl ChatMessage {
             role: role.to_string(),
             content: content.into(),
             tool_calls: None,
+            tool_call_id: None,
             tool_name: None,
         }
     }
@@ -75,12 +84,24 @@ pub struct StreamChunk {
 
 impl StreamChunk {
     pub fn delta(text: impl Into<String>) -> Self {
-        Self { delta: text.into(), tool_calls: Vec::new(), is_final: false }
+        Self {
+            delta: text.into(),
+            tool_calls: Vec::new(),
+            is_final: false,
+        }
     }
     pub fn tool_calls(tool_calls: Vec<ToolCall>) -> Self {
-        Self { delta: String::new(), tool_calls, is_final: false }
+        Self {
+            delta: String::new(),
+            tool_calls,
+            is_final: false,
+        }
     }
     pub fn done() -> Self {
-        Self { delta: String::new(), tool_calls: Vec::new(), is_final: true }
+        Self {
+            delta: String::new(),
+            tool_calls: Vec::new(),
+            is_final: true,
+        }
     }
 }

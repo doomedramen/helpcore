@@ -2,6 +2,7 @@ export interface LoginResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
+  force_password_change?: boolean;
 }
 
 export interface RefreshResponse {
@@ -15,6 +16,74 @@ export interface CurrentUser {
   email: string;
   display_name: string | null;
   role: 'admin' | 'member';
+  timezone: string;
+}
+
+// ── Personality ────────────────────────────────────────────────────────────────
+
+export interface PersonalityFile {
+  name: string;
+  content: string;
+}
+
+// ── Memory ────────────────────────────────────────────────────────────────────
+
+export interface MemoryEntry {
+  path: string;
+  updated_at: string;
+}
+
+export interface MemoryListResponse {
+  files: MemoryEntry[];
+}
+
+// ── API Keys ──────────────────────────────────────────────────────────────────
+
+export interface ApiKeyInfo {
+  id: string;
+  name: string;
+  key_prefix: string;
+  created_at: string;
+  last_used_at: string | null;
+  expires_at: string | null;
+}
+
+export interface ListApiKeysResponse {
+  keys: ApiKeyInfo[];
+}
+
+export interface CreateApiKeyResponse {
+  id: string;
+  name: string;
+  key_prefix: string;
+  key: string;
+}
+
+// ── Admin users ───────────────────────────────────────────────────────────────
+
+export interface AdminUserSummary {
+  id: string;
+  email: string;
+  display_name: string | null;
+  role: 'admin' | 'member';
+  status: 'active' | 'deactivated';
+  created_at: string;
+}
+
+export interface AdminListUsersResponse {
+  users: AdminUserSummary[];
+}
+
+// ── Provider grants ───────────────────────────────────────────────────────────
+
+export interface ProviderGrantInfo {
+  provider_id: string;
+  enabled: boolean;
+}
+
+export interface ListProviderGrantsResponse {
+  grants: ProviderGrantInfo[];
+  ungrated_providers: string[];
 }
 
 export interface SetupStatusResponse {
@@ -135,7 +204,12 @@ export interface PluginStoreResponse {
   plugins: PluginStoreItem[];
 }
 
-export type ProviderType = 'ollama';
+export type ProviderType =
+  | 'anthropic'
+  | 'deepseek'
+  | 'openai'
+  | 'ollama'
+  | 'openai_compatible';
 export type ProviderRole = 'chat' | 'code' | 'image_gen' | 'video_gen' | 'embeddings';
 
 export interface AdminProviderConfig {

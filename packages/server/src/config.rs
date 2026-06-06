@@ -122,6 +122,8 @@ pub struct ProviderConfig {
 #[serde(rename_all = "snake_case")]
 pub enum ProviderType {
     Anthropic,
+    Deepseek,
+    #[serde(alias = "chatgpt")]
     Openai,
     Ollama,
     OpenaiCompatible,
@@ -131,6 +133,7 @@ impl ProviderType {
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",
+            Self::Deepseek => "deepseek",
             Self::Openai => "openai",
             Self::Ollama => "ollama",
             Self::OpenaiCompatible => "openai_compatible",
@@ -144,7 +147,8 @@ impl TryFrom<&str> for ProviderType {
     fn try_from(value: &str) -> anyhow::Result<Self> {
         match value {
             "anthropic" => Ok(Self::Anthropic),
-            "openai" => Ok(Self::Openai),
+            "deepseek" => Ok(Self::Deepseek),
+            "chatgpt" | "openai" => Ok(Self::Openai),
             "ollama" => Ok(Self::Ollama),
             "openai_compatible" => Ok(Self::OpenaiCompatible),
             other => anyhow::bail!("unknown provider type: {other}"),
@@ -277,6 +281,34 @@ impl Config {
                     "provider {} maximum response tokens must be greater than zero",
                     provider.id
                 );
+            }
+            if matches!(
+                provider.provider_type,
+                ProviderType::Anthropic | ProviderType::Deepseek | ProviderType::Openai
+            ) && provider
+                .api_key
+                .as_deref()
+                .is_none_or(|key| key.trim().is_empty())
+            {
+                anyhow::bail!("provider {} API key is required", provider.id);
+            }
+            if provider.provider_type == ProviderType::OpenaiCompatible
+                && provider
+                    .url
+                    .as_deref()
+                    .is_none_or(|url| url.trim().is_empty())
+            {
+                anyhow::bail!("provider {} base URL is required", provider.id);
+            }
+            if let Some(url) = provider.url.as_deref() {
+                let parsed = reqwest::Url::parse(url)
+                    .with_context(|| format!("provider {} base URL is invalid", provider.id))?;
+                if !matches!(parsed.scheme(), "http" | "https") {
+                    anyhow::bail!(
+                        "provider {} base URL must use http or https",
+                        provider.id
+                    );
+                }
             }
         }
 
@@ -450,6 +482,49 @@ mod tests {
         assert_eq!(cfg.providers.len(), 2);
         assert_eq!(cfg.providers[1].provider_type, ProviderType::Ollama);
         assert_eq!(cfg.providers[1].url.as_deref(), Some("http://localhost:11434"));
+    }
+
+    #[test]
+    fn hosted_provider_validation_requires_api_key() {
+        let mut cfg = parse(
+            r#"
+            [server]
+            name = "Test"
+            url  = "http://localhost:3000"
+
+            [[providers]]
+            id            = "deepseek"
+            name          = "DeepSeek"
+            type          = "deepseek"
+            default_model = "deepseek-chat"
+            roles         = ["chat"]
+            "#,
+        )
+        .unwrap();
+        assert!(cfg.validate().is_err());
+
+        cfg.providers[0].api_key = Some("secret".to_string());
+        assert!(cfg.validate().is_ok());
+    }
+
+    #[test]
+    fn openai_compatible_validation_requires_url() {
+        let cfg = parse(
+            r#"
+            [server]
+            name = "Test"
+            url  = "http://localhost:3000"
+
+            [[providers]]
+            id            = "compatible"
+            name          = "Compatible"
+            type          = "openai_compatible"
+            default_model = "local-model"
+            roles         = ["chat"]
+            "#,
+        )
+        .unwrap();
+        assert!(cfg.validate().is_err());
     }
 
     #[test]

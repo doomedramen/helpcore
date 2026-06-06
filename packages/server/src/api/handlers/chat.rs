@@ -48,11 +48,42 @@ pub async fn chat(
         })?;
 
     let user_id = auth_user.id.clone();
+    let user_role = auth_user.role;
     let conv_id_req = req.conversation_id.clone();
     let user_content = req.message.trim().to_string();
     if user_content.is_empty() {
         return Err(AppError::BadRequest("message cannot be empty".into()));
     }
+
+    // Check provider grant before accepting the turn.
+    let uid_for_grant = user_id.clone();
+    let pid_for_grant = provider.id().to_string();
+    let is_admin = user_role == crate::model::user::UserRole::Admin;
+    let allowed = state
+        .db
+        .call(move |conn| {
+            if is_admin {
+                return Ok(true);
+            }
+            let denied = crate::model::provider_grant::denied_providers(conn, &uid_for_grant)?;
+            Ok(!denied.contains(&pid_for_grant))
+        })
+        .await?;
+    if !allowed {
+        return Err(AppError::Forbidden);
+    }
+
+    // Load user timezone.
+    let uid_tz = user_id.clone();
+    let user_timezone = state
+        .db
+        .call(move |conn| {
+            Ok(crate::model::user::find_by_id(conn, &uid_tz)?
+                .map(|u| u.timezone)
+                .unwrap_or_else(|| "UTC".to_string()))
+        })
+        .await?;
+
     let provider_id = provider.id().to_string();
     let model_used = req
         .model
@@ -61,12 +92,13 @@ pub async fn chat(
     let provider_id_for_db = provider_id.clone();
     let model_for_db = model_used.clone();
     let content_for_db = user_content.clone();
+    let uid_for_turn = user_id.clone();
     let started = state
         .db
         .call(move |conn| {
             history::start_turn(
                 conn,
-                &user_id,
+                &uid_for_turn,
                 conv_id_req.as_deref(),
                 &content_for_db,
                 &provider_id_for_db,
@@ -97,9 +129,10 @@ pub async fn chat(
         provider,
         conversation_id,
         assistant_message_id,
-        user_id: auth_user.id,
+        user_id: user_id.clone(),
         user_content,
         user_sequence,
+        user_timezone,
         history,
         model_used,
         tx,
@@ -128,6 +161,16 @@ pub async fn retry_message(
         .find_for_role(Some(&provider_id), ProviderRole::Chat)
         .ok_or_else(|| AppError::BadRequest(format!("provider {provider_id} is not available")))?;
 
+    let uid_tz = auth_user.id.clone();
+    let user_timezone = state
+        .db
+        .call(move |conn| {
+            Ok(crate::model::user::find_by_id(conn, &uid_tz)?
+                .map(|u| u.timezone)
+                .unwrap_or_else(|| "UTC".to_string()))
+        })
+        .await?;
+
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(64);
     let started_event = Event::default()
         .event("started")
@@ -147,6 +190,7 @@ pub async fn retry_message(
         user_id: auth_user.id,
         user_content: user_message.content,
         user_sequence: user_message.sequence,
+        user_timezone,
         history,
         model_used,
         tx,
@@ -163,6 +207,7 @@ struct GenerationJob {
     user_id: String,
     user_content: String,
     user_sequence: i64,
+    user_timezone: String,
     history: Vec<MessageSummary>,
     model_used: String,
     tx: EventSender,
@@ -198,6 +243,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         user_profile: personality.user_profile.as_deref(),
         memories: &mem_results,
         plugin_skills: &plugin_skills,
+        timezone: Some(job.user_timezone.as_str()),
     };
 
     let probe = context::assemble(&job.history, &job.user_content, make_opts());
@@ -294,7 +340,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
             tool_calls,
         ));
         for (call, result) in results {
-            messages.push(ChatMessage::tool(call.name, result));
+            messages.push(ChatMessage::tool(call.id, call.name, result));
         }
     }
     unreachable!()

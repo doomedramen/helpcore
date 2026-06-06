@@ -184,6 +184,10 @@ Ctrl+C, then re-run
 Provider changes saved through `/admin/` are applied immediately. Direct
 `config.toml` edits require a restart.
 
+Anthropic, OpenAI, and DeepSeek require API keys. OpenAI-compatible local
+servers may be configured without a key. See [Providers](providers.md) for all
+provider examples.
+
 ---
 
 ## Stage 4 — Connect clients

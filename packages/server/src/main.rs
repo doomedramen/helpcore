@@ -35,6 +35,7 @@ async fn main() -> anyhow::Result<()> {
             config_path.display()
         )
     })?;
+    config.validate().context("invalid server configuration")?;
 
     let data_dir = config.data.resolved_dir();
     std::fs::create_dir_all(&data_dir)

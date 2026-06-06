@@ -6,7 +6,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 
 use super::{
-    error::ProviderError,
+    error::{ProviderError, http_error},
     traits::{ChatProvider, ProviderStream},
     types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition},
 };
@@ -53,11 +53,32 @@ impl OllamaProvider {
 #[derive(Debug, Serialize)]
 struct OllamaChatRequest<'a> {
     model: &'a str,
-    messages: &'a [ChatMessage],
+    messages: Vec<OllamaChatMessage>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     tools: Vec<OllamaTool<'a>>,
     stream: bool,
     options: OllamaOptions,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaChatMessage {
+    role: String,
+    content: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_calls: Option<Vec<OllamaOutgoingToolCall>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    tool_name: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaOutgoingToolCall {
+    function: OllamaOutgoingFunction,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaOutgoingFunction {
+    name: String,
+    arguments: serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -124,7 +145,25 @@ impl ChatProvider for OllamaProvider {
 
         let body = OllamaChatRequest {
             model,
-            messages,
+            messages: messages
+                .iter()
+                .map(|message| OllamaChatMessage {
+                    role: message.role.clone(),
+                    content: message.content.clone(),
+                    tool_calls: message.tool_calls.as_ref().map(|calls| {
+                        calls
+                            .iter()
+                            .map(|call| OllamaOutgoingToolCall {
+                                function: OllamaOutgoingFunction {
+                                    name: call.name.clone(),
+                                    arguments: call.arguments.clone(),
+                                },
+                            })
+                            .collect()
+                    }),
+                    tool_name: message.tool_name.clone(),
+                })
+                .collect(),
             tools: tools
                 .iter()
                 .map(|tool| OllamaTool {
@@ -161,7 +200,7 @@ impl ChatProvider for OllamaProvider {
         // that sends parsed chunks into a channel.
         let byte_stream = response
             .bytes_stream()
-            .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+            .map_err(std::io::Error::other);
         let reader = StreamReader::new(byte_stream);
         let mut lines = BufReader::new(reader).lines();
 
@@ -221,16 +260,6 @@ impl ChatProvider for OllamaProvider {
         });
 
         Ok(Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx)))
-    }
-}
-
-fn http_error(status: reqwest::StatusCode, body: &str) -> ProviderError {
-    match status.as_u16() {
-        401 | 403 => ProviderError::AuthenticationFailed,
-        429 => ProviderError::RateLimited,
-        400 if body.to_lowercase().contains("context") => ProviderError::ContextTooLong,
-        500 | 502 | 503 | 504 => ProviderError::Unavailable,
-        _ => ProviderError::Request(format!("HTTP {status}: {body}")),
     }
 }
 
@@ -344,5 +373,41 @@ mod tests {
         let received = server.received_requests().await.unwrap();
         let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
         assert_eq!(body["tools"][0]["function"]["name"], "weather");
+    }
+
+    #[tokio::test]
+    async fn sends_tool_history_in_ollama_format() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(ndjson(&[
+                r#"{"message":{"role":"assistant","content":"done"},"done":false}"#,
+                r#"{"message":{"role":"assistant","content":""},"done":true}"#,
+            ])))
+            .mount(&server)
+            .await;
+
+        let call = ToolCall {
+            id: "call-1".to_string(),
+            name: "weather".to_string(),
+            arguments: serde_json::json!({"city": "London"}),
+        };
+        let messages = vec![
+            ChatMessage::assistant_with_tools("", vec![call]),
+            ChatMessage::tool("call-1", "weather", "{\"ok\":true}"),
+        ];
+        let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
+        let mut stream = provider.complete(&messages, &[], None).await.unwrap();
+        while stream.next().await.is_some() {}
+
+        let requests = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
+        assert_eq!(
+            body["messages"][0]["tool_calls"][0]["function"]["name"],
+            "weather"
+        );
+        assert!(body["messages"][0]["tool_calls"][0].get("id").is_none());
+        assert_eq!(body["messages"][1]["tool_name"], "weather");
+        assert!(body["messages"][1].get("tool_call_id").is_none());
     }
 }

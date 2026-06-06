@@ -1,13 +1,22 @@
 import type {
   AdminConfig,
   AdminConfigUpdate,
+  AdminListUsersResponse,
+  AdminUserSummary,
+  ApiKeyInfo,
   ConversationSummary,
+  CreateApiKeyResponse,
   CurrentUser,
+  ListApiKeysResponse,
+  ListProviderGrantsResponse,
   LoginResponse,
+  MemoryListResponse,
   Message,
+  PersonalityFile,
   PluginInfo,
   PluginListResponse,
   PluginStoreResponse,
+  ProviderGrantInfo,
   ProviderListResponse,
   RefreshResponse,
   SetupStatusResponse,
@@ -131,6 +140,119 @@ export function retryMessage(args: {
     onDone: args.onDone,
     signal: args.signal,
   });
+}
+
+// ── Profile / me ─────────────────────────────────────────────────────────────
+
+export function updateMe(
+  data: { display_name?: string | null; timezone?: string },
+  token: string,
+): Promise<void> {
+  return req('/auth/me', { method: 'PATCH', body: JSON.stringify(data) }, token);
+}
+
+export function changePassword(
+  data: { current_password: string; new_password: string },
+  token: string,
+): Promise<void> {
+  return req('/auth/me/password', { method: 'POST', body: JSON.stringify(data) }, token);
+}
+
+// ── API keys ──────────────────────────────────────────────────────────────────
+
+export function listApiKeys(token: string): Promise<ListApiKeysResponse> {
+  return req('/auth/api-keys', {}, token);
+}
+
+export function createApiKey(
+  data: { name: string; expires_at?: string },
+  token: string,
+): Promise<CreateApiKeyResponse> {
+  return req('/auth/api-keys', { method: 'POST', body: JSON.stringify(data) }, token);
+}
+
+export function revokeApiKey(id: string, token: string): Promise<void> {
+  return req(`/auth/api-keys/${id}`, { method: 'DELETE' }, token);
+}
+
+// ── Personality ────────────────────────────────────────────────────────────────
+
+export function getPersonality(name: string, token: string): Promise<PersonalityFile> {
+  return req(`/personality/${name}`, {}, token);
+}
+
+export function putPersonality(name: string, content: string, token: string): Promise<void> {
+  return req(`/personality/${name}`, { method: 'PUT', body: JSON.stringify({ content }) }, token);
+}
+
+// ── Memory ────────────────────────────────────────────────────────────────────
+
+export function listMemory(token: string): Promise<MemoryListResponse> {
+  return req('/memory', {}, token);
+}
+
+export function getMemoryFile(path: string, token: string): Promise<{ path: string; content: string }> {
+  return req(`/memory/${path}`, {}, token);
+}
+
+export function putMemoryFile(path: string, content: string, token: string): Promise<void> {
+  return req(`/memory/${path}`, { method: 'PUT', body: JSON.stringify({ content }) }, token);
+}
+
+export function deleteMemoryFile(path: string, token: string): Promise<void> {
+  return req(`/memory/${path}`, { method: 'DELETE' }, token);
+}
+
+// ── Admin users ───────────────────────────────────────────────────────────────
+
+export function listAdminUsers(token: string): Promise<AdminListUsersResponse> {
+  return req('/admin/users', {}, token);
+}
+
+export function createAdminUser(
+  data: { email: string; password: string; display_name?: string },
+  token: string,
+): Promise<AdminUserSummary> {
+  return req('/admin/users', { method: 'POST', body: JSON.stringify(data) }, token);
+}
+
+export function updateAdminUser(
+  id: string,
+  data: { status: 'active' | 'deactivated' },
+  token: string,
+): Promise<void> {
+  return req(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify(data) }, token);
+}
+
+export function resetAdminUserPassword(
+  id: string,
+  password: string,
+  token: string,
+): Promise<void> {
+  return req(
+    `/admin/users/${id}/password-reset`,
+    { method: 'POST', body: JSON.stringify({ password }) },
+    token,
+  );
+}
+
+export function listProviderGrants(
+  userId: string,
+  token: string,
+): Promise<ListProviderGrantsResponse> {
+  return req(`/admin/users/${userId}/providers`, {}, token);
+}
+
+export function setProviderGrants(
+  userId: string,
+  grants: ProviderGrantInfo[],
+  token: string,
+): Promise<void> {
+  return req(
+    `/admin/users/${userId}/providers`,
+    { method: 'PUT', body: JSON.stringify({ grants }) },
+    token,
+  );
 }
 
 // ── Admin configuration ──────────────────────────────────────────────────────

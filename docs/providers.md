@@ -49,8 +49,19 @@ url           = "http://localhost:11434"
 default_model = "llama3.2"
 ```
 
-Supported types: `ollama` is currently implemented. `anthropic`, `openai`, and
-`openai_compatible` are declared in config but not yet implemented.
+Supported chat provider types:
+
+| Type | Protocol | Default endpoint |
+|---|---|---|
+| `ollama` | Ollama `/api/chat` | `http://localhost:11434` |
+| `openai` | OpenAI Chat Completions | `https://api.openai.com/v1` |
+| `anthropic` | Anthropic Messages | `https://api.anthropic.com` |
+| `deepseek` | OpenAI-compatible Chat Completions | `https://api.deepseek.com` |
+| `openai_compatible` | OpenAI-compatible Chat Completions | Configured `url` |
+
+OpenAI, Anthropic, and DeepSeek require an API key. OpenAI support uses the
+OpenAI developer API; a consumer ChatGPT subscription is not an API credential.
+Official endpoints can be overridden with `url` for proxies or gateways.
 
 Provider changes saved through the admin web interface are validated and
 applied to new requests immediately. Editing `config.toml` directly still
@@ -78,6 +89,10 @@ Every provider is wrapped in a reliability layer:
   are retried up to a configured limit
 - **Non-retryable detection** — 4xx errors, auth failures, and model-not-found
   errors abort immediately without burning retry budget
+
+Text and native tool calls stream through the same provider-neutral interface.
+OpenAI-compatible tool-call argument fragments and Anthropic `input_json_delta`
+events are assembled before plugin execution.
 
 ---
 

@@ -1,4 +1,5 @@
 pub mod admin;
+pub mod api_key;
 pub mod auth;
 pub mod chat;
 pub mod memory;
@@ -6,6 +7,7 @@ pub mod plugin;
 pub mod provider;
 pub mod setup;
 pub mod tts;
+pub mod users;
 
 use axum::{Json, http::StatusCode};
 use serde_json::{Value, json};

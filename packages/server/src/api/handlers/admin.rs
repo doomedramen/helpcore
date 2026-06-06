@@ -59,11 +59,6 @@ pub async fn update_config(
 
         let provider_type = ProviderType::try_from(provider.provider_type.as_str())
             .map_err(|e| AppError::BadRequest(e.to_string()))?;
-        if provider_type != ProviderType::Ollama {
-            return Err(AppError::BadRequest(
-                "only Ollama providers are currently supported".into(),
-            ));
-        }
         let roles = provider
             .roles
             .iter()
@@ -76,7 +71,7 @@ pub async fn update_config(
         let api_key = if provider.clear_api_key {
             None
         } else if let Some(key) = provider.api_key.filter(|key| !key.trim().is_empty()) {
-            Some(key)
+            Some(key.trim().to_string())
         } else {
             existing.get(id.as_str()).and_then(|item| item.api_key.clone())
         };
@@ -85,18 +80,6 @@ pub async fn update_config(
             .url
             .map(|url| url.trim().to_string())
             .filter(|url| !url.is_empty());
-        if url.is_none() {
-            return Err(AppError::BadRequest(format!(
-                "provider {id} base URL is required"
-            )));
-        }
-        let parsed_url = reqwest::Url::parse(url.as_deref().unwrap())
-            .map_err(|_| AppError::BadRequest(format!("provider {id} base URL is invalid")))?;
-        if !matches!(parsed_url.scheme(), "http" | "https") {
-            return Err(AppError::BadRequest(format!(
-                "provider {id} base URL must use http or https"
-            )));
-        }
 
         providers.push(ProviderConfig {
             id,

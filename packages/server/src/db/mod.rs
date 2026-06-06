@@ -1,3 +1,5 @@
+pub mod audit;
+
 use anyhow::Context;
 use parking_lot::Mutex;
 use rusqlite::Connection;
@@ -16,6 +18,8 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (9, include_str!("migrations/0009_plugins.sql")),
     (10, include_str!("migrations/0010_message_status.sql")),
     (11, include_str!("migrations/0011_plugin_lifecycle.sql")),
+    (12, include_str!("migrations/0012_user_timezone.sql")),
+    (13, include_str!("migrations/0013_provider_grants.sql")),
 ];
 
 pub struct DbPool {

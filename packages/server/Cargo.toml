@@ -22,6 +22,7 @@ async-trait      = { workspace = true }
 futures-util     = { workspace = true, features = ["sink"] }
 axum             = { workspace = true, features = ["http1", "json", "tokio", "query", "macros"] }
 chrono           = { workspace = true, features = ["clock", "std", "serde"] }
+chrono-tz        = { workspace = true }
 directories      = { workspace = true }
 getrandom        = { workspace = true }
 hex              = { workspace = true }

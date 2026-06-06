@@ -95,9 +95,13 @@ url = "http://localhost:11434"
 # api_key       = "sk-ant-..."
 # default_model = "claude-opus-4-5"
 # roles         = ["chat", "code"]
+# num_ctx       = 200000
+# num_predict   = 4096
+# url           = "https://api.anthropic.com" # optional override
 
 
-# ── OpenAI ────────────────────────────────────────────────────────────────────
+# ── OpenAI API (ChatGPT models) ──────────────────────────────────────────────
+# Requires an OpenAI API key. A ChatGPT subscription is not an API credential.
 # [[providers]]
 # id            = "openai"
 # name          = "OpenAI"
@@ -105,6 +109,22 @@ url = "http://localhost:11434"
 # api_key       = "sk-..."
 # default_model = "gpt-4o"
 # roles         = ["chat"]
+# num_ctx       = 128000
+# num_predict   = 4096
+# url           = "https://api.openai.com/v1" # optional override
+
+
+# ── DeepSeek ──────────────────────────────────────────────────────────────────
+# [[providers]]
+# id            = "deepseek"
+# name          = "DeepSeek"
+# type          = "deepseek"
+# api_key       = "sk-..."
+# default_model = "deepseek-chat"
+# roles         = ["chat", "code"]
+# num_ctx       = 128000
+# num_predict   = 4096
+# url           = "https://api.deepseek.com" # optional override
 
 
 # ── Any OpenAI-compatible server (LM Studio, vLLM, etc.) ─────────────────────
@@ -115,3 +135,5 @@ url = "http://localhost:11434"
 # url           = "http://localhost:1234/v1"
 # default_model = "local-model"
 # roles         = ["chat"]
+# api_key       = "optional-if-required-by-server"
+# num_ctx       = 8192

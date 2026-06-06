@@ -1,6 +1,6 @@
 # helpcore
 
-A self-hosted personal AI assistant server. Run it on a home server or VPS, connect from anywhere with the `hc` CLI, and talk to any model you like — local (Ollama) or cloud (Anthropic, OpenAI).
+A self-hosted personal AI assistant server. Run it on a home server or VPS, connect from anywhere with the `hc` CLI, and talk to local or hosted models through Ollama, Anthropic, OpenAI, DeepSeek, or OpenAI-compatible APIs.
 
 ```
 $ hc ask "what's on my to-do list today?"
@@ -15,7 +15,7 @@ following up with the dentist, and reviewing the server monitoring setup.
 - **Local-first** — runs on a Raspberry Pi or a 4 GB container; works fine with a 3B parameter Ollama model
 - **Memory system** — persistent markdown files the AI reads on every message; soul, identity, and per-user context files
 - **Conversation history** — all conversations stored in SQLite with full-text search; auto-compaction when context fills up
-- **Multiple providers** — Ollama, Anthropic, OpenAI, or any OpenAI-compatible server; switch per-request
+- **Multiple providers** — Ollama, Anthropic, OpenAI, DeepSeek, or any OpenAI-compatible server; switch per-request
 - **Plugin system** — extend via bridge plugins (standalone services); scoped tokens, skill injection into context
 - **Web UI** — Next.js chat, per-user plugin store, and admin settings served from the same port as the API
 - **Pre-built Docker images** — CI pushes to GHCR on every merge; `docker compose pull && docker compose up` to update

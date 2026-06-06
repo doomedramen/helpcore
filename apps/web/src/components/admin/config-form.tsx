@@ -19,6 +19,10 @@ interface Props {
 
 const providerTypes: Array<{ value: ProviderType; label: string }> = [
   { value: 'ollama', label: 'Ollama' },
+  { value: 'openai', label: 'OpenAI (ChatGPT models)' },
+  { value: 'anthropic', label: 'Anthropic Claude' },
+  { value: 'deepseek', label: 'DeepSeek' },
+  { value: 'openai_compatible', label: 'OpenAI-compatible' },
 ];
 
 const providerRoles: Array<{ value: ProviderRole; label: string }> = [
@@ -46,7 +50,23 @@ function draftFromConfig(config: AdminConfig): AdminConfigUpdate {
   };
 }
 
-function validateProviders(providers: AdminProviderUpdate[]): string {
+const hostedProviderTypes = new Set<ProviderType>(['openai', 'anthropic', 'deepseek']);
+
+function defaultUrl(providerType: ProviderType): string | null {
+  switch (providerType) {
+    case 'ollama':
+      return 'http://localhost:11434';
+    case 'openai_compatible':
+      return 'http://localhost:1234/v1';
+    default:
+      return null;
+  }
+}
+
+function validateProviders(
+  providers: AdminProviderUpdate[],
+  existingProviders: AdminConfig['providers'],
+): string {
   const ids = new Set<string>();
   for (const provider of providers) {
     const id = provider.id.trim();
@@ -54,18 +74,28 @@ function validateProviders(providers: AdminProviderUpdate[]): string {
     if (ids.has(id)) return `Provider IDs must be unique: ${id}`;
     ids.add(id);
     if (!provider.name.trim()) return `Provider ${id} needs a name.`;
-    if (provider.provider_type !== 'ollama') {
-      return `Provider ${id} uses an unsupported provider type.`;
-    }
     if (!provider.default_model.trim()) return `Provider ${id} needs a default model.`;
-    if (!provider.url?.trim()) return `Provider ${id} needs a base URL.`;
-    try {
-      const url = new URL(provider.url);
-      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
-        return `Provider ${id} base URL must use http or https.`;
+    if (
+      (provider.provider_type === 'ollama' || provider.provider_type === 'openai_compatible')
+      && !provider.url?.trim()
+    ) {
+      return `Provider ${id} needs a base URL.`;
+    }
+    if (provider.url?.trim()) {
+      try {
+        const url = new URL(provider.url);
+        if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+          return `Provider ${id} base URL must use http or https.`;
+        }
+      } catch {
+        return `Provider ${id} base URL is invalid.`;
       }
-    } catch {
-      return `Provider ${id} base URL is invalid.`;
+    }
+    if (hostedProviderTypes.has(provider.provider_type)) {
+      const existing = existingProviders.find(item => item.id === id);
+      const hasSavedKey = existing?.api_key_configured && !provider.clear_api_key;
+      const hasNewKey = Boolean(provider.api_key?.trim());
+      if (!hasSavedKey && !hasNewKey) return `Provider ${id} needs an API key.`;
     }
     if (provider.roles.length === 0) return `Provider ${id} needs at least one role.`;
     if (provider.num_ctx !== null && provider.num_ctx <= 0) {
@@ -133,7 +163,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
   }
 
   async function save() {
-    const validationError = validateProviders(draft.providers);
+    const validationError = validateProviders(draft.providers, config.providers);
     if (validationError) {
       setError(validationError);
       return;
@@ -336,9 +366,13 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                   <Field label="Type">
                     <select
                       value={provider.provider_type}
-                      onChange={event => updateProvider(index, {
-                        provider_type: event.target.value as ProviderType,
-                      })}
+                      onChange={event => {
+                        const providerType = event.target.value as ProviderType;
+                        updateProvider(index, {
+                          provider_type: providerType,
+                          url: defaultUrl(providerType),
+                        });
+                      }}
                       className={inputClass}
                     >
                       {providerTypes.map(type => (
@@ -353,18 +387,33 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                       className={inputClass}
                     />
                   </Field>
-                  <Field label="Base URL" hint="Required for Ollama.">
+                  <Field
+                    label="Base URL"
+                    hint={
+                      provider.provider_type === 'ollama'
+                        ? 'Required. URL of the Ollama server.'
+                        : provider.provider_type === 'openai_compatible'
+                          ? 'Required. Include the API version prefix when needed.'
+                          : 'Optional. Leave blank to use the official API.'
+                    }
+                  >
                     <input
                       type="url"
                       value={provider.url ?? ''}
                       onChange={event => updateProvider(index, { url: event.target.value || null })}
-                      placeholder="http://localhost:11434"
+                      placeholder={defaultUrl(provider.provider_type) ?? 'Official API endpoint'}
                       className={inputClass}
                     />
                   </Field>
                   <Field
                     label="API key"
-                    hint={existing?.api_key_configured ? 'A key is saved. Leave blank to keep it.' : 'Stored only in the server config file.'}
+                    hint={
+                      existing?.api_key_configured
+                        ? 'A key is saved. Leave blank to keep it.'
+                        : hostedProviderTypes.has(provider.provider_type)
+                          ? 'Required. Stored only in the server config file.'
+                          : 'Optional. Stored only in the server config file.'
+                    }
                   >
                     <input
                       type="password"
@@ -398,7 +447,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                       onChange={event => updateProvider(index, {
                         num_ctx: event.target.value ? Number(event.target.value) : null,
                       })}
-                      placeholder="8192"
+                      placeholder={provider.provider_type === 'anthropic' ? '200000' : provider.provider_type === 'ollama' ? '8192' : '128000'}
                       className={inputClass}
                     />
                   </Field>

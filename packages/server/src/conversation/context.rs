@@ -1,3 +1,4 @@
+use chrono_tz::Tz;
 use helpcore_api::MessageSummary;
 use std::collections::HashMap;
 
@@ -28,6 +29,9 @@ pub struct ContextOptions<'a> {
     pub memories: &'a [MemoryResult],
     /// Skill fragments from enabled plugins (each plugin's skill.md content).
     pub plugin_skills: &'a [String],
+    /// IANA timezone for the current user (e.g. "America/New_York").
+    /// Defaults to UTC when absent or unrecognised.
+    pub timezone: Option<&'a str>,
 }
 
 /// Assembles the full message list sent to the provider.
@@ -69,10 +73,16 @@ pub fn assemble(
             .as_ref()
             .and_then(|id| tool_names.get(id))
             .cloned();
+        let (role, content) = if msg.role == "summary" {
+            ("user".to_string(), format!("[Earlier conversation summary]\n{}", msg.content))
+        } else {
+            (msg.role.clone(), msg.content.clone())
+        };
         messages.push(ChatMessage {
-            role: msg.role.clone(),
-            content: msg.content.clone(),
+            role,
+            content,
             tool_calls: calls,
+            tool_call_id: msg.tool_call_id.clone(),
             tool_name,
         });
     }
@@ -115,7 +125,11 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
     }
 
     // Always include the current date so the assistant can reason about time.
-    let today = chrono::Local::now().format("%A, %B %-d, %Y");
+    let tz: Tz = opts
+        .timezone
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(Tz::UTC);
+    let today = chrono::Utc::now().with_timezone(&tz).format("%A, %B %-d, %Y");
     out.push_str(&format!("\n\n## Current date\n{today}"));
 
     out
@@ -193,6 +207,15 @@ mod tests {
         assert!(system.contains("## Current memories"), "missing memories section");
         assert!(system.contains("### rust.md"), "missing memory file header");
         assert!(system.contains("Rust is great."), "missing memory content");
+    }
+
+    #[test]
+    fn summary_role_is_converted_to_user() {
+        let history = vec![msg("summary", "We discussed Rust async.")];
+        let messages = assemble(&history, "continue", ContextOptions::default());
+        let summary_msg = messages.iter().find(|m| m.content.contains("We discussed Rust async.")).unwrap();
+        assert_eq!(summary_msg.role, "user");
+        assert!(summary_msg.content.starts_with("[Earlier conversation summary]"));
     }
 
     #[test]

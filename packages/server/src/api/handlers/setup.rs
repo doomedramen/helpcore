@@ -68,6 +68,20 @@ pub async fn create_admin(
         .call(move |conn| crate::plugins::registry::load_local_plugins(conn, &local_plugins))
         .await?;
 
+    let uid_audit = user_id.clone();
+    state
+        .db
+        .call(move |conn| {
+            crate::db::audit::log_event(
+                conn,
+                "setup.complete",
+                Some(&uid_audit),
+                Some(&uid_audit),
+                serde_json::json!({}),
+            )
+        })
+        .await?;
+
     let session = state
         .db
         .call(move |conn| crate::auth::token::create_session(conn, &user_id))
@@ -79,6 +93,7 @@ pub async fn create_admin(
             access_token: session.access_token,
             refresh_token: session.refresh_token,
             token_type: "Bearer".to_string(),
+            force_password_change: false,
         }),
     ))
 }

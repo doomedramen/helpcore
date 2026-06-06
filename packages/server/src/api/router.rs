@@ -1,6 +1,6 @@
 use axum::{
     Router,
-    routing::{delete, get, post, put},
+    routing::{delete, get, patch, post, put},
 };
 use std::{path::Path, sync::Arc};
 use tower_http::services::{ServeDir, ServeFile};
@@ -16,11 +16,37 @@ pub fn create(state: Arc<AppState>) -> Router {
         .route("/auth/login", post(handlers::auth::login))
         .route("/auth/refresh", post(handlers::auth::refresh))
         .route("/auth/logout", post(handlers::auth::logout))
-        .route("/auth/me", get(handlers::auth::current_user))
+        .route(
+            "/auth/me",
+            get(handlers::auth::current_user).patch(handlers::auth::update_me),
+        )
+        .route("/auth/me/password", post(handlers::auth::change_password))
+        // API keys
+        .route(
+            "/auth/api-keys",
+            get(handlers::api_key::list_api_keys).post(handlers::api_key::create_api_key),
+        )
+        .route("/auth/api-keys/{id}", delete(handlers::api_key::revoke_api_key))
         // Admin
         .route(
             "/admin/config",
             get(handlers::admin::get_config).put(handlers::admin::update_config),
+        )
+        .route(
+            "/admin/users",
+            get(handlers::users::list_users).post(handlers::users::create_user),
+        )
+        .route(
+            "/admin/users/{id}",
+            patch(handlers::users::update_user),
+        )
+        .route(
+            "/admin/users/{id}/password-reset",
+            post(handlers::users::reset_password),
+        )
+        .route(
+            "/admin/users/{id}/providers",
+            get(handlers::users::list_provider_grants).put(handlers::users::set_provider_grants),
         )
         // Chat
         .route("/chat", post(handlers::chat::chat))
