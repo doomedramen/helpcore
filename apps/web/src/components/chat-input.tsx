@@ -54,6 +54,7 @@ export default function ChatInput({ onSend, onStop, disabled, active, value, onC
         disabled={disabled}
         rows={1}
         placeholder="Message helpcore…"
+        autoFocus
         className="min-h-9 flex-1 resize-none overflow-hidden bg-transparent px-2.5 py-2 text-sm leading-relaxed text-slate-900 placeholder-slate-400 focus:outline-none disabled:opacity-50 dark:text-slate-100 dark:placeholder-slate-500"
       />
       <div className="flex shrink-0 gap-1.5">
