@@ -1,5 +1,6 @@
 'use client';
 
+import { useState } from 'react';
 import { LogOut, MessageSquarePlus, Plug, Settings, Trash2 } from 'lucide-react';
 import useSWR, { useSWRConfig } from 'swr';
 import { deleteConversation, listConversations } from '@/lib/api';
@@ -7,6 +8,14 @@ import { useAuth } from '@/context/auth';
 import type { ConversationSummary } from '@/lib/types';
 import { usePathname, useRouter } from 'next/navigation';
 import ThemeToggle from './theme-toggle';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 interface Props {
   conversationId: string | null;
@@ -18,6 +27,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const { mutate } = useSWRConfig();
+  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
 
   const { data: conversations = [] } = useSWR<ConversationSummary[]>(
     accessToken ? ['/api/conversations', accessToken] : null,
@@ -25,9 +35,10 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
     { refreshInterval: 10_000 },
   );
 
-  async function handleDelete(e: React.MouseEvent, id: string) {
-    e.stopPropagation();
-    if (!accessToken) return;
+  async function handleDeleteConfirm() {
+    if (!accessToken || !deleteTarget) return;
+    const id = deleteTarget;
+    setDeleteTarget(null);
     await deleteConversation(id, accessToken);
     await mutate(['/api/conversations', accessToken]);
     if (conversationId === id) onSelect(null);
@@ -44,6 +55,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
   }
 
   return (
+    <>
     <aside className="flex flex-col w-64 shrink-0 bg-slate-950 text-slate-300 h-full">
       {/* Logo */}
       <div className="px-4 pt-5 pb-3">
@@ -77,16 +89,13 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
             }`}
           >
             <span className="truncate flex-1 leading-snug">{conv.title || 'Untitled'}</span>
-            <span
-              role="button"
-              tabIndex={0}
-              onClick={e => handleDelete(e as unknown as React.MouseEvent, conv.id)}
-              onKeyDown={e => e.key === 'Enter' && handleDelete(e as unknown as React.MouseEvent, conv.id)}
+            <button
+              onClick={e => { e.stopPropagation(); setDeleteTarget(conv.id); }}
               className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded hover:text-red-400 transition-opacity"
               aria-label="Delete conversation"
             >
               <Trash2 size={13} />
-            </span>
+            </button>
           </button>
         ))}
       </nav>
@@ -130,5 +139,31 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
         </button>
       </div>
     </aside>
+
+      <Dialog open={deleteTarget !== null} onOpenChange={open => { if (!open) setDeleteTarget(null); }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete conversation</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete this conversation? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setDeleteTarget(null)}
+              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleDeleteConfirm}
+              className="rounded-lg px-3 py-1.5 text-sm bg-red-600 text-white hover:bg-red-500 transition-colors"
+            >
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }
