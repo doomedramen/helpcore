@@ -15,7 +15,7 @@ pub async fn get_config(
     _admin: AdminUser,
 ) -> Result<Json<AdminConfigResponse>, AppError> {
     let config = load_persisted_config(&state).await?;
-    Ok(Json(config_response(&state, &config, false)))
+    Ok(Json(config_response(&state, &config)))
 }
 
 pub async fn update_config(
@@ -23,6 +23,7 @@ pub async fn update_config(
     _admin: AdminUser,
     Json(req): Json<AdminConfigUpdateRequest>,
 ) -> Result<Json<AdminConfigResponse>, AppError> {
+    let _update_guard = state.config_update_lock.lock().await;
     let current = load_persisted_config(&state).await?;
     let mut config = current.clone();
 
@@ -58,6 +59,11 @@ pub async fn update_config(
 
         let provider_type = ProviderType::try_from(provider.provider_type.as_str())
             .map_err(|e| AppError::BadRequest(e.to_string()))?;
+        if provider_type != ProviderType::Ollama {
+            return Err(AppError::BadRequest(
+                "only Ollama providers are currently supported".into(),
+            ));
+        }
         let roles = provider
             .roles
             .iter()
@@ -75,12 +81,29 @@ pub async fn update_config(
             existing.get(id.as_str()).and_then(|item| item.api_key.clone())
         };
 
+        let url = provider
+            .url
+            .map(|url| url.trim().to_string())
+            .filter(|url| !url.is_empty());
+        if url.is_none() {
+            return Err(AppError::BadRequest(format!(
+                "provider {id} base URL is required"
+            )));
+        }
+        let parsed_url = reqwest::Url::parse(url.as_deref().unwrap())
+            .map_err(|_| AppError::BadRequest(format!("provider {id} base URL is invalid")))?;
+        if !matches!(parsed_url.scheme(), "http" | "https") {
+            return Err(AppError::BadRequest(format!(
+                "provider {id} base URL must use http or https"
+            )));
+        }
+
         providers.push(ProviderConfig {
             id,
             name: provider.name.trim().to_string(),
             provider_type,
             api_key,
-            url: provider.url.filter(|url| !url.trim().is_empty()),
+            url,
             default_model: provider.default_model.trim().to_string(),
             roles,
             num_ctx: provider.num_ctx,
@@ -92,6 +115,8 @@ pub async fn update_config(
     config
         .validate()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let prepared = crate::providers::registry::ProviderRegistry::prepare(&config.providers)
+        .map_err(|error| AppError::BadRequest(error.to_string()))?;
     Config::writability(&state.config_path).map_err(AppError::Conflict)?;
 
     let path = state.config_path.clone();
@@ -99,6 +124,8 @@ pub async fn update_config(
     tokio::task::spawn_blocking(move || saved.save(&path))
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("config save task failed: {e}")))??;
+
+    state.providers.replace(prepared);
 
     let blacklist = config.plugins.blacklist.clone();
     state
@@ -118,7 +145,7 @@ pub async fn update_config(
         })
         .await?;
 
-    Ok(Json(config_response(&state, &config, true)))
+    Ok(Json(config_response(&state, &config)))
 }
 
 async fn load_persisted_config(state: &AppState) -> Result<Config, AppError> {
@@ -139,7 +166,6 @@ async fn load_persisted_config(state: &AppState) -> Result<Config, AppError> {
 fn config_response(
     state: &AppState,
     config: &Config,
-    restart_required: bool,
 ) -> AdminConfigResponse {
     let writability = Config::writability(&state.config_path);
     AdminConfigResponse {
@@ -173,6 +199,7 @@ fn config_response(
                 num_predict: provider.num_predict,
             })
             .collect(),
-        restart_required,
+        restart_required: config.server.port != state.config.server.port
+            || config.logging.level != state.config.logging.level,
     }
 }

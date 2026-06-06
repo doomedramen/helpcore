@@ -8,7 +8,7 @@ Setup has four stages, identical for both distribution methods:
 
 1. **Install** — get the server running
 2. **Create admin** — first-run wizard creates the first admin account
-3. **Configure** — add providers to `config.toml`, restart to load them
+3. **Configure** — add providers through the admin UI, or edit `config.toml`
 4. **Connect clients** — log in from CLI, web, or any other interface
 
 ---
@@ -154,7 +154,8 @@ account exists.
 
 ## Stage 3 — Configure providers
 
-Edit `config.toml` to add AI providers, then restart the server.
+Use the admin web interface to add AI providers and apply them immediately.
+Alternatively, edit `config.toml` directly and restart the server.
 Provider credentials live in this file only — they never touch the database.
 
 ```toml
@@ -180,7 +181,8 @@ systemctl restart helpcore
 Ctrl+C, then re-run
 ```
 
-Provider changes always require a restart. Hot-reload is deferred.
+Provider changes saved through `/admin/` are applied immediately. Direct
+`config.toml` edits require a restart.
 
 ---
 
@@ -227,7 +229,7 @@ management commands are not yet implemented.
 After the above stages are complete:
 
 - [ ] Admin account created
-- [ ] At least one provider configured and restarted
+- [ ] At least one provider configured
 - [ ] Admin granted access to provider(s) via web UI
 - [ ] CLI connected and `helpcore` opens TUI successfully
 - [ ] Web UI accessible at server URL

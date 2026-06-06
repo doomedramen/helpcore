@@ -269,6 +269,15 @@ impl Config {
             if provider.roles.is_empty() {
                 anyhow::bail!("provider {} must have at least one role", provider.id);
             }
+            if provider.num_ctx == Some(0) {
+                anyhow::bail!("provider {} context tokens must be greater than zero", provider.id);
+            }
+            if provider.num_predict == Some(0) {
+                anyhow::bail!(
+                    "provider {} maximum response tokens must be greater than zero",
+                    provider.id
+                );
+            }
         }
 
         Ok(())

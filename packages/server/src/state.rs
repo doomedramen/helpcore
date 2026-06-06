@@ -1,6 +1,6 @@
 use std::{path::PathBuf, sync::Arc};
 
-use crate::{config::Config, db::DbPool, providers::traits::ChatProvider};
+use crate::{config::Config, db::DbPool, providers::registry::ProviderRegistry};
 
 #[derive(Clone)]
 pub struct AppState {
@@ -8,6 +8,6 @@ pub struct AppState {
     pub config_path: PathBuf,
     pub data_dir: PathBuf,
     pub db: Arc<DbPool>,
-    /// Providers in config order. Chat handler picks the first available.
-    pub providers: Vec<Arc<dyn ChatProvider>>,
+    pub providers: ProviderRegistry,
+    pub config_update_lock: Arc<tokio::sync::Mutex<()>>,
 }

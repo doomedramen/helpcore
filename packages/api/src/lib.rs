@@ -70,6 +70,18 @@ pub struct ChatRequest {
     pub model: Option<String>,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProviderInfo {
+    pub id: String,
+    pub name: String,
+    pub default_model: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ProviderListResponse {
+    pub providers: Vec<ProviderInfo>,
+}
+
 /// Sent as SSE `event: chunk` data.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SseChunk {

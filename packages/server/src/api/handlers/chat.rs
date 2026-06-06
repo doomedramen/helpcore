@@ -18,6 +18,7 @@ use helpcore_api::CompactResponse;
 
 use crate::{
     api::{error::AppError, extractor::AuthUser},
+    config::ProviderRole,
     conversation::{compact, context, context::ContextOptions, history, memory},
     plugins::{registry, runtime::ToolCatalog},
     providers::types::{ChatMessage, ToolCall},
@@ -36,19 +37,13 @@ pub async fn chat(
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, AppError> {
     let provider = state
         .providers
-        .iter()
-        .find(|p| {
-            req.provider_id
-                .as_deref()
-                .map_or(true, |id| p.id() == id)
-        })
-        .cloned()
+        .find_for_role(req.provider_id.as_deref(), ProviderRole::Chat)
         .ok_or_else(|| {
             AppError::BadRequest(
                 req.provider_id
                     .as_deref()
                     .map(|id| format!("unknown provider: {id}"))
-                    .unwrap_or_else(|| "no providers configured".to_string()),
+                    .unwrap_or_else(|| "no chat providers configured".to_string()),
             )
         })?;
 
@@ -130,9 +125,7 @@ pub async fn retry_message(
         .map_err(turn_error)?;
     let provider = state
         .providers
-        .iter()
-        .find(|provider| provider.id() == provider_id)
-        .cloned()
+        .find_for_role(Some(&provider_id), ProviderRole::Chat)
         .ok_or_else(|| AppError::BadRequest(format!("provider {provider_id} is not available")))?;
 
     let (tx, rx) = tokio::sync::mpsc::channel::<Result<Event, Infallible>>(64);
@@ -525,9 +518,13 @@ pub async fn compact_conversation(
     let provider = conv
         .provider_id
         .as_deref()
-        .and_then(|pid| state.providers.iter().find(|p| p.id() == pid).cloned())
-        .or_else(|| state.providers.first().cloned())
-        .ok_or_else(|| AppError::BadRequest("no providers configured".into()))?;
+        .and_then(|pid| {
+            state
+                .providers
+                .find_for_role(Some(pid), ProviderRole::Chat)
+        })
+        .or_else(|| state.providers.find_for_role(None, ProviderRole::Chat))
+        .ok_or_else(|| AppError::BadRequest("no chat providers configured".into()))?;
 
     let result = compact::compact_conversation(&state.db, &conv.id, &provider)
         .await

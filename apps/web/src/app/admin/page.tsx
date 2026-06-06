@@ -18,6 +18,10 @@ export default function AdminPage() {
   } = useSWR(
     accessToken && currentUser?.role === 'admin' ? ['/api/admin/config', accessToken] : null,
     ([, token]) => getAdminConfig(token),
+    {
+      revalidateOnFocus: false,
+      revalidateOnReconnect: false,
+    },
   );
 
   useEffect(() => {

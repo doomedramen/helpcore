@@ -24,6 +24,8 @@ export interface SetupStatusResponse {
 export interface ConversationSummary {
   id: string;
   title: string;
+  provider_id: string | null;
+  model: string | null;
   message_count: number;
   created_at: string;
   updated_at: string;
@@ -51,6 +53,16 @@ export interface SseStarted {
 export interface SseDone {
   conversation_id: string;
   message_id: string;
+}
+
+export interface ProviderInfo {
+  id: string;
+  name: string;
+  default_model: string;
+}
+
+export interface ProviderListResponse {
+  providers: ProviderInfo[];
 }
 
 export interface ConfigField {
@@ -123,7 +135,7 @@ export interface PluginStoreResponse {
   plugins: PluginStoreItem[];
 }
 
-export type ProviderType = 'ollama' | 'anthropic' | 'openai' | 'openai_compatible';
+export type ProviderType = 'ollama';
 export type ProviderRole = 'chat' | 'code' | 'image_gen' | 'video_gen' | 'embeddings';
 
 export interface AdminProviderConfig {

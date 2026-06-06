@@ -52,6 +52,10 @@ default_model = "llama3.2"
 Supported types: `ollama` is currently implemented. `anthropic`, `openai`, and
 `openai_compatible` are declared in config but not yet implemented.
 
+Provider changes saved through the admin web interface are validated and
+applied to new requests immediately. Editing `config.toml` directly still
+requires a server restart.
+
 ---
 
 ## Per-user access control

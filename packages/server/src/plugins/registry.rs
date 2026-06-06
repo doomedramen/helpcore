@@ -491,6 +491,7 @@ mod tests {
             description: "A test plugin".to_string(),
             tier: "bridge".to_string(),
             permissions: vec!["outbound_http".to_string()],
+            provides: Vec::new(),
             min_core_version: None,
             bridge: None,
             allowed_hosts: Vec::new(),

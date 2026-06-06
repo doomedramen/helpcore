@@ -24,6 +24,7 @@ pub fn create(state: Arc<AppState>) -> Router {
         )
         // Chat
         .route("/chat", post(handlers::chat::chat))
+        .route("/providers", get(handlers::provider::list_providers))
         // Conversations
         .route("/conversations", get(handlers::chat::list_conversations))
         .route("/conversations/{id}/messages", get(handlers::chat::get_messages))

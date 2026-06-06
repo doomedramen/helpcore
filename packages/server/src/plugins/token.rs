@@ -114,6 +114,7 @@ mod tests {
             description: "test".to_string(),
             tier: "bridge".to_string(),
             permissions: vec![],
+            provides: Vec::new(),
             min_core_version: None,
             bridge: None,
             allowed_hosts: Vec::new(),

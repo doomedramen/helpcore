@@ -563,6 +563,7 @@ mod tests {
             description: String::new(),
             tier: "bridge".into(),
             permissions: vec!["outbound_http".into()],
+            provides: Vec::new(),
             min_core_version: None,
             bridge: None,
             allowed_hosts: hosts.iter().map(|host| host.to_string()).collect(),

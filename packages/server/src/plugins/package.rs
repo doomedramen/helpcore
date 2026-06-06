@@ -432,6 +432,7 @@ allowed_hosts = ["api.example.com"]
             author: "Test".into(),
             homepage: "https://example.com".into(),
             permissions: vec!["outbound_http".into()],
+            provides: Vec::new(),
             source: Some(super::super::registry::StorePluginSource {
                 source_type: "url".into(),
                 repo: None,

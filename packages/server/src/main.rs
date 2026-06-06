@@ -65,20 +65,14 @@ async fn main() -> anyhow::Result<()> {
         plugins::registry::load_local_plugins(conn, &config.plugins.local)
     })?;
 
-    // Load providers from config.
-    let mut provider_list = Vec::new();
-    for pc in &config.providers {
-        match providers::factory::build(pc) {
-            Ok(p) => {
-                tracing::info!(id = pc.id, name = pc.name, "loaded provider");
-                provider_list.push(p);
-            }
-            Err(e) => {
-                tracing::error!(id = pc.id, error = %e, "failed to load provider — skipping");
-            }
-        }
+    let provider_registry = providers::registry::ProviderRegistry::new(
+        providers::registry::ProviderRegistry::prepare(&config.providers)
+            .context("failed to load configured providers")?,
+    );
+    for provider in &config.providers {
+        tracing::info!(id = provider.id, name = provider.name, "loaded provider");
     }
-    if provider_list.is_empty() {
+    if provider_registry.is_empty() {
         tracing::warn!("no providers configured — POST /chat will return an error");
     }
 
@@ -87,7 +81,8 @@ async fn main() -> anyhow::Result<()> {
         config_path,
         data_dir,
         db: Arc::new(db),
-        providers: provider_list,
+        providers: provider_registry,
+        config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
     });
 
     let port = state.config.server.port;

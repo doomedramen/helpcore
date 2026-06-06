@@ -1,6 +1,7 @@
 pub mod error;
 pub mod factory;
 pub mod ollama;
+pub mod registry;
 pub mod reliable;
 pub mod traits;
 pub mod types;

@@ -19,9 +19,6 @@ interface Props {
 
 const providerTypes: Array<{ value: ProviderType; label: string }> = [
   { value: 'ollama', label: 'Ollama' },
-  { value: 'anthropic', label: 'Anthropic' },
-  { value: 'openai', label: 'OpenAI' },
-  { value: 'openai_compatible', label: 'OpenAI-compatible' },
 ];
 
 const providerRoles: Array<{ value: ProviderRole; label: string }> = [
@@ -49,20 +46,64 @@ function draftFromConfig(config: AdminConfig): AdminConfigUpdate {
   };
 }
 
+function validateProviders(providers: AdminProviderUpdate[]): string {
+  const ids = new Set<string>();
+  for (const provider of providers) {
+    const id = provider.id.trim();
+    if (!id) return 'Every provider needs an ID.';
+    if (ids.has(id)) return `Provider IDs must be unique: ${id}`;
+    ids.add(id);
+    if (!provider.name.trim()) return `Provider ${id} needs a name.`;
+    if (provider.provider_type !== 'ollama') {
+      return `Provider ${id} uses an unsupported provider type.`;
+    }
+    if (!provider.default_model.trim()) return `Provider ${id} needs a default model.`;
+    if (!provider.url?.trim()) return `Provider ${id} needs a base URL.`;
+    try {
+      const url = new URL(provider.url);
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return `Provider ${id} base URL must use http or https.`;
+      }
+    } catch {
+      return `Provider ${id} base URL is invalid.`;
+    }
+    if (provider.roles.length === 0) return `Provider ${id} needs at least one role.`;
+    if (provider.num_ctx !== null && provider.num_ctx <= 0) {
+      return `Provider ${id} context tokens must be greater than zero.`;
+    }
+    if (provider.num_predict !== null && provider.num_predict <= 0) {
+      return `Provider ${id} maximum response tokens must be greater than zero.`;
+    }
+  }
+  return '';
+}
+
 export default function ConfigForm({ accessToken, config, onSaved }: Props) {
   const [draft, setDraft] = useState<AdminConfigUpdate>(() => draftFromConfig(config));
   const [blacklist, setBlacklist] = useState(config.plugin_blacklist.join('\n'));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
-  const [saved, setSaved] = useState(false);
+  const [savedConfig, setSavedConfig] = useState<AdminConfig | null>(null);
+  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
+    if (dirty) return;
     setDraft(draftFromConfig(config));
     setBlacklist(config.plugin_blacklist.join('\n'));
-  }, [config]);
+  }, [config, dirty]);
+
+  function markDirty() {
+    setDirty(true);
+    setSavedConfig(null);
+  }
+
+  function updateDraft(update: (current: AdminConfigUpdate) => AdminConfigUpdate) {
+    setDraft(update);
+    markDirty();
+  }
 
   function updateProvider(index: number, patch: Partial<AdminProviderUpdate>) {
-    setDraft(current => ({
+    updateDraft(current => ({
       ...current,
       providers: current.providers.map((provider, providerIndex) => (
         providerIndex === index ? { ...provider, ...patch } : provider
@@ -71,7 +112,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
   }
 
   function addProvider() {
-    setDraft(current => ({
+    updateDraft(current => ({
       ...current,
       providers: [
         ...current.providers,
@@ -92,9 +133,14 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
   }
 
   async function save() {
+    const validationError = validateProviders(draft.providers);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
     setSaving(true);
     setError('');
-    setSaved(false);
+    setSavedConfig(null);
     try {
       const updated = await updateAdminConfig({
         ...draft,
@@ -103,8 +149,11 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
           .map(item => item.trim())
           .filter(Boolean),
       }, accessToken);
+      setDraft(draftFromConfig(updated));
+      setBlacklist(updated.plugin_blacklist.join('\n'));
+      setDirty(false);
       onSaved(updated);
-      setSaved(true);
+      setSavedConfig(updated);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save configuration.');
     } finally {
@@ -114,9 +163,15 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
 
   return (
     <div className="space-y-6">
-      {saved && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
-          Configuration saved. Restart helpcore to apply server and provider changes.
+      {savedConfig && (
+        <div className={`rounded-xl border px-4 py-3 text-sm ${
+          savedConfig.restart_required
+            ? 'border-amber-200 bg-amber-50 text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200'
+            : 'border-green-200 bg-green-50 text-green-800 dark:border-green-900 dark:bg-green-950/40 dark:text-green-200'
+        }`}>
+          {savedConfig.restart_required
+            ? 'Configuration saved. Provider changes are active now; restart helpcore to apply port or logging changes.'
+            : 'Configuration saved. Provider changes are active now.'}
         </div>
       )}
       {error && (
@@ -135,7 +190,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
           <Field label="Display name">
             <input
               value={draft.server.name}
-              onChange={event => setDraft(current => ({
+              onChange={event => updateDraft(current => ({
                 ...current,
                 server: { ...current.server, name: event.target.value },
               }))}
@@ -146,7 +201,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
             <input
               type="url"
               value={draft.server.url}
-              onChange={event => setDraft(current => ({
+              onChange={event => updateDraft(current => ({
                 ...current,
                 server: { ...current.server, url: event.target.value },
               }))}
@@ -159,7 +214,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
               min={1}
               max={65535}
               value={draft.server.port}
-              onChange={event => setDraft(current => ({
+              onChange={event => updateDraft(current => ({
                 ...current,
                 server: { ...current.server, port: Number(event.target.value) },
               }))}
@@ -169,7 +224,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
           <Field label="Log level">
             <select
               value={draft.logging_level}
-              onChange={event => setDraft(current => ({
+              onChange={event => updateDraft(current => ({
                 ...current,
                 logging_level: event.target.value,
               }))}
@@ -192,7 +247,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
             <input
               type="url"
               value={draft.registry_url}
-              onChange={event => setDraft(current => ({
+              onChange={event => updateDraft(current => ({
                 ...current,
                 registry_url: event.target.value,
               }))}
@@ -203,7 +258,10 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
             <textarea
               rows={4}
               value={blacklist}
-              onChange={event => setBlacklist(event.target.value)}
+              onChange={event => {
+                setBlacklist(event.target.value);
+                markDirty();
+              }}
               placeholder="untrusted-plugin"
               className={`${inputClass} resize-y`}
             />
@@ -213,7 +271,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
 
       <Section
         title="Providers"
-        description="Provider changes are validated now and loaded after a server restart."
+        description="Provider changes are validated and applied immediately when saved."
         action={(
           <button
             type="button"
@@ -249,7 +307,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                   </div>
                   <button
                     type="button"
-                    onClick={() => setDraft(current => ({
+                    onClick={() => updateDraft(current => ({
                       ...current,
                       providers: current.providers.filter((_, itemIndex) => itemIndex !== index),
                     }))}
@@ -295,7 +353,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                       className={inputClass}
                     />
                   </Field>
-                  <Field label="Base URL" hint="Required for Ollama and OpenAI-compatible providers.">
+                  <Field label="Base URL" hint="Required for Ollama.">
                     <input
                       type="url"
                       value={provider.url ?? ''}

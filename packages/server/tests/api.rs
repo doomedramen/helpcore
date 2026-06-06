@@ -4,7 +4,8 @@ use axum::{
     http::{Request, StatusCode, header},
 };
 use helpcore_api::{
-    ConversationSummary, LoginResponse, MessageSummary, RefreshResponse, SetupStatusResponse,
+    AdminConfigResponse, ConversationSummary, LoginResponse, MessageSummary, ProviderListResponse,
+    RefreshResponse, SetupStatusResponse,
 };
 use serde::de::DeserializeOwned;
 use serde_json::{Value, json};
@@ -20,7 +21,24 @@ fn test_state() -> Arc<helpcore_server::state::AppState> {
 fn test_state_with_providers(
     providers: Vec<Arc<dyn helpcore_server::providers::traits::ChatProvider>>,
 ) -> Arc<helpcore_server::state::AppState> {
+    use helpcore_server::config::ProviderRole;
+
+    test_state_with_provider_roles(
+        providers
+            .into_iter()
+            .map(|provider| (provider, vec![ProviderRole::Chat]))
+            .collect(),
+    )
+}
+
+fn test_state_with_provider_roles(
+    providers: Vec<(
+        Arc<dyn helpcore_server::providers::traits::ChatProvider>,
+        Vec<helpcore_server::config::ProviderRole>,
+    )>,
+) -> Arc<helpcore_server::state::AppState> {
     use helpcore_server::{config, db, state};
+    use helpcore_server::providers::registry::ProviderRegistry;
 
     let db_pool = Arc::new(db::open_in_memory());
     let cfg: config::Config =
@@ -41,7 +59,8 @@ url  = "http://localhost:3000""#)
         )),
         data_dir,
         db: db_pool,
-        providers,
+        providers: ProviderRegistry::from_providers(providers),
+        config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
     })
 }
 
@@ -297,10 +316,11 @@ url = "http://localhost:3000"
 url = "https://example.com/plugins.json"
 
 [[providers]]
-id = "openai"
-name = "OpenAI"
-type = "openai"
+id = "ollama"
+name = "Ollama"
+type = "ollama"
 api_key = "secret-key"
+url = "http://localhost:11434"
 default_model = "gpt-4o"
 roles = ["chat"]
 "#;
@@ -327,12 +347,12 @@ roles = ["chat"]
             "registry_url": "https://example.com/new-registry.json",
             "plugin_blacklist": ["blocked-plugin"],
             "providers": [{
-                "id": "openai",
-                "name": "OpenAI",
-                "provider_type": "openai",
+                "id": "ollama",
+                "name": "Ollama",
+                "provider_type": "ollama",
                 "api_key": null,
                 "clear_api_key": false,
-                "url": null,
+                "url": "http://localhost:11434",
                 "default_model": "gpt-4.1",
                 "roles": ["chat"],
                 "num_ctx": null,
@@ -347,6 +367,158 @@ roles = ["chat"]
     assert_eq!(saved.server.name, "Updated");
     assert_eq!(saved.providers[0].api_key.as_deref(), Some("secret-key"));
     assert_eq!(saved.plugins.blacklist, vec!["blocked-plugin"]);
+}
+
+#[tokio::test]
+async fn admin_provider_changes_hot_reload_and_report_restart_state() {
+    let state = test_state();
+    let tokens = do_setup(Arc::clone(&state)).await;
+
+    let resp = authed_put_json(
+        app(Arc::clone(&state)),
+        "/api/admin/config",
+        &tokens.access_token,
+        json!({
+            "server": { "name": "test", "url": "http://localhost:3000", "port": 3000 },
+            "logging_level": "info",
+            "registry_url": helpcore_server::config::DEFAULT_REGISTRY_URL,
+            "plugin_blacklist": [],
+            "providers": [{
+                "id": "ollama-live",
+                "name": "Live Ollama",
+                "provider_type": "ollama",
+                "api_key": null,
+                "clear_api_key": false,
+                "url": "http://localhost:11434",
+                "default_model": "llama3.2",
+                "roles": ["chat"],
+                "num_ctx": 4096,
+                "num_predict": 1024
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let saved: AdminConfigResponse = json_body(resp.into_body()).await;
+    assert!(!saved.restart_required);
+
+    let resp = authed_get(
+        app(Arc::clone(&state)),
+        "/api/providers",
+        &tokens.access_token,
+    )
+    .await;
+    let providers: ProviderListResponse = json_body(resp.into_body()).await;
+    assert_eq!(providers.providers.len(), 1);
+    assert_eq!(providers.providers[0].id, "ollama-live");
+    assert_eq!(providers.providers[0].default_model, "llama3.2");
+
+    let resp = authed_put_json(
+        app(Arc::clone(&state)),
+        "/api/admin/config",
+        &tokens.access_token,
+        json!({
+            "server": { "name": "test", "url": "http://localhost:3000", "port": 4000 },
+            "logging_level": "debug",
+            "registry_url": helpcore_server::config::DEFAULT_REGISTRY_URL,
+            "plugin_blacklist": [],
+            "providers": [{
+                "id": "ollama-code",
+                "name": "Code-only Ollama",
+                "provider_type": "ollama",
+                "api_key": null,
+                "clear_api_key": false,
+                "url": "http://localhost:11434",
+                "default_model": "qwen",
+                "roles": ["code"],
+                "num_ctx": null,
+                "num_predict": null
+            }]
+        }),
+    )
+    .await;
+    let saved: AdminConfigResponse = json_body(resp.into_body()).await;
+    assert!(saved.restart_required);
+
+    let resp = authed_get(
+        app(Arc::clone(&state)),
+        "/api/providers",
+        &tokens.access_token,
+    )
+    .await;
+    let providers: ProviderListResponse = json_body(resp.into_body()).await;
+    assert!(providers.providers.is_empty(), "non-chat provider must be hidden");
+
+    let resp = authed_get(app(state), "/api/admin/config", &tokens.access_token).await;
+    let saved: AdminConfigResponse = json_body(resp.into_body()).await;
+    assert!(saved.restart_required);
+}
+
+#[tokio::test]
+async fn invalid_provider_save_preserves_file_and_live_registry() {
+    use async_trait::async_trait;
+    use futures_util::stream;
+    use helpcore_server::providers::{
+        error::ProviderError,
+        traits::{ChatProvider, ProviderStream},
+        types::{ChatMessage, StreamChunk},
+    };
+
+    struct ExistingProvider;
+    #[async_trait]
+    impl ChatProvider for ExistingProvider {
+        fn id(&self) -> &str { "existing" }
+        fn name(&self) -> &str { "Existing" }
+        fn default_model(&self) -> &str { "existing-model" }
+        fn context_limit(&self) -> u32 { 8192 }
+        async fn complete(
+            &self,
+            _: &[ChatMessage],
+            _: &[helpcore_server::providers::types::ToolDefinition],
+            _: Option<&str>,
+        ) -> Result<ProviderStream, ProviderError> {
+            Ok(Box::pin(stream::iter(vec![Ok(StreamChunk::done())])))
+        }
+    }
+
+    let state = test_state_with_providers(vec![Arc::new(ExistingProvider)]);
+    let original = "[server]\nname = \"test\"\nurl = \"http://localhost:3000\"\n";
+    std::fs::write(&state.config_path, original).unwrap();
+    let tokens = do_setup(Arc::clone(&state)).await;
+
+    let resp = authed_put_json(
+        app(Arc::clone(&state)),
+        "/api/admin/config",
+        &tokens.access_token,
+        json!({
+            "server": { "name": "changed", "url": "http://localhost:3000", "port": 3000 },
+            "logging_level": "info",
+            "registry_url": helpcore_server::config::DEFAULT_REGISTRY_URL,
+            "plugin_blacklist": [],
+            "providers": [{
+                "id": "unsupported",
+                "name": "Unsupported",
+                "provider_type": "openai",
+                "api_key": "secret",
+                "clear_api_key": false,
+                "url": "https://api.openai.com",
+                "default_model": "gpt-4.1",
+                "roles": ["chat"],
+                "num_ctx": null,
+                "num_predict": null
+            }]
+        }),
+    )
+    .await;
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+    assert_eq!(std::fs::read_to_string(&state.config_path).unwrap(), original);
+    assert!(state
+        .providers
+        .find_for_role(
+            Some("existing"),
+            helpcore_server::config::ProviderRole::Chat,
+        )
+        .is_some());
 }
 
 #[tokio::test]
@@ -544,6 +716,75 @@ async fn chat_streams_and_persists_conversation() {
     assert_eq!(msgs[0].role, "user");
     assert_eq!(msgs[1].role, "assistant");
     assert_eq!(msgs[1].content, "Hello world");
+}
+
+#[tokio::test]
+async fn chat_uses_selected_provider_and_defaults_to_first_chat_provider() {
+    use async_trait::async_trait;
+    use futures_util::stream;
+    use helpcore_server::providers::{
+        error::ProviderError,
+        traits::{ChatProvider, ProviderStream},
+        types::{ChatMessage, StreamChunk},
+    };
+
+    struct NamedProvider {
+        id: &'static str,
+    }
+
+    #[async_trait]
+    impl ChatProvider for NamedProvider {
+        fn id(&self) -> &str { self.id }
+        fn name(&self) -> &str { self.id }
+        fn default_model(&self) -> &str { "test-model" }
+        fn context_limit(&self) -> u32 { 8192 }
+        async fn complete(
+            &self,
+            _: &[ChatMessage],
+            _: &[helpcore_server::providers::types::ToolDefinition],
+            _: Option<&str>,
+        ) -> Result<ProviderStream, ProviderError> {
+            Ok(Box::pin(stream::iter(vec![
+                Ok(StreamChunk::delta(self.id)),
+                Ok(StreamChunk::done()),
+            ])))
+        }
+    }
+
+    let state = test_state_with_providers(vec![
+        Arc::new(NamedProvider { id: "first" }),
+        Arc::new(NamedProvider { id: "second" }),
+    ]);
+    let tokens = do_setup(Arc::clone(&state)).await;
+
+    let resp = authed_post_json(
+        app(Arc::clone(&state)),
+        "/api/chat",
+        &tokens.access_token,
+        json!({ "message": "selected", "provider_id": "second" }),
+    )
+    .await;
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("second"));
+
+    let resp = authed_get(
+        app(Arc::clone(&state)),
+        "/api/conversations",
+        &tokens.access_token,
+    )
+    .await;
+    let conversations: Vec<ConversationSummary> = json_body(resp.into_body()).await;
+    assert_eq!(conversations[0].provider_id.as_deref(), Some("second"));
+
+    let resp = authed_post_json(
+        app(state),
+        "/api/chat",
+        &tokens.access_token,
+        json!({ "message": "default" }),
+    )
+    .await;
+    let body = to_bytes(resp.into_body(), usize::MAX).await.unwrap();
+    assert!(String::from_utf8_lossy(&body).contains("first"));
 }
 
 #[tokio::test]

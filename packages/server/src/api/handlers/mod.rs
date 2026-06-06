@@ -3,6 +3,7 @@ pub mod auth;
 pub mod chat;
 pub mod memory;
 pub mod plugin;
+pub mod provider;
 pub mod setup;
 pub mod tts;
 

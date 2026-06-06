@@ -3,9 +3,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
-import { chat, getMessages, listPlugins, retryMessage, cancelGeneration, ApiError } from '@/lib/api';
+import {
+  ApiError,
+  cancelGeneration,
+  chat,
+  getMessages,
+  listConversations,
+  listPlugins,
+  listProviders,
+  retryMessage,
+} from '@/lib/api';
 import { useAuth } from '@/context/auth';
-import type { Message, SseDone, SseStarted } from '@/lib/types';
+import type { ConversationSummary, Message, SseDone, SseStarted } from '@/lib/types';
 import MessageBubble from './message-bubble';
 import ChatInput from './chat-input';
 import { Pencil, Trash2 } from 'lucide-react';
@@ -13,6 +22,7 @@ import { Pencil, Trash2 } from 'lucide-react';
 interface QueueItem {
   id: string;
   text: string;
+  providerId: string;
 }
 
 interface Props {
@@ -35,6 +45,8 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const providerSelectionsRef = useRef<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const processingRef = useRef(false);
 
@@ -61,6 +73,35 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     ([, token]) => listPlugins(token),
   );
   const hasAudio = pluginCaps?.capabilities.includes('audio') ?? false;
+
+  const { data: providerData } = useSWR(
+    accessToken ? ['/api/providers', accessToken] : null,
+    ([, token]) => listProviders(token),
+  );
+  const providers = providerData?.providers ?? [];
+  const { data: conversations } = useSWR<ConversationSummary[]>(
+    accessToken ? ['/api/conversations', accessToken] : null,
+    ([, token]) => listConversations(token as string),
+  );
+
+  useEffect(() => {
+    if (!providerData || (conversationId && !conversations)) return;
+    const key = conversationId ?? '__new__';
+    const conversationProvider = conversationId
+      ? conversations?.find(conversation => conversation.id === conversationId)?.provider_id
+      : null;
+    const remembered = providerSelectionsRef.current[key] ?? conversationProvider;
+    const selection = providers.some(provider => provider.id === remembered)
+      ? remembered!
+      : (providers[0]?.id ?? '');
+    providerSelectionsRef.current[key] = selection;
+    setSelectedProviderId(selection);
+  }, [conversationId, conversations, providerData, providers]);
+
+  const handleProviderChange = useCallback((providerId: string) => {
+    providerSelectionsRef.current[conversationId ?? '__new__'] = providerId;
+    setSelectedProviderId(providerId);
+  }, [conversationId]);
 
   // Track the actively-generating conversation separately so we never show
   // the stop button for stale data from a different conversation.
@@ -89,12 +130,17 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     ]);
   }, [accessToken, mutateGlobal]);
 
-  const streamHandlers = useCallback((fallbackConversationId?: string) => {
+  const streamHandlers = useCallback((
+    fallbackConversationId: string | undefined,
+    providerId: string,
+  ) => {
     let activeConversationId = fallbackConversationId;
     return {
       onStarted: (started: SseStarted) => {
         activeConversationId = started.conversation_id;
         if (!fallbackConversationId) {
+          providerSelectionsRef.current[started.conversation_id] = providerId;
+          setSelectedProviderId(providerId);
           onConversationCreated(started.conversation_id);
           router.replace(`/chat/?id=${started.conversation_id}`, { scroll: false });
         }
@@ -133,17 +179,18 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     }
   }, [accessToken, refreshAccessToken, router]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const sendMessage = useCallback(async (item: QueueItem) => {
     setError('');
     const controller = new AbortController();
     abortRef.current = controller;
     generationConvRef.current = conversationId;
     try {
       await runWithRefresh(token => chat({
-        message: text,
+        message: item.text,
         conversation_id: conversationId ?? undefined,
+        provider_id: item.providerId,
         token,
-        ...streamHandlers(conversationId ?? undefined),
+        ...streamHandlers(conversationId ?? undefined, item.providerId),
         signal: controller.signal,
       }));
     } catch (caught) {
@@ -168,16 +215,17 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       processingRef.current = true;
       const [first, ...rest] = queue;
       setQueue(rest);
-      sendMessage(first.text).finally(() => {
+      sendMessage(first).finally(() => {
         processingRef.current = false;
       });
     }
   }, [active, queue, sendMessage]);
 
   const handleSend = useCallback((text: string) => {
+    if (!selectedProviderId) return;
     const id = String(nextQueueId++);
-    setQueue(prev => [...prev, { id, text }]);
-  }, []);
+    setQueue(prev => [...prev, { id, text, providerId: selectedProviderId }]);
+  }, [selectedProviderId]);
 
   const handleStop = useCallback(async () => {
     setError('');
@@ -204,9 +252,10 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     const item = queue.find(q => q.id === id);
     if (item) {
       setInputValue(item.text);
+      handleProviderChange(item.providerId);
       setQueue(prev => prev.filter(q => q.id !== id));
     }
-  }, [queue]);
+  }, [handleProviderChange, queue]);
 
   const handleDeleteQueueItem = useCallback((id: string) => {
     setQueue(prev => prev.filter(q => q.id !== id));
@@ -224,7 +273,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
         conversationId,
         messageId,
         token,
-        ...streamHandlers(conversationId),
+        ...streamHandlers(conversationId, selectedProviderId),
         signal: controller.signal,
       }));
     } catch (caught) {
@@ -242,7 +291,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       }
       setRetryingId(null);
     }
-  }, [conversationId, refreshMessages, runWithRefresh, streamHandlers]);
+  }, [conversationId, refreshMessages, runWithRefresh, selectedProviderId, streamHandlers]);
 
   const empty = !historyLoading && messages.length === 0 && queue.length === 0;
   const visibleError = error || (historyError instanceof Error ? historyError.message : '');
@@ -290,7 +339,12 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
               key={item.id}
               className="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400"
             >
-              <div className="flex-1 whitespace-pre-wrap leading-relaxed">{item.text}</div>
+              <div className="flex-1">
+                <div className="whitespace-pre-wrap leading-relaxed">{item.text}</div>
+                <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">
+                  {providers.find(provider => provider.id === item.providerId)?.name ?? item.providerId}
+                </div>
+              </div>
               <div className="flex shrink-0 gap-1">
                 <button
                   type="button"
@@ -319,8 +373,11 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           onChange={setInputValue}
           onSend={handleSend}
           onStop={handleStop}
-          disabled={retryingId !== null}
+          disabled={retryingId !== null || !selectedProviderId}
           active={active}
+          providers={providers}
+          selectedProviderId={selectedProviderId}
+          onProviderChange={handleProviderChange}
         />
       </div>
     </div>

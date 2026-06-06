@@ -8,6 +8,7 @@ import type {
   PluginInfo,
   PluginListResponse,
   PluginStoreResponse,
+  ProviderListResponse,
   RefreshResponse,
   SetupStatusResponse,
   SseDone,
@@ -106,6 +107,10 @@ export function deleteConversation(id: string, token: string): Promise<void> {
 
 export function cancelGeneration(id: string, token: string): Promise<void> {
   return req(`/conversations/${id}/cancel`, { method: 'POST' }, token);
+}
+
+export function listProviders(token: string): Promise<ProviderListResponse> {
+  return req('/providers', {}, token);
 }
 
 export function retryMessage(args: {
@@ -220,18 +225,28 @@ export async function tts(text: string, token: string, voice?: string): Promise<
 export async function chat(args: {
   message: string;
   conversation_id?: string;
+  provider_id?: string;
   token: string;
   onStarted: (started: SseStarted) => void;
   onChunk: (delta: string) => void;
   onDone: (done: SseDone) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { message, conversation_id, token, onStarted, onChunk, onDone, signal } = args;
+  const {
+    message,
+    conversation_id,
+    provider_id,
+    token,
+    onStarted,
+    onChunk,
+    onDone,
+    signal,
+  } = args;
   return consumeChatStream({
     url: '/api/chat',
     token,
     method: 'POST',
-    body: JSON.stringify({ message, conversation_id }),
+    body: JSON.stringify({ message, conversation_id, provider_id }),
     onStarted,
     onChunk,
     onDone,

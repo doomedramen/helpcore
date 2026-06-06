@@ -120,6 +120,7 @@ and rich card rendering.
 | `/api/auth/login` | POST | Obtain a session token |
 | `/api/auth/logout` | POST | Revoke session |
 | `/api/chat` | POST | Send message, stream response (SSE) |
+| `/api/providers` | GET | List active chat providers available to the authenticated user |
 | `/api/conversations` | GET | List conversations |
 | `/api/conversations/:id/messages` | GET | Get persisted conversation history and message states |
 | `/api/conversations/:id` | DELETE | Delete conversation |

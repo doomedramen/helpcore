@@ -173,7 +173,8 @@ New keys are sent only in the authenticated admin update request and remain in
 the config file rather than the database.
 
 Configuration changes are persisted immediately but server, logging, registry,
-blacklist, and provider changes take effect after restarting helpcore. Per-user
+blacklist. Provider changes saved in the admin UI take effect immediately;
+direct file edits take effect after restarting helpcore. Per-user
 plugin enable/disable changes from the Plugins tab take effect immediately.
 
 ---
