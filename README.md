@@ -27,14 +27,24 @@ following up with the dentist, and reviewing the server monitoring setup.
 
 **Requirements:** Docker 24+.
 
-Save this as `docker-compose.yml` (or use the one included in the repo):
+All optional services are behind profiles so you only run what you need:
+
+```bash
+docker compose up -d                                               # helpcore only
+docker compose --profile with-ollama up -d                        # + Ollama
+docker compose --profile voice up -d                              # + voice (STT/TTS)
+docker compose --profile with-ollama --profile voice up -d        # + both
+```
+
+<details>
+<summary><strong>docker-compose.yml</strong></summary>
 
 ```yaml
 services:
   helpcore:
     image: ghcr.io/doomedramen/helpcore:latest
     ports:
-      - "3000:3000"   # API + web UI on the same port
+      - "3000:3000"
     volumes:
       - ./config:/config
       - helpcore_data:/data
@@ -42,13 +52,22 @@ services:
       HELPCORE_CONFIG: /config/config.toml
       HELPCORE_DATA: /data
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:3000/api/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
 
+  # docker compose --profile with-ollama up
+  # Then: docker compose exec ollama ollama pull llama3
+  # Set url = "http://ollama:11434" in [[providers]] in config.toml
   ollama:
+    profiles: [with-ollama]
     image: ollama/ollama
     ports:
       - "11434:11434"
     environment:
-      # Warn/error only. Set OLLAMA_DEBUG=0 to restore Ollama's info logs.
       OLLAMA_DEBUG: "${OLLAMA_DEBUG:--1}"
     volumes:
       - ollama_data:/root/.ollama
@@ -58,41 +77,86 @@ services:
         max-file: "3"
     restart: unless-stopped
 
+  # docker compose --profile voice up
+  # Speaches: OpenAI-compatible STT (faster-whisper) + TTS (Piper/Kokoro) — CPU only
+  # https://github.com/speaches-ai/speaches
+  speaches:
+    profiles: [voice]
+    image: ghcr.io/speaches-ai/speaches:latest-cpu
+    ports:
+      - "8000:8000"
+    volumes:
+      - speaches_data:/home/user/.cache
+    restart: unless-stopped
+
+  # docker compose --profile voice-piper up
+  # Standalone Piper TTS — use when you want TTS only without speaches.
+  # Set TTS_BACKEND=piper_http, TTS_URL=http://localhost:5000 in the voice bridge.
+  # Voice list: https://github.com/rhasspy/piper/blob/master/VOICES.md
+  piper:
+    profiles: [voice-piper]
+    image: artibex/piper-http:latest
+    ports:
+      - "5000:5000"
+    environment:
+      MODEL_DOWNLOAD_LINK: "${PIPER_MODEL_URL:-https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx}"
+    restart: unless-stopped
+
 volumes:
   helpcore_data:
   ollama_data:
+  speaches_data:
 ```
 
-The Docker image bundles both the Rust API server and the Next.js web UI — no separate container needed. The web UI is served at `http://localhost:3000` and the API at `http://localhost:3000/api/`.
-On first start it creates `./config/config.toml` from the default bundled in
-the image.
+</details>
 
-Then:
+The Docker image bundles both the Rust API server and the Next.js web UI — no separate container needed. The web UI and API are both served on port 3000.
 
 ```bash
-# 1. Start helpcore + Ollama
+# First run: pull the image and start
+docker compose pull
 docker compose up -d
 
-# 2. Edit config/config.toml if needed, then restart
+# Edit config/config.toml if needed, then restart
 docker compose restart helpcore
 
-# 3. Pull a model
+# Pull an Ollama model (if using the with-ollama profile)
 docker compose exec ollama ollama pull qwen2.5:3b
 
-# 4. Complete first-time setup
-#    On first run, helpcore prints a setup URL to its logs:
+# Complete first-time setup — helpcore prints a setup URL on first run:
 docker compose logs helpcore | grep "Setup required"
-#    Open that URL in your browser to create the admin account,
-#    or run the CLI wizard instead:
+# Open that URL in your browser to create the admin account, or:
 hc setup --server http://localhost:3000
 
-# 5. Open the web UI
+# Open the web UI
 open http://localhost:3000
-#    Every user can manage their own store plugins from Plugins.
-#    Admins can use Server settings for providers, registry policy, and blacklist.
 
-# 6. Or chat from the terminal
+# Or chat from the terminal
 hc ask "hello, what can you do?"
+```
+
+### Voice
+
+The `voice` profile starts [speaches](https://github.com/speaches-ai/speaches) — a CPU-only container providing OpenAI-compatible STT (faster-whisper) and TTS (Piper/Kokoro) on port 8000.
+
+Run the voice bridge separately (it forwards audio through helpcore's AI):
+
+```bash
+cd plugins/voice/bridge
+cargo build --release
+HELPCORE_URL=http://localhost:3000 \
+STT_BACKEND=openai_compat STT_URL=http://localhost:8000 \
+TTS_BACKEND=openai_compat TTS_URL=http://localhost:8000 \
+./target/release/voice-bridge
+```
+
+Then install the **Voice** plugin in helpcore and set the bridge URL to `http://localhost:8765`.
+
+Alternatively, use `artibex/piper-http` for standalone Piper TTS:
+
+```bash
+docker compose --profile voice-piper up -d
+# Set TTS_BACKEND=piper_http TTS_URL=http://localhost:5000 in the bridge
 ```
 
 ---

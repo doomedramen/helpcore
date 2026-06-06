@@ -1,6 +1,33 @@
+# ── Quick-start reference ──────────────────────────────────────────────────────
+#
+# helpcore only:
+#   docker compose up
+#
+# helpcore + Ollama (local LLM):
+#   docker compose --profile with-ollama up
+#   docker compose exec ollama ollama pull llama3
+#
+# helpcore + voice services (speaches STT/TTS, CPU-only):
+#   docker compose --profile voice up
+#
+# helpcore + Ollama + voice:
+#   docker compose --profile with-ollama --profile voice up
+#
+# Use piper-http instead of speaches for TTS (set TTS_BACKEND=piper_http):
+#   docker compose --profile with-ollama --profile voice-piper up
+#
+# Voice bridge (run natively, pointing at the containers above):
+#   cd plugins/voice/bridge
+#   cargo build --release
+#   HELPCORE_URL=http://localhost:3000 \
+#   STT_BACKEND=openai_compat STT_URL=http://localhost:8000 \
+#   TTS_BACKEND=openai_compat TTS_URL=http://localhost:8000 \
+#   ./target/release/voice-bridge
+# ──────────────────────────────────────────────────────────────────────────────
+
 services:
   helpcore:
-    build: .
+    image: ghcr.io/doomedramen/helpcore:latest
     ports:
       - "3000:3000"
     volumes:
