@@ -9,7 +9,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = { version = "0.43", default-features = false, features = ["macros"] }
+wit-bindgen = { version = "0.51", default-features = false, features = ["macros"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", default-features = false, features = ["alloc"] }
 

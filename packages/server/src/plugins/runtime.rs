@@ -42,7 +42,7 @@ wasmtime::component::bindgen!({
 
 const WASM_MEMORY_LIMIT: usize = 64 * 1024 * 1024;
 const WASM_FUEL_LIMIT: u64 = 20_000_000;
-const WASM_TIMEOUT: Duration = Duration::from_secs(5);
+const WASM_TIMEOUT: Duration = Duration::from_secs(30);
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_TOOL_RESULT_BYTES: usize = 1024 * 1024;
 
@@ -221,7 +221,7 @@ fn run_wasm_component(
         .context("plugin does not implement the helpcore Component Model ABI")?;
     let result = bindings
         .call_call(&mut store, tool, input)
-        .context("WASM tool call trapped")?
+        .map_err(|error| anyhow::anyhow!("WASM tool call trapped: {error:#}"))?
         .map_err(|error| anyhow::anyhow!("WASM tool returned an error: {error}"))?;
     if result.len() > MAX_TOOL_RESULT_BYTES {
         anyhow::bail!("WASM tool result exceeds the 1 MiB limit");
