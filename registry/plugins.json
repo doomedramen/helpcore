@@ -8,11 +8,18 @@
       "tier": "wasm",
       "author": "Martin Page",
       "homepage": "https://github.com/doomedramen/helpcore",
-      "permissions": ["outbound_http"],
+      "permissions": [
+        "outbound_http"
+      ],
       "source": {
         "type": "github",
         "repo": "doomedramen/helpcore",
         "ref": "plugins-latest"
+      },
+      "package": {
+        "url": "https://github.com/doomedramen/helpcore/releases/download/plugins-latest/homeassistant.tar.gz",
+        "sha256": "7a6978676c0b320475d90c322943c88146a301a7fb85cca09187ff0c2d205010",
+        "size": 60183
       }
     }
   ]
