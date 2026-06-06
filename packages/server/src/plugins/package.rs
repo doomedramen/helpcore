@@ -432,13 +432,13 @@ allowed_hosts = ["api.example.com"]
             author: "Test".into(),
             homepage: "https://example.com".into(),
             permissions: vec!["outbound_http".into()],
-            source: super::super::registry::StorePluginSource {
+            source: Some(super::super::registry::StorePluginSource {
                 source_type: "url".into(),
                 repo: None,
                 source_ref: None,
                 wasm_asset: None,
                 url: None,
-            },
+            }),
             setup_guide: None,
             package: Some(super::super::registry::StorePluginPackage {
                 url,
