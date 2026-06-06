@@ -41,7 +41,7 @@ wasmtime::component::bindgen!({
 });
 
 const WASM_MEMORY_LIMIT: usize = 64 * 1024 * 1024;
-const WASM_FUEL_LIMIT: u64 = 20_000_000;
+const WASM_FUEL_LIMIT: u64 = 1_000_000_000;
 const WASM_TIMEOUT: Duration = Duration::from_secs(30);
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_TOOL_RESULT_BYTES: usize = 1024 * 1024;
