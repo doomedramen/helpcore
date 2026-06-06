@@ -373,7 +373,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           onChange={setInputValue}
           onSend={handleSend}
           onStop={handleStop}
-          disabled={retryingId !== null || !selectedProviderId}
+          disabled={!selectedProviderId}
           active={active}
           providers={providers}
           selectedProviderId={selectedProviderId}
