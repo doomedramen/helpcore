@@ -4,7 +4,7 @@ import { FormEvent, Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ApiError, setupAdmin, setupStatus } from '@/lib/api';
 import { useAuth } from '@/context/auth';
-import ThemeToggle from '@/components/theme-toggle';
+import ThemeToggle from '@/app/components/theme-toggle';
 
 function SetupWizard() {
   const params = useSearchParams();

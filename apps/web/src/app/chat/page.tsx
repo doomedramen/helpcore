@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/context/auth';
-import Sidebar from '@/components/sidebar';
-import ChatWindow from '@/components/chat-window';
+import Sidebar from '@/app/components/sidebar';
+import ChatWindow from '@/app/components/chat-window';
 
 function ChatApp() {
   const { accessToken, isLoading } = useAuth();

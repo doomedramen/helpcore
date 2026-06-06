@@ -13,6 +13,12 @@ import {
   uninstallPlugin,
   updatePlugin,
 } from '@/lib/api';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/app/components/ui/dropdown-menu';
 import type { ConfigField, ConfigValues, PluginInfo, PluginStoreItem, SecretStatus } from '@/lib/types';
 
 type Tab = 'installed' | 'browse';

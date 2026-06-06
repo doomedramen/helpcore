@@ -3,8 +3,8 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
-import Sidebar from '@/components/sidebar';
-import SettingsNav from '@/components/settings-nav';
+import Sidebar from '@/app/components/sidebar';
+import SettingsNav from '@/app/components/settings-nav';
 import { useAuth } from '@/context/auth';
 import { getPersonality, putPersonality } from '@/lib/api';
 

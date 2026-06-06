@@ -2,6 +2,13 @@
 
 import { FormEvent, KeyboardEvent, useRef, useEffect } from 'react';
 import { SendHorizontal, Square } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/app/components/ui/select';
 import type { ProviderInfo } from '@/lib/types';
 
 interface Props {
@@ -59,25 +66,26 @@ export default function ChatInput({
     <div className="space-y-2">
       <div className="flex items-center gap-2 px-1">
         <label
-          htmlFor="chat-provider"
           className="text-xs font-medium text-slate-500 dark:text-slate-400"
         >
           Provider
         </label>
-        <select
-          id="chat-provider"
+        <Select
           value={selectedProviderId}
-          onChange={event => onProviderChange(event.target.value)}
+          onValueChange={(value) => onProviderChange(value ?? '')}
           disabled={providers.length === 0}
-          className="max-w-full rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-700 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200"
         >
-          {providers.length === 0 && <option value="">No chat providers available</option>}
-          {providers.map(provider => (
-            <option key={provider.id} value={provider.id}>
-              {provider.name} · {provider.default_model}
-            </option>
-          ))}
-        </select>
+          <SelectTrigger size="sm" className="max-w-full text-xs">
+            <SelectValue placeholder="No chat providers available" />
+          </SelectTrigger>
+          <SelectContent>
+            {providers.map(provider => (
+              <SelectItem key={provider.id} value={provider.id}>
+                {provider.name} · {provider.default_model}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
       </div>
       <form
         onSubmit={handleSubmit}

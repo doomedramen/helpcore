@@ -4,7 +4,7 @@ import { FormEvent, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/auth';
 import { ApiError } from '@/lib/api';
-import ThemeToggle from '@/components/theme-toggle';
+import ThemeToggle from '@/app/components/theme-toggle';
 
 export default function LoginPage() {
   const { login } = useAuth();

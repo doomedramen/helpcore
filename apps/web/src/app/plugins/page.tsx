@@ -2,9 +2,9 @@
 
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import PluginManager from '@/components/plugin-manager';
-import Sidebar from '@/components/sidebar';
-import SettingsNav from '@/components/settings-nav';
+import PluginManager from '@/app/components/plugin-manager';
+import Sidebar from '@/app/components/sidebar';
+import SettingsNav from '@/app/components/settings-nav';
 import { useAuth } from '@/context/auth';
 
 export default function PluginsPage() {

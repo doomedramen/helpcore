@@ -3,8 +3,8 @@
 import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
-import ConfigForm from '@/components/admin/config-form';
-import Sidebar from '@/components/sidebar';
+import ConfigForm from '@/app/components/admin/config-form';
+import Sidebar from '@/app/components/sidebar';
 import { useAuth } from '@/context/auth';
 import { getAdminConfig } from '@/lib/api';
 

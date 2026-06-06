@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
-import Sidebar from '@/components/sidebar';
+import Sidebar from '@/app/components/sidebar';
 import { useAuth } from '@/context/auth';
 import {
   createAdminUser,
@@ -19,7 +19,7 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from '@/components/ui/dialog';
+} from '@/app/components/ui/dialog';
 
 export default function AdminUsersPage() {
   const { accessToken, currentUser, isLoading } = useAuth();
