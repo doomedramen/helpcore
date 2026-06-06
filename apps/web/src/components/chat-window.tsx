@@ -52,10 +52,24 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     {
       refreshInterval: data => data?.some(isActive) ? 500 : 0,
       revalidateOnFocus: true,
+      keepPreviousData: false,
     },
   );
 
-  const active = messages.some(isActive);
+  // Track the actively-generating conversation separately so we never show
+  // the stop button for stale data from a different conversation.
+  const generationConvRef = useRef<string | null>(null);
+  const active = generationConvRef.current === conversationId || messages.some(isActive);
+
+  // Reset generation tracking when switching conversations
+  const prevConvRef = useRef(conversationId);
+  useEffect(() => {
+    if (prevConvRef.current !== conversationId) {
+      generationConvRef.current = null;
+      prevConvRef.current = conversationId;
+      setQueue([]);
+    }
+  }, [conversationId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -117,6 +131,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     setError('');
     const controller = new AbortController();
     abortRef.current = controller;
+    generationConvRef.current = conversationId;
     try {
       await runWithRefresh(token => chat({
         message: text,
@@ -132,6 +147,9 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
       if (conversationId) await refreshMessages();
     } finally {
+      if (generationConvRef.current === conversationId) {
+        generationConvRef.current = null;
+      }
       if (abortRef.current === controller) {
         abortRef.current = null;
       }
@@ -157,6 +175,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
 
   const handleStop = useCallback(async () => {
     setError('');
+    generationConvRef.current = null;
     abortRef.current?.abort();
     abortRef.current = null;
     if (conversationId && accessToken) {
@@ -193,6 +212,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     setError('');
     const controller = new AbortController();
     abortRef.current = controller;
+    generationConvRef.current = conversationId;
     try {
       await runWithRefresh(token => retryMessage({
         conversationId,
@@ -208,6 +228,9 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       setError(caught instanceof ApiError ? caught.message : 'Could not retry the response.');
       await refreshMessages();
     } finally {
+      if (generationConvRef.current === conversationId) {
+        generationConvRef.current = null;
+      }
       if (abortRef.current === controller) {
         abortRef.current = null;
       }
