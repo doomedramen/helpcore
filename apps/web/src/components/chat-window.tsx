@@ -263,6 +263,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                 message={message}
                 onRetry={retry}
                 retrying={retryingId === message.id}
+                accessToken={accessToken ?? ''}
               />
             ))}
             {visibleError && (

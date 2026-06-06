@@ -4,6 +4,7 @@ pub mod chat;
 pub mod memory;
 pub mod plugin;
 pub mod setup;
+pub mod tts;
 
 use axum::{Json, http::StatusCode};
 use serde_json::{Value, json};

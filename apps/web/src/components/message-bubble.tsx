@@ -1,19 +1,37 @@
 'use client';
 
+import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
+import { Volume2, VolumeX } from 'lucide-react';
+import { tts } from '@/lib/api';
 import type { Message } from '@/lib/types';
 
 import 'highlight.js/styles/github.css';
+
+function stripMarkdown(text: string): string {
+  return text
+    .replace(/```[\s\S]*?```/g, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/[*_~]{1,2}([^*_~]+)[*_~]{1,2}/g, '$1')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/^>+\s+/gm, '')
+    .replace(/^\s*[-*+]\s+/gm, '')
+    .replace(/^\s*\d+\.\s+/gm, '')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
 
 interface Props {
   message: Message;
   onRetry?: (messageId: string) => void;
   retrying?: boolean;
+  accessToken: string;
 }
 
-export default function MessageBubble({ message, onRetry, retrying = false }: Props) {
+export default function MessageBubble({ message, onRetry, retrying = false, accessToken }: Props) {
   const isUser = message.role === 'user';
 
   if (isUser) {
@@ -28,6 +46,69 @@ export default function MessageBubble({ message, onRetry, retrying = false }: Pr
 
   const active = message.status === 'pending' || message.status === 'streaming';
   const retryable = message.status === 'failed' || message.status === 'interrupted';
+
+  const [playing, setPlaying] = useState(false);
+  const [playError, setPlayError] = useState(false);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const urlRef = useRef<string | null>(null);
+
+  const handleSpeak = useCallback(async () => {
+    if (playing) {
+      audioRef.current?.pause();
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+        urlRef.current = null;
+      }
+      audioRef.current = null;
+      setPlaying(false);
+      setPlayError(false);
+      return;
+    }
+
+    setPlayError(false);
+    try {
+      const blob = await tts(stripMarkdown(message.content), accessToken);
+      const url = URL.createObjectURL(blob);
+      const audio = new Audio(url);
+
+      audio.onended = () => {
+        setPlaying(false);
+        if (urlRef.current) {
+          URL.revokeObjectURL(urlRef.current);
+          urlRef.current = null;
+        }
+        audioRef.current = null;
+      };
+      audio.onerror = () => {
+        setPlaying(false);
+        setPlayError(true);
+        if (urlRef.current) {
+          URL.revokeObjectURL(urlRef.current);
+          urlRef.current = null;
+        }
+        audioRef.current = null;
+      };
+
+      urlRef.current = url;
+      audioRef.current = audio;
+      setPlaying(true);
+      await audio.play();
+    } catch {
+      setPlayError(true);
+      setPlaying(false);
+    }
+  }, [message.content, accessToken, playing]);
+
+  useEffect(() => {
+    return () => {
+      audioRef.current?.pause();
+      if (urlRef.current) {
+        URL.revokeObjectURL(urlRef.current);
+      }
+    };
+  }, []);
+
+  const canSpeak = message.status === 'complete' && !!message.content;
 
   if (!isUser && !active && !retryable && !message.content) return null;
 
@@ -68,6 +149,24 @@ export default function MessageBubble({ message, onRetry, retrying = false }: Pr
                 {retrying ? 'Retrying…' : 'Retry response'}
               </button>
             )}
+          </div>
+        )}
+        {canSpeak && (
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleSpeak}
+              className={`rounded-lg p-1.5 transition-colors ${
+                playError
+                  ? 'text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30'
+                  : playing
+                    ? 'text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30'
+                    : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300'
+              }`}
+              aria-label={playing ? 'Stop' : 'Read aloud'}
+            >
+              {playing ? <VolumeX size={14} /> : <Volume2 size={14} />}
+            </button>
           </div>
         )}
       </div>

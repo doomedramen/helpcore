@@ -191,6 +191,30 @@ export function configurePlugin(
   }, token);
 }
 
+// ── TTS ───────────────────────────────────────────────────────────────────────
+
+export async function tts(text: string, token: string, voice?: string): Promise<Blob> {
+  const resp = await fetch('/api/tts', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ text, voice }),
+  });
+
+  if (!resp.ok) {
+    const body = await resp.text().catch(() => '');
+    let message = `TTS error ${resp.status}`;
+    try {
+      message = (JSON.parse(body) as { message?: string }).message ?? message;
+    } catch {}
+    throw new ApiError(message, resp.status);
+  }
+
+  return resp.blob();
+}
+
 // ── Chat (SSE) ────────────────────────────────────────────────────────────────
 
 export async function chat(args: {

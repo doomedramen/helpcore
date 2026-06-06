@@ -59,6 +59,7 @@ services:
     volumes:
       - ollama_data:/root/.ollama
     logging:
+      driver: json-file
       options:
         max-size: "10m"
         max-file: "3"

@@ -47,6 +47,8 @@ pub fn create(state: Arc<AppState>) -> Router {
                 .put(handlers::memory::put_memory)
                 .delete(handlers::memory::delete_memory),
         )
+        // TTS
+        .route("/tts", post(handlers::tts::tts_handler))
         // Plugins
         .route("/plugins", get(handlers::plugin::list_plugins))
         .route("/plugins/store", get(handlers::plugin::list_store))
