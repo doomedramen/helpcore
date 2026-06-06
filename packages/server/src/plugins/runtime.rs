@@ -1,4 +1,5 @@
 use anyhow::Context;
+use base64::Engine as _;
 use reqwest::header::{AUTHORIZATION, HeaderName, HeaderValue};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -28,6 +29,7 @@ wasmtime::component::bindgen!({
 
         interface host {
             http-request: func(request-json: string) -> result<string, string>;
+            http-request-binary: func(request-json: string) -> result<string, string>;
             data-read: func(path: string) -> result<string, string>;
             data-write: func(path: string, content: string) -> result<_, string>;
             config-read: func(key: string) -> result<string, string>;
@@ -236,6 +238,8 @@ struct WasmHttpRequest {
     #[serde(default)]
     headers: HashMap<String, String>,
     body: Option<String>,
+    #[serde(default)]
+    body_base64: Option<String>,
 }
 
 #[derive(Serialize)]
@@ -247,31 +251,7 @@ struct WasmHttpResponse {
 
 impl helpcore::plugin::host::Host for WasmState {
     fn http_request(&mut self, request_json: String) -> Result<String, String> {
-        self.require("outbound_http")?;
-        let request: WasmHttpRequest =
-            serde_json::from_str(&request_json).map_err(|error| error.to_string())?;
-        let url = reqwest::Url::parse(&request.url).map_err(|error| error.to_string())?;
-        ensure_host_allowed(&self.allowed_hosts, &url).map_err(|error| error.to_string())?;
-        let client = reqwest::blocking::Client::builder()
-            .timeout(BRIDGE_TIMEOUT)
-            .build()
-            .map_err(|error| error.to_string())?;
-        let method = reqwest::Method::from_bytes(request.method.as_bytes())
-            .map_err(|error| error.to_string())?;
-        let mut builder = client.request(method, url);
-        for (name, value) in request.headers {
-            builder = builder.header(name, value);
-        }
-        if let Some(body) = request.body {
-            builder = builder.body(body);
-        }
-        let response = builder.send().map_err(|error| error.to_string())?;
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_TOOL_RESULT_BYTES as u64)
-        {
-            return Err("HTTP response exceeds the 1 MiB limit".into());
-        }
+        let response = self.send_http_request(&request_json)?;
         let status = response.status().as_u16();
         let headers = response
             .headers()
@@ -287,6 +267,32 @@ impl helpcore::plugin::host::Host for WasmState {
         if body.len() > MAX_TOOL_RESULT_BYTES {
             return Err("HTTP response exceeds the 1 MiB limit".into());
         }
+        serde_json::to_string(&WasmHttpResponse {
+            status,
+            headers,
+            body,
+        })
+        .map_err(|error| error.to_string())
+    }
+
+    fn http_request_binary(&mut self, request_json: String) -> Result<String, String> {
+        let response = self.send_http_request(&request_json)?;
+        let status = response.status().as_u16();
+        let headers = response
+            .headers()
+            .iter()
+            .map(|(name, value)| {
+                (
+                    name.to_string(),
+                    value.to_str().unwrap_or_default().to_string(),
+                )
+            })
+            .collect();
+        let bytes = response.bytes().map_err(|error| error.to_string())?;
+        if bytes.len() > MAX_TOOL_RESULT_BYTES {
+            return Err("HTTP response exceeds the 1 MiB limit".into());
+        }
+        let body = base64::engine::general_purpose::STANDARD.encode(&bytes);
         serde_json::to_string(&WasmHttpResponse {
             status,
             headers,
@@ -334,6 +340,39 @@ impl WasmState {
         } else {
             Err(format!("plugin was not approved for {permission}"))
         }
+    }
+
+    fn send_http_request(&self, request_json: &str) -> Result<reqwest::blocking::Response, String> {
+        let request: WasmHttpRequest =
+            serde_json::from_str(request_json).map_err(|error| error.to_string())?;
+        let url = reqwest::Url::parse(&request.url).map_err(|error| error.to_string())?;
+        ensure_host_allowed(&self.allowed_hosts, &url).map_err(|error| error.to_string())?;
+        let client = reqwest::blocking::Client::builder()
+            .timeout(BRIDGE_TIMEOUT)
+            .build()
+            .map_err(|error| error.to_string())?;
+        let method = reqwest::Method::from_bytes(request.method.as_bytes())
+            .map_err(|error| error.to_string())?;
+        let mut builder = client.request(method, url);
+        for (name, value) in request.headers {
+            builder = builder.header(name, value);
+        }
+        if let Some(body_b64) = request.body_base64 {
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(&body_b64)
+                .map_err(|error| format!("invalid base64 in body_base64: {error}"))?;
+            builder = builder.body(bytes);
+        } else if let Some(body) = request.body {
+            builder = builder.body(body);
+        }
+        let response = builder.send().map_err(|error| error.to_string())?;
+        if response
+            .content_length()
+            .is_some_and(|length| length > MAX_TOOL_RESULT_BYTES as u64)
+        {
+            return Err("HTTP response exceeds the 1 MiB limit".into());
+        }
+        Ok(response)
     }
 }
 
