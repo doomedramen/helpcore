@@ -29,6 +29,8 @@ export default function MessageBubble({ message, onRetry, retrying = false }: Pr
   const active = message.status === 'pending' || message.status === 'streaming';
   const retryable = message.status === 'failed' || message.status === 'interrupted';
 
+  if (!isUser && !active && !retryable && !message.content) return null;
+
   return (
     <div className="flex justify-start">
       <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
