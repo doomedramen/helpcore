@@ -230,6 +230,35 @@ impl Config {
         }
     }
 
+    /// Migrate provider IDs from user-chosen strings to UUIDs.
+    /// Returns a map of old_id → new_id for providers that were migrated.
+    /// Updates config.toml in place.
+    pub fn migrate_provider_ids(path: &Path) -> anyhow::Result<std::collections::HashMap<String, String>> {
+        let content = std::fs::read_to_string(path)
+            .with_context(|| format!("failed to read config from {}", path.display()))?;
+        let mut cfg: Self = toml::from_str(&content)
+            .with_context(|| format!("failed to parse config from {}", path.display()))?;
+
+        let mut mapping = std::collections::HashMap::new();
+        let mut changed = false;
+
+        for provider in &mut cfg.providers {
+            if uuid::Uuid::parse_str(&provider.id).is_err() {
+                let old_id = provider.id.clone();
+                let new_id = uuid::Uuid::new_v4().to_string();
+                provider.id = new_id.clone();
+                mapping.insert(old_id, new_id);
+                changed = true;
+            }
+        }
+
+        if changed {
+            cfg.save(path)?;
+        }
+
+        Ok(mapping)
+    }
+
     pub fn config_path() -> PathBuf {
         if let Ok(path) = std::env::var("HELPCORE_CONFIG") {
             return PathBuf::from(path);

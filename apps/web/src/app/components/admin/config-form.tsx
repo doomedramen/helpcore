@@ -145,18 +145,35 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
     setBlacklist(config.plugin_blacklist.join('\n'));
   }, [config, isDirty, reset]);
 
+  const contextTokenDefaults: Record<ProviderType, number> = {
+    ollama: 8192,
+    openai: 128000,
+    anthropic: 200000,
+    deepseek: 128000,
+    openai_compatible: 8192,
+  };
+
+  const predictTokenDefaults: Record<ProviderType, number | null> = {
+    ollama: null,
+    openai: null,
+    anthropic: 4096,
+    deepseek: null,
+    openai_compatible: null,
+  };
+
   function addProvider() {
+    const providerType = 'ollama' as ProviderType;
     append({
-      id: `provider-${fields.length + 1}`,
+      id: crypto.randomUUID(),
       name: 'New provider',
-      provider_type: 'ollama' as ProviderType,
+      provider_type: providerType,
       api_key: null,
       clear_api_key: false,
       url: 'http://localhost:11434',
       default_model: '',
       roles: ['chat'] as ProviderRole[],
-      num_ctx: null,
-      num_predict: null,
+      num_ctx: contextTokenDefaults[providerType],
+      num_predict: predictTokenDefaults[providerType],
     });
   }
 
@@ -330,9 +347,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                 {isExpanded && (
                   <div className="border-t border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/50">
                     <div className="grid gap-4 md:grid-cols-2">
-                      <Field label="ID">
-                        <input {...register(`providers.${index}.id`)} className={inputClass} />
-                      </Field>
+                      <input type="hidden" {...register(`providers.${index}.id`)} />
                       <Field label="Name">
                         <input {...register(`providers.${index}.name`)} className={inputClass} />
                       </Field>
@@ -342,6 +357,8 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                             onChange: (e) => {
                               const providerType = e.target.value as ProviderType;
                               setValue(`providers.${index}.url`, defaultUrl(providerType));
+                              setValue(`providers.${index}.num_ctx`, contextTokenDefaults[providerType]);
+                              setValue(`providers.${index}.num_predict`, predictTokenDefaults[providerType]);
                             },
                           })}
                           className={inputClass}
@@ -409,7 +426,10 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                           </label>
                         )}
                       </Field>
-                      <Field label="Context tokens">
+                      <Field
+                        label="Context tokens"
+                        hint={providerValues?.num_ctx ? undefined : `Defaults: Ollama 8192, OpenAI/DeepSeek 128000, Anthropic 200000. Set lower for small models to save RAM.`}
+                      >
                         <input
                           type="number"
                           min={1}
@@ -420,7 +440,10 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                           className={inputClass}
                         />
                       </Field>
-                      <Field label="Maximum response tokens">
+                      <Field
+                        label="Maximum response tokens"
+                        hint={providerValues?.num_predict ? undefined : 'Limits how many tokens the model can generate per response. Leave blank for provider default.'}
+                      >
                         <input
                           type="number"
                           min={1}

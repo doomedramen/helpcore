@@ -27,7 +27,7 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
-    let config = config::Config::load(&config_path).with_context(|| {
+    let mut config = config::Config::load(&config_path).with_context(|| {
         format!(
             "failed to load config from {}. \
              Copy config.toml.example → config.toml and edit it, \
@@ -43,6 +43,28 @@ async fn main() -> anyhow::Result<()> {
 
     let db_path = data_dir.join("helpcore.db");
     let db = db::DbPool::open(&db_path)?;
+
+    // Migrate provider IDs from user-chosen strings to UUIDs.
+    if config_path.is_file() {
+        let id_mapping = config::Config::migrate_provider_ids(&config_path)?;
+        if !id_mapping.is_empty() {
+            tracing::info!(count = id_mapping.len(), "migrated provider IDs to UUIDs");
+            db.call_sync(|conn| {
+                for (old_id, new_id) in &id_mapping {
+                    conn.execute(
+                        "UPDATE user_provider_grants SET provider_id = ?1 WHERE provider_id = ?2",
+                        rusqlite::params![new_id, old_id],
+                    )?;
+                    tracing::info!(%old_id, %new_id, "updated provider grants");
+                }
+                Ok(())
+            })?;
+            // Reload config as provider IDs have changed.
+            config = config::Config::load(&config_path)?;
+            config.validate().context("invalid server configuration after provider ID migration")?;
+        }
+    }
+
     let interrupted = db.call_sync(conversation::history::interrupt_active_messages)?;
     if interrupted > 0 {
         tracing::warn!(count = interrupted, "marked unfinished responses as interrupted");
