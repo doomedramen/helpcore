@@ -4,3 +4,4 @@ references/zeroclaw/
 *.db
 /data/
 .env
+/plugins/homeassistant/target

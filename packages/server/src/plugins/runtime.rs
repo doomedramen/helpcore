@@ -30,6 +30,7 @@ wasmtime::component::bindgen!({
             http-request: func(request-json: string) -> result<string, string>;
             data-read: func(path: string) -> result<string, string>;
             data-write: func(path: string, content: string) -> result<_, string>;
+            config-read: func(key: string) -> result<string, string>;
         }
 
         world plugin {
@@ -112,6 +113,7 @@ struct WasmState {
     permissions: HashSet<String>,
     workspace: PathBuf,
     allowed_hosts: Vec<String>,
+    config: serde_json::Value,
 }
 
 async fn execute_wasm(
@@ -129,6 +131,29 @@ async fn execute_wasm(
     let workspace = state.data_dir.join("users").join(user_id).join("workspace");
     let permissions = plugin.permissions.iter().cloned().collect();
     let allowed_hosts = plugin.manifest.allowed_hosts.clone();
+
+    // Build a merged config map: non-secret stored values + decrypted secrets.
+    let mut plugin_config = plugin.config.clone();
+    if let Some(obj) = plugin_config.as_object_mut() {
+        obj.remove("_secret_keys");
+    }
+    if let Some(encrypted) = plugin.secrets.as_deref() {
+        let data_dir = state.data_dir.clone();
+        let uid = user_id.to_string();
+        let pid = plugin.plugin_id.clone();
+        let encrypted = encrypted.to_string();
+        let decrypted = tokio::task::spawn_blocking(move || {
+            secrets::decrypt(&data_dir, &uid, &pid, &encrypted)
+        })
+        .await
+        .map_err(|error| anyhow::anyhow!("WASM secret decrypt task failed: {error}"))??;
+        if let (Some(cfg), Some(sec)) = (plugin_config.as_object_mut(), decrypted.as_object()) {
+            for (key, value) in sec {
+                cfg.insert(key.clone(), value.clone());
+            }
+        }
+    }
+
     tokio::task::spawn_blocking(move || {
         run_wasm_component(
             &wasm_path,
@@ -137,6 +162,7 @@ async fn execute_wasm(
             workspace,
             permissions,
             allowed_hosts,
+            plugin_config,
         )
     })
     .await
@@ -150,12 +176,13 @@ fn run_wasm_component(
     workspace: PathBuf,
     permissions: HashSet<String>,
     allowed_hosts: Vec<String>,
+    plugin_config: serde_json::Value,
 ) -> anyhow::Result<String> {
-    let mut config = Config::new();
-    config.wasm_component_model(true);
-    config.consume_fuel(true);
-    config.epoch_interruption(true);
-    let engine = Engine::new(&config)?;
+    let mut engine_config = Config::new();
+    engine_config.wasm_component_model(true);
+    engine_config.consume_fuel(true);
+    engine_config.epoch_interruption(true);
+    let engine = Engine::new(&engine_config)?;
     let component = Component::from_file(&engine, wasm_path)
         .with_context(|| format!("failed to load {}", wasm_path.display()))?;
     let mut linker = Linker::new(&engine);
@@ -176,6 +203,7 @@ fn run_wasm_component(
             permissions,
             workspace,
             allowed_hosts,
+            config: plugin_config,
         },
     );
     store.limiter(|state| &mut state.limits);
@@ -272,6 +300,14 @@ impl helpcore::plugin::host::Host for WasmState {
         let path = resolve_workspace_path(&self.workspace, &path, false)
             .map_err(|error| error.to_string())?;
         fs::read_to_string(path).map_err(|error| error.to_string())
+    }
+
+    fn config_read(&mut self, key: String) -> Result<String, String> {
+        match self.config.get(&key) {
+            Some(serde_json::Value::String(s)) => Ok(s.clone()),
+            Some(v) => serde_json::to_string(v).map_err(|e| e.to_string()),
+            None => Err(format!("config key '{key}' not found")),
+        }
     }
 
     fn data_write(&mut self, path: String, content: String) -> Result<(), String> {
@@ -396,7 +432,8 @@ fn ensure_allowed_host(manifest: &Manifest, url: &reqwest::Url) -> anyhow::Resul
 fn ensure_host_allowed(allowed_hosts: &[String], url: &reqwest::Url) -> anyhow::Result<()> {
     let host = url.host_str().context("bridge endpoint has no host")?;
     if allowed_hosts.iter().any(|allowed| {
-        allowed == host
+        allowed == "*"
+            || allowed == host
             || allowed
                 .strip_prefix("*.")
                 .is_some_and(|suffix| host.ends_with(&format!(".{suffix}")))
