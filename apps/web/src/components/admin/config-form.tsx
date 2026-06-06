@@ -142,7 +142,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
               className={inputClass}
             />
           </Field>
-          <Field label="Public URL">
+          <Field label="Public URL" hint="How clients reach this server. Includes protocol, hostname, and port.">
             <input
               type="url"
               value={draft.server.url}
@@ -153,7 +153,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
               className={inputClass}
             />
           </Field>
-          <Field label="Port">
+          <Field label="Server port" hint="The local port the server binds to. Can differ from the public URL port behind a reverse proxy.">
             <input
               type="number"
               min={1}
