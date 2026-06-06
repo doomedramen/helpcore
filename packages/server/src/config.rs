@@ -209,8 +209,19 @@ impl Config {
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config from {}", path.display()))?;
-        toml::from_str(&content)
-            .with_context(|| format!("failed to parse config from {}", path.display()))
+        let mut cfg: Self = toml::from_str(&content)
+            .with_context(|| format!("failed to parse config from {}", path.display()))?;
+        cfg.migrate(path);
+        Ok(cfg)
+    }
+
+    fn migrate(&mut self, path: &Path) {
+        const OLD_REGISTRY_URL: &str =
+            "https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json";
+        if self.registry.url == OLD_REGISTRY_URL {
+            self.registry.url = DEFAULT_REGISTRY_URL.to_string();
+            let _ = self.save(path);
+        }
     }
 
     pub fn config_path() -> PathBuf {
