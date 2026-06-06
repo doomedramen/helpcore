@@ -99,8 +99,28 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!(addr, version = env!("CARGO_PKG_VERSION"), "helpcore listening");
 
     axum::serve(listener, api::router::create(state))
+        .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server error")?;
 
     Ok(())
+}
+
+async fn shutdown_signal() {
+    #[cfg(unix)]
+    {
+        let mut terminate = tokio::signal::unix::signal(
+            tokio::signal::unix::SignalKind::terminate(),
+        )
+        .expect("failed to install SIGTERM handler");
+        tokio::select! {
+            _ = tokio::signal::ctrl_c() => {}
+            _ = terminate.recv() => {}
+        }
+    }
+    #[cfg(not(unix))]
+    tokio::signal::ctrl_c()
+        .await
+        .expect("failed to install shutdown handler");
+    tracing::info!("shutdown signal received; draining active HTTP connections");
 }

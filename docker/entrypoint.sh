@@ -10,11 +10,26 @@ if [ -d "$config_path" ]; then
     exit 1
 fi
 
-mkdir -p "$(dirname "$config_path")" "$data_dir"
+config_dir="$(dirname "$config_path")"
+mkdir -p "$config_dir" "$data_dir"
+
+if [ "$(id -u)" = "0" ]; then
+    chown helpcore:helpcore "$config_dir" 2>/dev/null \
+        || echo "Warning: cannot change ownership of config directory $config_dir" >&2
+    chmod 0700 "$config_dir" 2>/dev/null \
+        || echo "Warning: cannot change mode of config directory $config_dir" >&2
+    if [ -f "$config_path" ]; then
+        chown helpcore:helpcore "$config_path" 2>/dev/null \
+            || echo "Warning: cannot change ownership of config file $config_path" >&2
+        chmod 0600 "$config_path" 2>/dev/null \
+            || echo "Warning: cannot change mode of config file $config_path" >&2
+    fi
+fi
 
 if [ ! -e "$config_path" ]; then
     cp "$default_config" "$config_path"
     chown helpcore:helpcore "$config_path"
+    chmod 0600 "$config_path"
     echo "Created default config at $config_path"
 fi
 

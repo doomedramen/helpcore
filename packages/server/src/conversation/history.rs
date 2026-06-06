@@ -62,8 +62,8 @@ pub fn get_or_create(
 /// Loads all non-compacted messages for a conversation, ordered by sequence.
 pub fn load_messages(conn: &Connection, conversation_id: &str) -> anyhow::Result<Vec<MessageSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, role, content, sequence, created_at, status, error,
-                COALESCE(updated_at, created_at)
+        "SELECT id, role, content, tool_call_id, tool_calls, sequence, created_at,
+                status, error, COALESCE(updated_at, created_at)
          FROM messages
          WHERE conversation_id = ?1 AND compacted = 0
          ORDER BY sequence ASC",
@@ -80,8 +80,8 @@ pub fn load_messages_before(
     sequence: i64,
 ) -> anyhow::Result<Vec<MessageSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, role, content, sequence, created_at, status, error,
-                COALESCE(updated_at, created_at)
+        "SELECT id, role, content, tool_call_id, tool_calls, sequence, created_at,
+                status, error, COALESCE(updated_at, created_at)
          FROM messages
          WHERE conversation_id = ?1 AND compacted = 0 AND sequence < ?2
          ORDER BY sequence ASC",
@@ -149,8 +149,8 @@ pub fn retry_turn(
 
     let user_message = tx
         .query_row(
-            "SELECT id, role, content, sequence, created_at, status, error,
-                    COALESCE(updated_at, created_at)
+            "SELECT id, role, content, tool_call_id, tool_calls, sequence, created_at,
+                    status, error, COALESCE(updated_at, created_at)
              FROM messages
              WHERE conversation_id = ?1 AND role = 'user' AND sequence < ?2
              ORDER BY sequence DESC LIMIT 1",
@@ -241,6 +241,8 @@ pub fn insert_user_message(
         id,
         role: "user".to_string(),
         content: content.to_string(),
+        tool_call_id: None,
+        tool_calls: None,
         sequence,
         created_at: now.clone(),
         status: MessageStatus::Complete,
@@ -313,6 +315,78 @@ pub fn finish_assistant_message(conn: &Connection, message_id: &str) -> anyhow::
          WHERE id = ?2 AND role = 'assistant'",
         rusqlite::params![now, message_id],
     )?;
+    Ok(())
+}
+
+pub fn persist_tool_round(
+    conn: &Connection,
+    assistant_message_id: &str,
+    tool_calls: &[crate::providers::types::ToolCall],
+    results: &[(crate::providers::types::ToolCall, String)],
+) -> anyhow::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    let (conversation_id, sequence, content, provider_id, model): (
+        String,
+        i64,
+        String,
+        Option<String>,
+        Option<String>,
+    ) = tx
+        .query_row(
+            "SELECT conversation_id, sequence, content, provider_id, model
+             FROM messages
+             WHERE id = ?1 AND role = 'assistant' AND status IN ('pending', 'streaming')",
+            [assistant_message_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+        )
+        .context("assistant message is not active")?;
+    let inserted_count = 1_i64 + results.len() as i64;
+    let now = Utc::now().to_rfc3339();
+    tx.execute(
+        "UPDATE messages
+         SET sequence = sequence + ?1, content = '', status = 'pending', updated_at = ?2
+         WHERE id = ?3",
+        rusqlite::params![inserted_count, now, assistant_message_id],
+    )?;
+    tx.execute(
+        "INSERT INTO messages
+         (id, conversation_id, role, content, tool_calls, provider_id, model,
+          sequence, status, created_at, updated_at)
+         VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, ?7, 'complete', ?8, ?8)",
+        rusqlite::params![
+            Uuid::new_v4().to_string(),
+            conversation_id,
+            content,
+            serde_json::to_string(tool_calls)?,
+            provider_id,
+            model,
+            sequence,
+            now
+        ],
+    )?;
+    for (index, (call, result)) in results.iter().enumerate() {
+        tx.execute(
+            "INSERT INTO messages
+             (id, conversation_id, role, content, tool_call_id, sequence,
+              status, created_at, updated_at)
+             VALUES (?1, ?2, 'tool', ?3, ?4, ?5, 'complete', ?6, ?6)",
+            rusqlite::params![
+                Uuid::new_v4().to_string(),
+                conversation_id,
+                result,
+                call.id,
+                sequence + 1 + index as i64,
+                now
+            ],
+        )?;
+    }
+    tx.execute(
+        "UPDATE conversations
+         SET message_count = message_count + ?1, updated_at = ?2
+         WHERE id = ?3",
+        rusqlite::params![inserted_count, now, conversation_id],
+    )?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -459,13 +533,16 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConversationSumma
 }
 
 fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary> {
-    let status: String = row.get(5)?;
+    let tool_calls: Option<String> = row.get(4)?;
+    let status: String = row.get(7)?;
     Ok(MessageSummary {
         id: row.get(0)?,
         role: row.get(1)?,
         content: row.get(2)?,
-        sequence: row.get(3)?,
-        created_at: row.get(4)?,
+        tool_call_id: row.get(3)?,
+        tool_calls: tool_calls.and_then(|value| serde_json::from_str(&value).ok()),
+        sequence: row.get(5)?,
+        created_at: row.get(6)?,
         status: match status.as_str() {
             "pending" => MessageStatus::Pending,
             "streaming" => MessageStatus::Streaming,
@@ -473,8 +550,8 @@ fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary> {
             "interrupted" => MessageStatus::Interrupted,
             _ => MessageStatus::Complete,
         },
-        error: row.get(6)?,
-        updated_at: row.get(7)?,
+        error: row.get(8)?,
+        updated_at: row.get(9)?,
     })
 }
 
@@ -592,6 +669,38 @@ mod tests {
             finish_assistant_message(conn, &assistant)?;
             let convs = list_conversations(conn, &uid)?;
             assert_eq!(convs[0].message_count, 2);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn tool_round_is_persisted_before_active_placeholder() {
+        let pool = open_test_db();
+        let uid = insert_user(&pool);
+        pool.call_sync(|conn| {
+            let turn = start_turn(conn, &uid, None, "Weather?", "p", "m")?;
+            append_assistant_content(conn, &turn.assistant_message_id, "Checking.")?;
+            let call = crate::providers::types::ToolCall {
+                id: "call-1".into(),
+                name: "weather".into(),
+                arguments: serde_json::json!({"city": "London"}),
+            };
+            persist_tool_round(
+                conn,
+                &turn.assistant_message_id,
+                std::slice::from_ref(&call),
+                &[(call.clone(), r#"{"ok":true,"result":"rain"}"#.into())],
+            )?;
+            let messages = load_messages(conn, &turn.conversation.id)?;
+            assert_eq!(messages.len(), 4);
+            assert_eq!(messages[1].role, "assistant");
+            assert_eq!(messages[1].content, "Checking.");
+            assert!(messages[1].tool_calls.is_some());
+            assert_eq!(messages[2].role, "tool");
+            assert_eq!(messages[2].tool_call_id.as_deref(), Some("call-1"));
+            assert_eq!(messages[3].id, turn.assistant_message_id);
+            assert_eq!(messages[3].status, MessageStatus::Pending);
             Ok(())
         })
         .unwrap();

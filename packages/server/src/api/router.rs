@@ -49,6 +49,11 @@ pub fn create(state: Arc<AppState>) -> Router {
         // Plugins
         .route("/plugins", get(handlers::plugin::list_plugins))
         .route("/plugins/store", get(handlers::plugin::list_store))
+        .route("/plugins/{id}/install", post(handlers::plugin::install_plugin))
+        .route("/plugins/{id}/update", post(handlers::plugin::update_plugin))
+        .route("/plugins/{id}/rollback", post(handlers::plugin::rollback_plugin))
+        .route("/plugins/{id}", delete(handlers::plugin::uninstall_plugin))
+        .route("/plugins/{id}/config", put(handlers::plugin::configure_plugin))
         .route("/plugins/{id}/enable", put(handlers::plugin::set_enabled))
         .route("/plugins/{id}/tokens", post(handlers::plugin::create_token))
         .route(

@@ -13,7 +13,7 @@ pub async fn list(server_flag: Option<&str>) -> anyhow::Result<()> {
     }
     for p in &plugins {
         let state = if p.enabled { "enabled" } else { "disabled" };
-        println!("{:<24} v{}  [{}]  {}", p.id, p.version, p.tier, state);
+        println!("{:<24} v{}  [{}]  {}", p.id, p.active_version, p.tier, state);
     }
     Ok(())
 }

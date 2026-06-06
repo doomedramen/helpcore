@@ -249,13 +249,12 @@ The Docker image sets `HELPCORE_DATA=/data` automatically.
 
 ## Docker config
 
-The repository development stack reads `config.toml` from the checkout. Create
-it before running `docker compose up`:
+The repository development stack and production stack both use a writable
+directory mount at `./config`:
 
 ```bash
-make config   # safe — repairs an empty directory left by an older deployment
-# or
-cp config.toml.example config.toml
+make config
+# creates config/config.toml
 ```
 
 `docker-compose.prod.yml` is intended for Dockge and other source-less servers.
@@ -264,3 +263,10 @@ bundled default to `./config/config.toml`; edit that file and restart helpcore.
 
 Older releases used a bind mount; Docker could create an empty `config.toml`
 directory when the source file was missing.
+
+The container entrypoint repairs ownership and modes on the config directory
+and file before dropping to UID 100. The admin API reports whether atomic
+same-directory replacement is possible; the web UI disables Save with the
+deployment error when the mount is intentionally read-only. Saves use a unique
+temporary file, `fsync`, atomic rename, and mode `0600`. Provider/server changes
+still require an external restart.

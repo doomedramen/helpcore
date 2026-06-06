@@ -22,10 +22,9 @@ https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.jso
 Operators can point `[registry] url` at their own JSON file to run a private
 registry (self-hosted plugins, corporate use, etc.).
 
-The admin web UI fetches this file through the core and shows available,
-installed, enabled, and server-blocked entries. Downloading, checksum
-verification, permission approval, and activation of registry entries are not
-implemented yet; the install flows below describe the intended design.
+The authenticated `/plugins` page fetches this file through the core and shows
+available, installed, enabled, updateable, and server-blocked entries. Registry
+URL and blacklist policy remain admin-only.
 
 ---
 
@@ -46,6 +45,11 @@ implemented yet; the install flows below describe the intended design.
     "repo": "doomedramen/helpcore-plugin-home-assistant",
     "ref": "1.1.1",
     "wasm_asset": "plugin.wasm"
+  },
+  "package": {
+    "url": "https://example.com/home-assistant-1.0.0.tar.gz",
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+    "size": 12345
   },
   "setup_guide": "https://github.com/doomedramen/helpcore-plugin-home-assistant#setup"
 }
@@ -71,6 +75,15 @@ implemented yet; the install flows below describe the intended design.
 Bridge plugins have no WASM to download. The `source` field records where
 the bridge code lives so the user can deploy it. The core prompts for the
 bridge endpoint URL during install.
+
+### `package`
+
+Installation requires `package.url` and `package.sha256`; `size` is optional.
+Legacy entries without package metadata remain browsable but are not
+installable. The package is a bounded root-only `.tar.gz` containing
+`manifest.toml`, `skill.md`, and `tools.json`, plus `plugin.wasm` for the WASM
+tier. Archives containing symlinks, nested paths, unexpected files, oversized
+content, checksum mismatches, or manifest mismatches are rejected.
 
 ### `permissions`
 
@@ -98,10 +111,9 @@ during installation of bridge plugins, where manual steps are required.
 ```
 User: "install weather plugin"
   → core fetches registry entry
-  → resolves WASM download URL from source.repo + source.wasm_asset
-  → downloads plugin.wasm, verifies checksum against manifest
+  → downloads and verifies package.url against package.sha256
   → presents permissions to user for approval
-  → stores WASM in {data_dir}/plugins/wasm/{id}/{version}/plugin.wasm
+  → stores it in {data_dir}/users/{user_id}/plugins/{id}/versions/{version}
   → writes plugin_installs row for this user
 ```
 
@@ -114,8 +126,8 @@ User: "install home-assistant plugin"
   → prompts: "What is your Home Assistant bridge URL?"
   → user provides URL (e.g. http://192.168.1.50:8765)
   → presents permissions to user for approval
-  → writes plugin_installs row with bridge URL
-  → generates scoped token for this user+plugin
+  → installs disabled in the user's versioned directory
+  → validates the declared endpoint host and health endpoint before enablement
 ```
 
 ---
@@ -132,8 +144,7 @@ Requirements for a PR to be accepted:
 - `homepage` links to a public repository with source code
 - `permissions` accurately lists everything the plugin requests — do not
   under-declare
-- For `wasm` tier: a published GitHub Release with the named WASM asset must
-  exist at the time of submission
+- A versioned `.tar.gz` package and matching SHA-256 must be published
 - For `bridge` tier: a `setup_guide` URL with clear deployment instructions
 
 ---
@@ -151,11 +162,12 @@ registry/
 
 ## CI validation
 
-Every PR that touches `registry/plugins.json` runs:
+Every PR that touches `registry/plugins.json` should run:
 
 - JSON schema validation against `registry/schema.json`
 - Duplicate `id` check
-- For `wasm` tier entries: HTTP HEAD request to verify the WASM asset URL resolves
+- HTTP HEAD request to verify the package URL resolves
+- SHA-256 verification of the published package
 - Lint: `description` and `name` present and non-empty
 
 Merging a PR is the only publish mechanism — there is no separate publish step.
@@ -165,45 +177,18 @@ Merging a PR is the only publish mechanism — there is no separate publish step
 ## Versioning
 
 Plugin versions are managed by the plugin author in their own repository.
-The `source.ref` field accepts either a **release tag** or a **branch name**.
-
-### Release tag (stable)
-
-```json
-"source": { "type": "github", "repo": "owner/plugin", "ref": "1.1.1", "wasm_asset": "plugin.wasm" }
-```
-
-Core downloads the WASM from:
-```
-https://github.com/{repo}/releases/download/{ref}/{wasm_asset}
-```
-
-Pinned to an immutable release. Preferred for plugins in the public registry.
-
-### Branch name (rolling)
-
-```json
-"source": { "type": "github", "repo": "owner/plugin", "ref": "main", "wasm_asset": "plugin.wasm" }
-```
-
-Core downloads the WASM from:
-```
-https://raw.githubusercontent.com/{repo}/{ref}/{wasm_asset}
-```
-
-Tracks the tip of the branch. Useful during development or for plugins that
-commit their WASM binary to the repo. Less stable — the binary can change
-without a version bump.
+Registry releases must use immutable, versioned package URLs. The `source`
+metadata can still identify the source repository and tag, but the core only
+installs the archive declared in `package`.
 
 ### Update flow
 
 When a plugin author ships a new release:
 
-1. Cut a new GitHub Release (tag `1.2.0`) with the new WASM binary as an asset
-2. Open a PR updating `version` and `source.ref` in `registry/plugins.json`
-3. CI verifies the asset URL resolves
-4. PR merged → registry points to the new version
+1. Publish a new bounded `.tar.gz` package for version `1.2.0`
+2. Compute its SHA-256 digest
+3. Open a PR updating `version`, `package.url`, and `package.sha256`
+4. CI validates the archive and digest before the registry points to it
 
-The core stores the installed `ref` in `plugin_installs.version`. On startup
-(or on demand), the core compares installed refs against the registry and
-notifies the user via chat when an update is available.
+The core compares each user's active version with the registry and exposes an
+explicit update action. The previous version is retained for rollback.

@@ -1,6 +1,7 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_REGISTRY_URL: &str =
@@ -268,19 +269,63 @@ impl Config {
         }
 
         let content = toml::to_string_pretty(self).context("failed to serialise config")?;
-        let temp_path = path.with_extension("toml.tmp");
-        std::fs::write(&temp_path, content)
-            .with_context(|| format!("failed to write temporary config {}", temp_path.display()))?;
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("config.toml");
+        let temp_path = parent.join(format!(".{file_name}.tmp-{}", uuid::Uuid::new_v4()));
+        let result = (|| {
+            let mut temp = std::fs::OpenOptions::new()
+                .create_new(true)
+                .write(true)
+                .open(&temp_path)
+                .with_context(|| {
+                    format!("failed to write temporary config {}", temp_path.display())
+                })?;
+            temp.write_all(content.as_bytes())?;
 
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            std::fs::set_permissions(&temp_path, std::fs::Permissions::from_mode(0o600))?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                temp.set_permissions(std::fs::Permissions::from_mode(0o600))?;
+            }
+
+            temp.flush()?;
+            temp.sync_all()?;
+            std::fs::rename(&temp_path, path)
+                .with_context(|| format!("failed to replace config {}", path.display()))?;
+            std::fs::File::open(parent)?.sync_all()?;
+            Ok(())
+        })();
+        if result.is_err() {
+            let _ = std::fs::remove_file(&temp_path);
         }
+        result
+    }
 
-        std::fs::rename(&temp_path, path)
-            .with_context(|| format!("failed to replace config {}", path.display()))?;
-        Ok(())
+    pub fn writability(path: &Path) -> Result<(), String> {
+        if path.is_dir() {
+            return Err(format!("{} is a directory, not a config file", path.display()));
+        }
+        if path.exists() {
+            if let Err(error) = std::fs::OpenOptions::new().write(true).open(path) {
+                return Err(format!("{} is not writable: {error}", path.display()));
+            }
+        }
+        let parent = path.parent().unwrap_or_else(|| Path::new("."));
+        if !parent.exists() {
+            return Err(format!("config directory {} does not exist", parent.display()));
+        }
+        let probe = parent.join(format!(".helpcore-write-test-{}", uuid::Uuid::new_v4()));
+        match std::fs::OpenOptions::new().create_new(true).write(true).open(&probe) {
+            Ok(file) => {
+                drop(file);
+                let _ = std::fs::remove_file(probe);
+                Ok(())
+            }
+            Err(error) => Err(format!(
+                "config directory {} is not writable: {error}. Mount the config directory read-write or edit the file outside helpcore.",
+                parent.display()
+            )),
+        }
     }
 }
 

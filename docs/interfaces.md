@@ -121,8 +121,17 @@ and rich card rendering.
 | `/api/auth/logout` | POST | Revoke session |
 | `/api/chat` | POST | Send message, stream response (SSE) |
 | `/api/conversations` | GET | List conversations |
-| `/api/conversations/:id` | GET | Get conversation history |
+| `/api/conversations/:id/messages` | GET | Get persisted conversation history and message states |
 | `/api/conversations/:id` | DELETE | Delete conversation |
+| `/api/conversations/:id/messages/:message_id/retry` | POST | Retry a failed/interrupted assistant turn |
 | `/api/slash-commands` | GET | Discover all registered slash commands |
 | `/api/plugins` | GET | List installed plugins for the user |
+| `/api/plugins/store` | GET | Browse the configured store |
+| `/api/plugins/:id/install` | POST | Install disabled for the current user |
+| `/api/plugins/:id/update` | POST | Verify and activate an explicit update |
+| `/api/plugins/:id/rollback` | POST | Swap to the retained prior version |
+| `/api/plugins/:id/config` | PUT | Save per-user bridge settings and encrypted credentials |
+| `/api/plugins/:id/enable` | PUT | Enable or disable the user's install |
+| `/api/plugins/:id` | DELETE | Remove only the user's install and versions |
+| `/api/admin/config` | GET, PUT | Admin-only global config, registry, and blacklist policy |
 | `/api/health` | GET | Server health check |

@@ -90,7 +90,7 @@ pub async fn compact_conversation(
     ];
 
     let mut stream = provider
-        .complete(&summarise_messages, None)
+        .complete(&summarise_messages, &[], None)
         .await
         .context("provider failed during compaction")?;
 
@@ -150,6 +150,7 @@ mod tests {
         async fn complete(
             &self,
             _: &[ChatMessage],
+            _: &[crate::providers::types::ToolDefinition],
             _: Option<&str>,
         ) -> Result<crate::providers::traits::ProviderStream, ProviderError> {
             Ok(Box::pin(stream::iter(vec![

@@ -8,8 +8,8 @@ help: ## Show this help
 
 # ── Development ──────────────────────────────────────────────────────────────
 
-dev: ## Run the server (requires config.toml)
-	cargo run -p helpcore-server
+dev: config ## Run the server using config/config.toml
+	HELPCORE_CONFIG=config/config.toml cargo run -p helpcore-server
 
 check: ## Type-check all packages without building
 	cargo check --workspace
@@ -25,20 +25,16 @@ build-release: ## Build release binaries for all packages
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 
-config: ## Create config.toml from config.toml.example (if not already present)
-	@if [ -f config.toml ]; then \
-		echo "config.toml already exists — edit it directly"; \
-	elif [ -d config.toml ]; then \
-		if rmdir config.toml 2>/dev/null; then \
-			cp config.toml.example config.toml; \
-			echo "Replaced empty config.toml directory with a config file — edit it before starting the server"; \
-		else \
-			echo "Error: config.toml is a non-empty directory; move or remove it, then run 'make config' again"; \
-			exit 1; \
-		fi; \
+config: ## Create config/config.toml if it does not already exist
+	@mkdir -p config
+	@if [ -f config/config.toml ]; then \
+		echo "config/config.toml already exists — edit it directly"; \
+	elif [ -f config.toml ]; then \
+		cp config.toml config/config.toml; \
+		echo "Copied config.toml to writable config/config.toml"; \
 	else \
-		cp config.toml.example config.toml; \
-		echo "Created config.toml — edit it before starting the server"; \
+		cp config.toml.example config/config.toml; \
+		echo "Created config/config.toml — edit it before starting the server"; \
 	fi
 
 # ── Docker ────────────────────────────────────────────────────────────────────
@@ -49,7 +45,7 @@ docker-build: ## Build the Docker image
 docker-smoke-amd64: ## Build amd64 locally and run the Dockerfile startup check
 	docker buildx build --platform linux/amd64 --load -t helpcore:amd64-local .
 
-docker-up: config ## Start helpcore (creates config.toml from example if missing)
+docker-up: config ## Start helpcore with writable config/config.toml
 	docker compose up -d
 
 docker-up-ollama: config ## Start helpcore + Ollama sidecar

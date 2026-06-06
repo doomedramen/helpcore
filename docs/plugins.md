@@ -37,38 +37,33 @@ Every plugin ships with:
 | Cached | WASM binary downloaded to the server; not enabled for any user |
 | Enabled | A specific user has approved its permissions and activated it |
 
-WASM binaries are shared across users — one copy per version on disk. Enablement
-and permissions are per-user in the database.
+Store packages, versions, configuration, enablement, and permissions are
+per-user. Local plugins declared in server config remain administrator
+provisioned.
 
 ---
 
 ## Installation flow
 
-Triggered by natural language: "install the home-assistant plugin".
+Every authenticated user can use the web `/plugins` page to install, update,
+configure, enable, disable, roll back, and uninstall their own store plugins.
 
 ```
 User: "install home-assistant"
   → AI calls install_plugin("home-assistant")
   → Core checks server blacklist — abort if listed
   → Core fetches manifest from registry
-  → Core downloads + checksums WASM binary (Tier 1)
-    OR registers bridge endpoint URL (Tier 2)
-  → Core presents permissions to user in chat:
-      "home-assistant needs:
-         outbound_http → homeassistant.local
-         read user_data
-       Allow? (yes / no)"
-  → User approves
-  → Core writes plugin_installs row for this user
-  → Core generates scoped bearer token for this user+plugin (Tier 2 only)
+  → Core downloads the bounded .tar.gz package and verifies SHA-256
+  → Core rejects traversal, symlinks, manifest mismatches, incompatible core
+    versions, undeclared permissions, and blacklisted IDs
+  → User approves a subset of the declared permissions
+  → Core installs the plugin disabled in the user's versioned directory
+  → Bridge plugins are configured and health-checked before enablement
   → Plugin skill fragment is added to this user's AI context
 ```
 
-The web admin UI currently lists installed plugins and the configured store
-catalog. Installed plugins can be enabled or disabled immediately. Registry
-installation remains future work: the core does not yet download, verify, or
-activate store entries, so the UI deliberately does not present a misleading
-Install action.
+Registry URL, blacklist, and `[[plugins.local]]` provisioning are admin-only.
+Saving a blacklist immediately disables matching installs for every user.
 
 ---
 
@@ -77,11 +72,17 @@ Install action.
 **Filesystem**
 ```
 {data_dir}/
-  plugins/
-    wasm/
-      {plugin_id}/
-        {version}/
-          plugin.wasm
+  users/
+    {user_id}/
+      workspace/
+      plugins/
+        {plugin_id}/
+          versions/
+            {version}/
+              manifest.toml
+              skill.md
+              tools.json
+              plugin.wasm   # WASM tier only
 ```
 
 **Database tables**
@@ -99,13 +100,15 @@ Install action.
 
 ## Permission enforcement
 
-**Tier 1 (WASM):** the sandbox is constructed at load time with only the host
-functions matching the user's approved permissions. The sandbox cannot call
-anything else — it is physically impossible, not just policy.
+**Tier 1 (WASM):** Wasmtime's Component Model runs without WASI, with fuel,
+wall-clock, memory, table, instance, and result-size limits. The JSON call ABI
+is `call(tool, input-json) -> result<string, string>`. Approved host functions
+provide allowlisted HTTP and path-validated access to only the requesting
+user's workspace.
 
-**Tier 2 (bridge):** inbound requests carry a scoped bearer token. The core
-validates the token and enforces the approved permission scope on every
-response. Requests for data outside the approved scope are rejected.
+**Tier 2 (bridge):** the core invokes `POST /tools/{tool}` with timeouts,
+allowlisted endpoints, per-install encrypted credentials, settings, and
+permission checks. Enabling requires a successful health check.
 
 ---
 
@@ -113,9 +116,10 @@ response. Requests for data outside the approved scope are rejected.
 
 - **Disable** — plugin stays cached on server, disabled for this user only.
   Other users' installs are unaffected.
-- **Uninstall** — removes the user's `plugin_installs` row and revokes their
-  scoped token. If no users have the plugin installed, the WASM binary may be
-  garbage collected from disk.
+- **Update** — verifies into a temporary directory, atomically installs the new
+  version, and retains the prior version for rollback.
+- **Uninstall** — disables the plugin, revokes its user tokens, and removes that
+  user's versions, configuration, and install row without touching other users.
 
 ---
 
@@ -167,10 +171,14 @@ at another compatible JSON file to run a private catalog.
     "repo": "helpcore-plugins/home-assistant"
   },
   "permissions": ["outbound_http"],
+  "package": {
+    "url": "https://example.com/home-assistant-1.0.0.tar.gz",
+    "sha256": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+  },
   "author": "doomedramen"
 }
 ```
 
-The `source` field tells the core where to fetch the plugin from during
-installation. `type` may be `github` (public repo), `url` (direct download),
-or `local` (path on the server filesystem — for development).
+The `source` field identifies the upstream project. Installation uses the
+versioned package URL and SHA-256. Legacy entries without package metadata
+remain visible but cannot be installed.

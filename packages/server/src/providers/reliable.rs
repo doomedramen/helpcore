@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use super::{
     error::ProviderError,
     traits::{ChatProvider, ProviderStream},
-    types::ChatMessage,
+    types::{ChatMessage, ToolDefinition},
 };
 
 /// Wraps any `ChatProvider` with retry + exponential backoff.
@@ -39,6 +39,7 @@ impl ChatProvider for ReliableProvider {
     async fn complete(
         &self,
         messages: &[ChatMessage],
+        tools: &[ToolDefinition],
         model: Option<&str>,
     ) -> Result<ProviderStream, ProviderError> {
         let mut last_err: Option<ProviderError> = None;
@@ -55,7 +56,7 @@ impl ChatProvider for ReliableProvider {
                 tokio::time::sleep(backoff).await;
             }
 
-            match self.inner.complete(messages, model).await {
+            match self.inner.complete(messages, tools, model).await {
                 Ok(stream) => return Ok(stream),
                 Err(e) if !e.is_retryable() => {
                     tracing::warn!(error = %e, provider = self.id(), "non-retryable provider error");
@@ -111,6 +112,7 @@ mod tests {
         async fn complete(
             &self,
             _messages: &[ChatMessage],
+            _tools: &[ToolDefinition],
             _model: Option<&str>,
         ) -> Result<ProviderStream, ProviderError> {
             let n = self.calls.fetch_add(1, Ordering::SeqCst);
@@ -134,7 +136,7 @@ mod tests {
         fn name(&self) -> &str { "Fail" }
         fn default_model(&self) -> &str { "test" }
         fn context_limit(&self) -> u32 { 4096 }
-        async fn complete(&self, _: &[ChatMessage], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
+        async fn complete(&self, _: &[ChatMessage], _: &[ToolDefinition], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
             Err(ProviderError::Unavailable)
         }
     }
@@ -147,7 +149,7 @@ mod tests {
     async fn succeeds_on_first_try() {
         let inner = FlakyProvider::new(0);
         let reliable = fast_reliable(inner.clone());
-        let mut stream = reliable.complete(&[ChatMessage::user("hi")], None).await.unwrap();
+        let mut stream = reliable.complete(&[ChatMessage::user("hi")], &[], None).await.unwrap();
         let first = stream.next().await.unwrap().unwrap();
         assert_eq!(first.delta, "ok");
     }
@@ -156,7 +158,7 @@ mod tests {
     async fn retries_and_eventually_succeeds() {
         let inner = FlakyProvider::new(2); // fail twice, succeed on 3rd
         let reliable = fast_reliable(inner.clone());
-        let result = reliable.complete(&[ChatMessage::user("hi")], None).await;
+        let result = reliable.complete(&[ChatMessage::user("hi")], &[], None).await;
         assert!(result.is_ok(), "should succeed after retries");
         assert_eq!(inner.calls.load(Ordering::SeqCst), 3);
     }
@@ -165,7 +167,7 @@ mod tests {
     async fn exhausts_retries_and_returns_error() {
         let inner = Arc::new(AlwaysFailProvider);
         let reliable = fast_reliable(inner);
-        let result = reliable.complete(&[ChatMessage::user("hi")], None).await;
+        let result = reliable.complete(&[ChatMessage::user("hi")], &[], None).await;
         assert!(result.is_err());
     }
 
@@ -178,12 +180,12 @@ mod tests {
             fn name(&self) -> &str { "AuthFail" }
             fn default_model(&self) -> &str { "test" }
             fn context_limit(&self) -> u32 { 4096 }
-            async fn complete(&self, _: &[ChatMessage], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
+            async fn complete(&self, _: &[ChatMessage], _: &[ToolDefinition], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
                 Err(ProviderError::AuthenticationFailed)
             }
         }
         let reliable = fast_reliable(Arc::new(AuthFail));
-        let result = reliable.complete(&[ChatMessage::user("hi")], None).await;
+        let result = reliable.complete(&[ChatMessage::user("hi")], &[], None).await;
         assert!(matches!(result, Err(ProviderError::AuthenticationFailed)));
     }
 }

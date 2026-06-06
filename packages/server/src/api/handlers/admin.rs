@@ -92,12 +92,31 @@ pub async fn update_config(
     config
         .validate()
         .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    Config::writability(&state.config_path).map_err(AppError::Conflict)?;
 
     let path = state.config_path.clone();
     let saved = config.clone();
     tokio::task::spawn_blocking(move || saved.save(&path))
         .await
         .map_err(|e| AppError::Internal(anyhow::anyhow!("config save task failed: {e}")))??;
+
+    let blacklist = config.plugins.blacklist.clone();
+    state
+        .db
+        .call(move |conn| {
+            let transaction = conn.unchecked_transaction()?;
+            for plugin_id in blacklist {
+                transaction.execute(
+                    "UPDATE plugin_installs
+                     SET enabled = 0, updated_at = ?1
+                     WHERE plugin_id = ?2",
+                    rusqlite::params![chrono::Utc::now().to_rfc3339(), plugin_id],
+                )?;
+            }
+            transaction.commit()?;
+            Ok(())
+        })
+        .await?;
 
     Ok(Json(config_response(&state, &config, true)))
 }
@@ -122,8 +141,11 @@ fn config_response(
     config: &Config,
     restart_required: bool,
 ) -> AdminConfigResponse {
+    let writability = Config::writability(&state.config_path);
     AdminConfigResponse {
         config_path: state.config_path.display().to_string(),
+        config_writable: writability.is_ok(),
+        config_writability_error: writability.err(),
         server: AdminServerConfig {
             name: config.server.name.clone(),
             url: config.server.url.clone(),

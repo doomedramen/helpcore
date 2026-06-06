@@ -11,6 +11,7 @@ use tokio_stream::wrappers::ReceiverStream;
 
 use helpcore_api::{
     ChatRequest, ConversationSummary, MessageSummary, SseChunk, SseDone, SseStarted,
+    SseToolCall, SseToolResult,
 };
 
 use helpcore_api::CompactResponse;
@@ -18,7 +19,8 @@ use helpcore_api::CompactResponse;
 use crate::{
     api::{error::AppError, extractor::AuthUser},
     conversation::{compact, context, context::ContextOptions, history, memory},
-    plugins::registry,
+    plugins::{registry, runtime::ToolCatalog},
+    providers::types::{ChatMessage, ToolCall},
     providers::traits::ChatProvider,
     state::AppState,
 };
@@ -173,16 +175,19 @@ struct GenerationJob {
     tx: EventSender,
 }
 
-async fn run_generation(job: GenerationJob) {
-    if let Err(error) = generate(job).await {
+async fn run_generation(mut job: GenerationJob) {
+    if let Err(error) = generate(&mut job).await {
         tracing::error!(error = %error, "chat generation failed");
+        if let Err(persist_error) = fail_job(&job, error.to_string()).await {
+            tracing::error!(error = %persist_error, "failed to persist chat generation failure");
+        }
     }
 }
 
-async fn generate(mut job: GenerationJob) -> anyhow::Result<()> {
+async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
     let user_id = job.user_id.clone();
     let user_message = job.user_content.clone();
-    let (personality, mem_results, plugin_skills) = match job
+    let (personality, mem_results, plugin_skills) = job
         .state
         .db
         .call(move |conn| {
@@ -191,11 +196,8 @@ async fn generate(mut job: GenerationJob) -> anyhow::Result<()> {
             let skills = registry::enabled_skills(conn, &user_id)?;
             Ok((personality, memories, skills))
         })
-        .await
-    {
-        Ok(context) => context,
-        Err(error) => return fail_job(&job, error.to_string()).await,
-    };
+        .await?;
+    let tool_catalog = ToolCatalog::load(&job.state, &job.user_id).await?;
 
     let make_opts = || ContextOptions {
         soul: personality.soul.as_deref(),
@@ -229,59 +231,126 @@ async fn generate(mut job: GenerationJob) -> anyhow::Result<()> {
         }
     }
 
-    let messages = context::assemble(&job.history, &job.user_content, make_opts());
-    let mut stream = match job
-        .provider
-        .complete(&messages, Some(&job.model_used))
-        .await
-    {
-        Ok(stream) => stream,
-        Err(error) => return fail_job(&job, format!("provider error: {error}")).await,
-    };
+    let mut messages = context::assemble(&job.history, &job.user_content, make_opts());
+    for round in 0..=8 {
+        let (assistant_content, tool_calls) =
+            complete_provider_round(job, &messages, tool_catalog.definitions()).await?;
+        if tool_calls.is_empty() {
+            let message_id = job.assistant_message_id.clone();
+            job.state
+                .db
+                .call(move |conn| history::finish_assistant_message(conn, &message_id))
+                .await?;
+            let event = Event::default()
+                .event("done")
+                .json_data(SseDone {
+                    conversation_id: job.conversation_id.clone(),
+                    message_id: job.assistant_message_id.clone(),
+                })
+                .unwrap_or_else(|_| Event::default());
+            let _ = job.tx.send(Ok(event)).await;
+            return Ok(());
+        }
+        if round == 8 {
+            anyhow::bail!("plugin tool loop exceeded the maximum of eight rounds");
+        }
 
+        let mut results = Vec::with_capacity(tool_calls.len());
+        for call in &tool_calls {
+            let call_event = Event::default()
+                .event("tool_call")
+                .json_data(SseToolCall {
+                    id: call.id.clone(),
+                    name: call.name.clone(),
+                    arguments: call.arguments.clone(),
+                })
+                .unwrap_or_else(|_| Event::default());
+            let _ = job.tx.send(Ok(call_event)).await;
+            let result = match tool_catalog.execute(&job.state, &job.user_id, call).await {
+                Ok(result) => serde_json::json!({"ok": true, "result": result}).to_string(),
+                Err(error) => serde_json::json!({"ok": false, "error": error.to_string()}).to_string(),
+            };
+            let result_event = Event::default()
+                .event("tool_result")
+                .json_data(SseToolResult {
+                    id: call.id.clone(),
+                    name: call.name.clone(),
+                    result: result.clone(),
+                })
+                .unwrap_or_else(|_| Event::default());
+            let _ = job.tx.send(Ok(result_event)).await;
+            results.push((call.clone(), result));
+        }
+
+        let message_id = job.assistant_message_id.clone();
+        let persisted_calls = tool_calls.clone();
+        let persisted_results = results.clone();
+        job.state
+            .db
+            .call(move |conn| {
+                history::persist_tool_round(
+                    conn,
+                    &message_id,
+                    &persisted_calls,
+                    &persisted_results,
+                )
+            })
+            .await?;
+        messages.push(ChatMessage::assistant_with_tools(
+            assistant_content,
+            tool_calls,
+        ));
+        for (call, result) in results {
+            messages.push(ChatMessage::tool(call.name, result));
+        }
+    }
+    unreachable!()
+}
+
+async fn complete_provider_round(
+    job: &GenerationJob,
+    messages: &[ChatMessage],
+    tools: &[crate::providers::types::ToolDefinition],
+) -> anyhow::Result<(String, Vec<ToolCall>)> {
+    let mut stream = job
+        .provider
+        .complete(messages, tools, Some(&job.model_used))
+        .await
+        .map_err(|error| anyhow::anyhow!("provider error: {error}"))?;
     let mut pending = String::new();
+    let mut assistant_content = String::new();
+    let mut tool_calls = Vec::new();
     let mut flush_tick = tokio::time::interval(Duration::from_millis(100));
     flush_tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     loop {
         tokio::select! {
             _ = flush_tick.tick(), if !pending.is_empty() => {
-                flush_pending(&job, &mut pending).await?;
+                flush_pending(job, &mut pending).await?;
             }
             item = stream.next() => {
                 match item {
-                    Some(Ok(chunk)) if !chunk.is_final => {
-                        pending.push_str(&chunk.delta);
-                        if pending.len() >= 256 {
-                            flush_pending(&job, &mut pending).await?;
+                    Some(Ok(chunk)) => {
+                        if !chunk.delta.is_empty() {
+                            assistant_content.push_str(&chunk.delta);
+                            pending.push_str(&chunk.delta);
+                            if pending.len() >= 256 {
+                                flush_pending(job, &mut pending).await?;
+                            }
+                        }
+                        tool_calls.extend(chunk.tool_calls);
+                        if chunk.is_final {
+                            flush_pending(job, &mut pending).await?;
+                            return Ok((assistant_content, tool_calls));
                         }
                     }
-                    Some(Ok(_)) => {
-                        flush_pending(&job, &mut pending).await?;
-                        let message_id = job.assistant_message_id.clone();
-                        job.state.db.call(move |conn| {
-                            history::finish_assistant_message(conn, &message_id)
-                        }).await?;
-                        let event = Event::default()
-                            .event("done")
-                            .json_data(SseDone {
-                                conversation_id: job.conversation_id.clone(),
-                                message_id: job.assistant_message_id.clone(),
-                            })
-                            .unwrap_or_else(|_| Event::default());
-                        let _ = job.tx.send(Ok(event)).await;
-                        return Ok(());
-                    }
                     Some(Err(error)) => {
-                        flush_pending(&job, &mut pending).await?;
-                        return fail_job(&job, error.to_string()).await;
+                        flush_pending(job, &mut pending).await?;
+                        return Err(error.into());
                     }
                     None => {
-                        flush_pending(&job, &mut pending).await?;
-                        return fail_job(
-                            &job,
-                            "provider stream ended before completion".to_string(),
-                        ).await;
+                        flush_pending(job, &mut pending).await?;
+                        anyhow::bail!("provider stream ended before completion");
                     }
                 }
             }

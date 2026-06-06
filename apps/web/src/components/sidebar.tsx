@@ -1,6 +1,6 @@
 'use client';
 
-import { LogOut, MessageSquarePlus, Settings, Trash2 } from 'lucide-react';
+import { LogOut, MessageSquarePlus, Plug, Settings, Trash2 } from 'lucide-react';
 import useSWR, { useSWRConfig } from 'swr';
 import { deleteConversation, listConversations } from '@/lib/api';
 import { useAuth } from '@/context/auth';
@@ -93,6 +93,17 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
 
       {/* Footer */}
       <div className="mx-3 border-t border-slate-800 mt-2 pt-2 pb-3">
+        <button
+          onClick={() => router.push('/plugins/')}
+          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+            pathname.startsWith('/plugins')
+              ? 'bg-slate-800 text-white'
+              : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+          }`}
+        >
+          <Plug size={15} className="shrink-0" />
+          Plugins
+        </button>
         {currentUser?.role === 'admin' && (
           <button
             onClick={() => router.push('/admin/')}

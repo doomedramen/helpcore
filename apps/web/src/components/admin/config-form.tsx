@@ -124,6 +124,11 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
           {error}
         </div>
       )}
+      {!config.config_writable && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-200">
+          Configuration is read-only. {config.config_writability_error}
+        </div>
+      )}
 
       <Section title="Server" description={`Saved to ${config.config_path}`}>
         <div className="grid gap-4 md:grid-cols-2">
@@ -385,7 +390,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
         <button
           type="button"
           onClick={save}
-          disabled={saving}
+          disabled={saving || !config.config_writable}
           className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Save size={16} />

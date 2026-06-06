@@ -1,22 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Plug, Server } from 'lucide-react';
+import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import useSWR from 'swr';
 import ConfigForm from '@/components/admin/config-form';
-import PluginManager from '@/components/admin/plugin-manager';
 import Sidebar from '@/components/sidebar';
 import { useAuth } from '@/context/auth';
 import { getAdminConfig } from '@/lib/api';
 
-type Tab = 'configuration' | 'plugins';
-
 export default function AdminPage() {
   const { accessToken, currentUser, isLoading } = useAuth();
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>('configuration');
-
   const {
     data: config,
     error,
@@ -54,75 +48,27 @@ export default function AdminPage() {
               Server settings
             </h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Configure this helpcore server and inspect its plugin catalog.
+              Configure server-wide settings, providers, registry policy, and plugin blacklist.
             </p>
           </div>
 
-          <div className="mb-6 flex gap-1 rounded-xl bg-slate-200/70 p-1 dark:bg-slate-900">
-            <TabButton
-              active={tab === 'configuration'}
-              icon={<Server size={16} />}
-              label="Configuration"
-              onClick={() => setTab('configuration')}
-            />
-            <TabButton
-              active={tab === 'plugins'}
-              icon={<Plug size={16} />}
-              label="Plugins"
-              onClick={() => setTab('plugins')}
-            />
-          </div>
-
-          {tab === 'configuration' && (
-            <>
-              {error && (
-                <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
-                  {error.message}
-                </div>
-              )}
-              {!error && !config && (
-                <div className="py-16 text-center text-sm text-slate-400">Loading configuration…</div>
-              )}
-              {config && (
-                <ConfigForm
-                  accessToken={accessToken}
-                  config={config}
-                  onSaved={updated => mutate(updated, false)}
-                />
-              )}
-            </>
+          {error && (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
+              {error.message}
+            </div>
           )}
-
-          {tab === 'plugins' && <PluginManager accessToken={accessToken} />}
+          {!error && !config && (
+            <div className="py-16 text-center text-sm text-slate-400">Loading configuration…</div>
+          )}
+          {config && (
+            <ConfigForm
+              accessToken={accessToken}
+              config={config}
+              onSaved={updated => mutate(updated, false)}
+            />
+          )}
         </div>
       </main>
     </div>
-  );
-}
-
-function TabButton({
-  active,
-  icon,
-  label,
-  onClick,
-}: {
-  active: boolean;
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`flex flex-1 items-center justify-center gap-2 rounded-lg px-4 py-2 text-sm font-medium transition-colors ${
-        active
-          ? 'bg-white text-slate-900 shadow-sm dark:bg-slate-800 dark:text-white'
-          : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-      }`}
-    >
-      {icon}
-      {label}
-    </button>
   );
 }

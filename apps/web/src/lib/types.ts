@@ -33,6 +33,8 @@ export interface Message {
   id: string;
   role: 'user' | 'assistant' | 'summary' | 'tool';
   content: string;
+  tool_call_id: string | null;
+  tool_calls: unknown[] | null;
   sequence: number;
   created_at: string;
   status: 'pending' | 'streaming' | 'complete' | 'failed' | 'interrupted';
@@ -55,10 +57,17 @@ export interface PluginInfo {
   id: string;
   name: string;
   description: string;
-  version: string;
+  active_version: string;
+  previous_version: string | null;
+  available_version: string | null;
   tier: 'wasm' | 'bridge';
   permissions: string[];
   enabled: boolean;
+  configured: boolean;
+  endpoint: string | null;
+  update_available: boolean;
+  blocked: boolean;
+  user_managed: boolean;
 }
 
 export interface PluginStoreItem {
@@ -71,9 +80,14 @@ export interface PluginStoreItem {
   homepage: string;
   setup_guide: string | null;
   permissions: string[];
+  installable: boolean;
   installed: boolean;
   enabled: boolean;
   blocked: boolean;
+  active_version: string | null;
+  previous_version: string | null;
+  configured: boolean;
+  update_available: boolean;
 }
 
 export interface PluginStoreResponse {
@@ -98,6 +112,8 @@ export interface AdminProviderConfig {
 
 export interface AdminConfig {
   config_path: string;
+  config_writable: boolean;
+  config_writability_error: string | null;
   server: {
     name: string;
     url: string;

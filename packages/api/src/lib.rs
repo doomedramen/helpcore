@@ -91,6 +91,20 @@ pub struct SseDone {
     pub message_id: String,
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SseToolCall {
+    pub id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SseToolResult {
+    pub id: String,
+    pub name: String,
+    pub result: String,
+}
+
 // ── Conversations ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -109,6 +123,8 @@ pub struct MessageSummary {
     pub id: String,
     pub role: String,
     pub content: String,
+    pub tool_call_id: Option<String>,
+    pub tool_calls: Option<serde_json::Value>,
     pub sequence: i64,
     pub created_at: String,
     pub status: MessageStatus,
@@ -192,8 +208,10 @@ pub struct PluginInfo {
     pub permissions: Vec<String>,
     pub enabled:     bool,
     pub configured:  bool,
+    pub endpoint:     Option<String>,
     pub update_available: bool,
     pub blocked:     bool,
+    pub user_managed: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -286,6 +304,8 @@ pub struct AdminProviderConfig {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AdminConfigResponse {
     pub config_path: String,
+    pub config_writable: bool,
+    pub config_writability_error: Option<String>,
     pub server: AdminServerConfig,
     pub logging_level: String,
     pub registry_url: String,

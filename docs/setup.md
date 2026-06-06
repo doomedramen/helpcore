@@ -19,7 +19,7 @@ Setup has four stages, identical for both distribution methods:
 |---|---|---|
 | `~/.helpcore/config.toml` | Server config | Override with `HELPCORE_CONFIG` env var |
 | `~/.helpcore/data/helpcore.db` | SQLite database | Created on first start |
-| `~/.helpcore/data/plugins/` | WASM plugin cache | Created on first plugin install |
+| `~/.helpcore/data/users/{user_id}/plugins/` | Store plugin versions | Scoped to the installing user |
 
 Docker uses volume mounts for both (see below).
 

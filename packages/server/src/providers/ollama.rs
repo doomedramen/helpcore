@@ -8,7 +8,7 @@ use tokio_util::io::StreamReader;
 use super::{
     error::ProviderError,
     traits::{ChatProvider, ProviderStream},
-    types::{ChatMessage, StreamChunk},
+    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition},
 };
 
 /// Default context window — Ollama's built-in default is 2048 which silently
@@ -54,8 +54,24 @@ impl OllamaProvider {
 struct OllamaChatRequest<'a> {
     model: &'a str,
     messages: &'a [ChatMessage],
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    tools: Vec<OllamaTool<'a>>,
     stream: bool,
     options: OllamaOptions,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaTool<'a> {
+    #[serde(rename = "type")]
+    kind: &'static str,
+    function: OllamaFunction<'a>,
+}
+
+#[derive(Debug, Serialize)]
+struct OllamaFunction<'a> {
+    name: &'a str,
+    description: &'a str,
+    parameters: &'a serde_json::Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -73,6 +89,19 @@ struct OllamaStreamLine {
 #[derive(Debug, Deserialize)]
 struct OllamaMessage {
     content: String,
+    #[serde(default)]
+    tool_calls: Vec<OllamaToolCall>,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaToolCall {
+    function: OllamaToolCallFunction,
+}
+
+#[derive(Debug, Deserialize)]
+struct OllamaToolCallFunction {
+    name: String,
+    arguments: serde_json::Value,
 }
 
 // ── Provider impl ─────────────────────────────────────────────────────────────
@@ -87,6 +116,7 @@ impl ChatProvider for OllamaProvider {
     async fn complete(
         &self,
         messages: &[ChatMessage],
+        tools: &[ToolDefinition],
         model: Option<&str>,
     ) -> Result<ProviderStream, ProviderError> {
         let model = model.unwrap_or(&self.default_model);
@@ -95,6 +125,17 @@ impl ChatProvider for OllamaProvider {
         let body = OllamaChatRequest {
             model,
             messages,
+            tools: tools
+                .iter()
+                .map(|tool| OllamaTool {
+                    kind: "function",
+                    function: OllamaFunction {
+                        name: &tool.name,
+                        description: &tool.description,
+                        parameters: &tool.input_schema,
+                    },
+                })
+                .collect(),
             stream: true,
             options: OllamaOptions {
                 num_ctx: self.num_ctx,
@@ -134,14 +175,27 @@ impl ChatProvider for OllamaProvider {
                     Ok(Some(line)) => {
                         match serde_json::from_str::<OllamaStreamLine>(&line) {
                             Ok(parsed) => {
-                                if parsed.done {
-                                    let _ = tx.send(Ok(StreamChunk::done())).await;
-                                    break;
-                                }
                                 if !parsed.message.content.is_empty() {
                                     let _ = tx
                                         .send(Ok(StreamChunk::delta(parsed.message.content)))
                                         .await;
+                                }
+                                if !parsed.message.tool_calls.is_empty() {
+                                    let calls = parsed
+                                        .message
+                                        .tool_calls
+                                        .into_iter()
+                                        .map(|call| ToolCall {
+                                            id: uuid::Uuid::new_v4().to_string(),
+                                            name: call.function.name,
+                                            arguments: call.function.arguments,
+                                        })
+                                        .collect();
+                                    let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
+                                }
+                                if parsed.done {
+                                    let _ = tx.send(Ok(StreamChunk::done())).await;
+                                    break;
                                 }
                             }
                             Err(e) => {
@@ -208,7 +262,7 @@ mod tests {
 
         let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
         let messages = vec![ChatMessage::user("hi")];
-        let mut stream = provider.complete(&messages, None).await.unwrap();
+        let mut stream = provider.complete(&messages, &[], None).await.unwrap();
 
         let mut text = String::new();
         while let Some(chunk) = stream.next().await {
@@ -235,7 +289,7 @@ mod tests {
         let provider =
             OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
         let messages = vec![ChatMessage::user("hello")];
-        let mut stream = provider.complete(&messages, Some("mistral")).await.unwrap();
+        let mut stream = provider.complete(&messages, &[], Some("mistral")).await.unwrap();
 
         // Just consume the stream — the key assertion is no error.
         while let Some(chunk) = stream.next().await {
@@ -258,7 +312,37 @@ mod tests {
             .await;
 
         let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
-        let result = provider.complete(&[ChatMessage::user("hi")], None).await;
+        let result = provider.complete(&[ChatMessage::user("hi")], &[], None).await;
         assert!(matches!(result, Err(ProviderError::Unavailable)));
+    }
+
+    #[tokio::test]
+    async fn streams_tool_calls_from_ollama() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(ndjson(&[
+                r#"{"message":{"role":"assistant","content":"","tool_calls":[{"function":{"name":"weather","arguments":{"city":"London"}}}]},"done":false}"#,
+                r#"{"message":{"role":"assistant","content":""},"done":true}"#,
+            ])))
+            .mount(&server)
+            .await;
+
+        let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
+        let tools = vec![ToolDefinition {
+            name: "weather".into(),
+            description: "Weather".into(),
+            input_schema: serde_json::json!({"type": "object"}),
+        }];
+        let mut stream = provider
+            .complete(&[ChatMessage::user("weather")], &tools, None)
+            .await
+            .unwrap();
+        let chunk = stream.next().await.unwrap().unwrap();
+        assert_eq!(chunk.tool_calls[0].name, "weather");
+
+        let received = server.received_requests().await.unwrap();
+        let body: serde_json::Value = serde_json::from_slice(&received[0].body).unwrap();
+        assert_eq!(body["tools"][0]["function"]["name"], "weather");
     }
 }

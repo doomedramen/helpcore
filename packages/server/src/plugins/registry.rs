@@ -50,6 +50,16 @@ pub struct InstalledPlugin {
     pub manifest: Manifest,
     pub tools: PluginTools,
     pub config: serde_json::Value,
+    pub secrets: Option<String>,
+    pub source_url: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+pub struct InstalledState {
+    pub enabled: bool,
+    pub version: String,
+    pub previous_version: Option<String>,
+    pub configured: bool,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -216,7 +226,7 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
     let mut stmt = conn.prepare_cached(
         "SELECT pi.id, pi.plugin_id, p.name, COALESCE(pi.manifest, p.manifest),
                 pi.version, p.tier, pi.enabled, pi.skill_md, pi.permissions,
-                pi.previous_version, pi.tools, pi.config
+                pi.previous_version, pi.tools, pi.config, pi.secrets, p.source_url
            FROM plugin_installs pi
            JOIN plugins p ON p.id = pi.plugin_id
           WHERE pi.user_id = ?1
@@ -254,6 +264,8 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
                 manifest,
                 tools: serde_json::from_str(&tools_json).unwrap_or_default(),
                 config: serde_json::from_str(&config_json).unwrap_or_default(),
+                secrets: row.get(12)?,
+                source_url: row.get(13)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -263,13 +275,33 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
 pub fn installed_states(
     conn: &Connection,
     user_id: &str,
-) -> anyhow::Result<HashMap<String, bool>> {
+) -> anyhow::Result<HashMap<String, InstalledState>> {
     let mut stmt = conn.prepare_cached(
-        "SELECT plugin_id, enabled FROM plugin_installs WHERE user_id = ?1",
+        "SELECT plugin_id, enabled, version, previous_version, config, manifest
+         FROM plugin_installs WHERE user_id = ?1",
     )?;
     let states = stmt
         .query_map(params![user_id], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i32>(1)? != 0))
+            let config: String = row.get(4)?;
+            let manifest: String = row.get(5)?;
+            let config: serde_json::Value = serde_json::from_str(&config).unwrap_or_default();
+            let manifest: Option<Manifest> = serde_json::from_str(&manifest).ok();
+            let configured = manifest
+                .as_ref()
+                .is_none_or(|item| item.tier != "bridge")
+                || config
+                    .get("endpoint")
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|endpoint| !endpoint.is_empty());
+            Ok((
+                row.get::<_, String>(0)?,
+                InstalledState {
+                    enabled: row.get::<_, i32>(1)? != 0,
+                    version: row.get(2)?,
+                    previous_version: row.get(3)?,
+                    configured,
+                },
+            ))
         })?
         .collect::<Result<HashMap<_, _>, _>>()?;
     Ok(states)
@@ -388,6 +420,7 @@ mod tests {
             permissions: vec!["outbound_http".to_string()],
             min_core_version: None,
             bridge: None,
+            allowed_hosts: Vec::new(),
         }
     }
 

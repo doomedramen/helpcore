@@ -18,7 +18,7 @@ following up with the dentist, and reviewing the server monitoring setup.
 - **Multiple providers** — Ollama, Anthropic, OpenAI, or any OpenAI-compatible server; switch per-request
 - **Plugin system** — extend via bridge plugins (standalone services); scoped tokens, skill injection into context
 - **Voice plugin** — Whisper STT + KittenTTS in a Docker sidecar; full voice chat loop
-- **Web UI** — Next.js chat and admin interface served from the same port as the API; configure providers and inspect plugins without a separate container
+- **Web UI** — Next.js chat, per-user plugin store, and admin settings served from the same port as the API
 - **Pre-built Docker images** — CI pushes to GHCR on every merge; `docker compose pull && docker compose up` to update
 - **Token auto-refresh** — CLI and web UI both handle access token expiry silently
 
@@ -89,7 +89,8 @@ hc setup --server http://localhost:3000
 
 # 5. Open the web UI
 open http://localhost:3000
-#    Admins can use Server settings to edit configuration and inspect plugins.
+#    Every user can manage their own store plugins from Plugins.
+#    Admins can use Server settings for providers, registry policy, and blacklist.
 
 # 6. Or chat from the terminal
 hc ask "hello, what can you do?"

@@ -36,11 +36,21 @@ Conversations are stored in SQLite. Each conversation belongs to one user.
 | tool_calls | JSON | For `assistant` messages that invoke tools |
 | provider_id | TEXT | Which provider generated this (assistant messages) |
 | model | TEXT | Which model generated this |
+| status | TEXT | `pending`, `streaming`, `complete`, `failed`, or `interrupted` |
+| error | TEXT | Terminal generation error, when present |
+| updated_at | TIMESTAMP | Last persisted chunk or state transition |
 | sequence | INTEGER | Ordering within the conversation |
 | created_at | TIMESTAMP | |
 
 The `summary` role is a special system-inserted message that replaces a
 compacted history segment (see Context overflow below).
+
+Generation is server-owned. The user message and an assistant placeholder are
+created in one transaction before the provider starts. Provider work continues
+after an SSE disconnect, chunks are persisted before they are emitted, and the
+UI reloads/polls message history while an assistant row is active. On startup,
+unfinished rows become `interrupted` and can be retried against the original
+user turn. Only one assistant generation may be active per conversation.
 
 ---
 
@@ -161,6 +171,10 @@ messages appear inline as system messages where the compacted segment was.
 Tool-use/tool-result pairs are always kept atomic — orphaned tool results
 (whose call was dropped) are removed before sending to the provider, as they
 cause API 400 errors.
+
+Ollama tool calls are persisted as an assistant message with `tool_calls`,
+followed by `tool` role result rows linked through `tool_call_id`. The provider
+loop allows at most eight tool rounds.
 
 ---
 

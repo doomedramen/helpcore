@@ -1,6 +1,10 @@
 use helpcore_api::MessageSummary;
+use std::collections::HashMap;
 
-use crate::{conversation::memory::MemoryResult, providers::types::ChatMessage};
+use crate::{
+    conversation::memory::MemoryResult,
+    providers::types::{ChatMessage, ToolCall},
+};
 
 /// Baseline system prompt — edit `prompts/core.md` to change behaviour.
 const CORE_INSTRUCTIONS: &str = include_str!("../../../../prompts/core.md");
@@ -49,8 +53,28 @@ pub fn assemble(
     let mut messages = Vec::with_capacity(history.len() + 2);
     messages.push(ChatMessage::system(&system_prompt));
 
+    let mut tool_names = HashMap::new();
     for msg in history {
-        messages.push(ChatMessage { role: msg.role.clone(), content: msg.content.clone() });
+        let calls = msg
+            .tool_calls
+            .as_ref()
+            .and_then(|value| serde_json::from_value::<Vec<ToolCall>>(value.clone()).ok());
+        if let Some(calls) = calls.as_ref() {
+            for call in calls {
+                tool_names.insert(call.id.clone(), call.name.clone());
+            }
+        }
+        let tool_name = msg
+            .tool_call_id
+            .as_ref()
+            .and_then(|id| tool_names.get(id))
+            .cloned();
+        messages.push(ChatMessage {
+            role: msg.role.clone(),
+            content: msg.content.clone(),
+            tool_calls: calls,
+            tool_name,
+        });
     }
 
     messages.push(ChatMessage::user(user_message));
@@ -107,6 +131,8 @@ mod tests {
             id: "id".to_string(),
             role: role.to_string(),
             content: content.to_string(),
+            tool_call_id: None,
+            tool_calls: None,
             sequence: 1,
             created_at: "now".to_string(),
             status: helpcore_api::MessageStatus::Complete,

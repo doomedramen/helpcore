@@ -152,6 +152,43 @@ export function setPluginEnabled(id: string, enabled: boolean, token: string): P
   }, token);
 }
 
+export function installPlugin(id: string, permissions: string[], token: string): Promise<void> {
+  return req(`/plugins/${id}/install`, {
+    method: 'POST',
+    body: JSON.stringify({ permissions }),
+  }, token);
+}
+
+export function updatePlugin(id: string, permissions: string[], token: string): Promise<void> {
+  return req(`/plugins/${id}/update`, {
+    method: 'POST',
+    body: JSON.stringify({ permissions }),
+  }, token);
+}
+
+export function rollbackPlugin(id: string, token: string): Promise<void> {
+  return req(`/plugins/${id}/rollback`, { method: 'POST' }, token);
+}
+
+export function uninstallPlugin(id: string, token: string): Promise<void> {
+  return req(`/plugins/${id}`, { method: 'DELETE' }, token);
+}
+
+export function configurePlugin(
+  id: string,
+  config: {
+    endpoint?: string | null;
+    settings?: unknown;
+    secrets?: unknown;
+  },
+  token: string,
+): Promise<void> {
+  return req(`/plugins/${id}/config`, {
+    method: 'PUT',
+    body: JSON.stringify(config),
+  }, token);
+}
+
 // ── Chat (SSE) ────────────────────────────────────────────────────────────────
 
 export async function chat(args: {

@@ -29,6 +29,12 @@ pub enum AppError {
     Internal(#[from] anyhow::Error),
 }
 
+impl From<serde_json::Error> for AppError {
+    fn from(error: serde_json::Error) -> Self {
+        Self::Internal(error.into())
+    }
+}
+
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
         let (status, code, message) = match &self {

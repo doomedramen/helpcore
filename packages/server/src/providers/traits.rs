@@ -3,7 +3,10 @@ use std::pin::Pin;
 use async_trait::async_trait;
 use futures_util::Stream;
 
-use super::{error::ProviderError, types::{ChatMessage, StreamChunk}};
+use super::{
+    error::ProviderError,
+    types::{ChatMessage, StreamChunk, ToolDefinition},
+};
 
 /// A pinned, boxed, `Send` stream of provider chunks.
 pub type ProviderStream =
@@ -28,6 +31,7 @@ pub trait ChatProvider: Send + Sync {
     async fn complete(
         &self,
         messages: &[ChatMessage],
+        tools: &[ToolDefinition],
         model: Option<&str>,
     ) -> Result<ProviderStream, ProviderError>;
 }

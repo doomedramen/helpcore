@@ -116,6 +116,7 @@ mod tests {
             permissions: vec![],
             min_core_version: None,
             bridge: None,
+            allowed_hosts: Vec::new(),
         }
     }
 

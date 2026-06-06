@@ -3,13 +3,11 @@ services:
     build: .
     ports:
       - "3000:3000"
-    configs:
-      - source: helpcore_config
-        target: /config.toml
     volumes:
+      - ./config:/config
       - helpcore_data:/data
     environment:
-      HELPCORE_CONFIG: /config.toml
+      HELPCORE_CONFIG: /config/config.toml
       HELPCORE_DATA: /data
     restart: unless-stopped
     healthcheck:
@@ -42,7 +40,3 @@ services:
 volumes:
   helpcore_data:
   ollama_data:
-
-configs:
-  helpcore_config:
-    file: ./config.toml
