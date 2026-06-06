@@ -95,6 +95,40 @@ pub fn get_personality(
     }
 }
 
+const DEFAULT_SOUL: &str = "\
+You are a helpful, direct, and thoughtful personal assistant. \
+You adapt your tone to the context — concise for quick questions, \
+detailed when depth is needed. You do not pad responses with \
+unnecessary affirmations or filler phrases.";
+
+const DEFAULT_IDENTITY: &str = "\
+You are a personal AI assistant running on the user's own server. \
+You have no name by default — the user can give you one here.";
+
+const DEFAULT_USER_PROFILE: &str = "\
+The user has not filled in this section yet. \
+Ask them about themselves when it feels natural, \
+and suggest they complete this file at /personality.";
+
+/// Seed the three default personality files for a newly created user.
+/// Uses INSERT OR IGNORE so it never overwrites an existing value.
+pub fn seed_default_personality(conn: &Connection, user_id: &str) -> anyhow::Result<()> {
+    let now = Utc::now().to_rfc3339();
+    for (name, content) in [
+        ("soul",     DEFAULT_SOUL),
+        ("identity", DEFAULT_IDENTITY),
+        ("user",     DEFAULT_USER_PROFILE),
+    ] {
+        conn.execute(
+            "INSERT OR IGNORE INTO user_personality (user_id, name, content, updated_at)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![user_id, name, content, now],
+        )
+        .context("failed to seed personality")?;
+    }
+    Ok(())
+}
+
 /// Create or replace a personality file.
 pub fn set_personality(
     conn: &Connection,

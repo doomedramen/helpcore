@@ -60,6 +60,15 @@ pub async fn create_admin(
         })
         .await?;
 
+    // Seed default personality files.
+    let uid_personality = user_id.clone();
+    state
+        .db
+        .call(move |conn| {
+            crate::conversation::memory::seed_default_personality(conn, &uid_personality)
+        })
+        .await?;
+
     // Local plugins are loaded before first-run setup, when there may be no
     // users yet. Run the loader again so the newly created admin receives them.
     let local_plugins = state.config.plugins.local.clone();

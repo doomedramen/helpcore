@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeHighlight from 'rehype-highlight';
-import { Volume2, VolumeX } from 'lucide-react';
+import { ChevronDown, ChevronRight, Volume2, VolumeX } from 'lucide-react';
 import { tts } from '@/lib/api';
 import type { Message } from '@/lib/types';
 
@@ -24,6 +24,49 @@ function stripMarkdown(text: string): string {
     .trim();
 }
 
+function prettyJson(raw: string): string {
+  try {
+    return JSON.stringify(JSON.parse(raw), null, 2);
+  } catch {
+    return raw;
+  }
+}
+
+function ToolMessage({ message }: { message: Message }) {
+  const [expanded, setExpanded] = useState(false);
+  const pretty = prettyJson(message.content);
+  const isError = (() => {
+    try { return (JSON.parse(message.content) as { ok?: boolean }).ok === false; } catch { return false; }
+  })();
+
+  return (
+    <div className="flex justify-start">
+      <div className="max-w-[85%] rounded-xl border border-slate-200 bg-slate-50 text-xs dark:border-slate-700 dark:bg-slate-900/50">
+        <button
+          type="button"
+          onClick={() => setExpanded(v => !v)}
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+        >
+          {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+          <span className={`font-mono font-medium ${isError ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
+            {isError ? 'tool error' : 'tool result'}
+          </span>
+          {message.tool_call_id && (
+            <span className="ml-1 truncate text-slate-400 dark:text-slate-500">
+              · {message.tool_call_id}
+            </span>
+          )}
+        </button>
+        {expanded && (
+          <pre className="overflow-x-auto border-t border-slate-200 px-3 py-2 font-mono text-slate-700 dark:border-slate-700 dark:text-slate-300">
+            {pretty}
+          </pre>
+        )}
+      </div>
+    </div>
+  );
+}
+
 interface Props {
   message: Message;
   onRetry?: (messageId: string) => void;
@@ -34,6 +77,10 @@ interface Props {
 
 export default function MessageBubble({ message, onRetry, retrying = false, accessToken, hasAudio = false }: Props) {
   const isUser = message.role === 'user';
+
+  if (message.role === 'tool') {
+    return <ToolMessage message={message} />;
+  }
 
   if (isUser) {
     return (

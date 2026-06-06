@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useForm, useFieldArray } from 'react-hook-form';
 import { Plus, Save, Trash2 } from 'lucide-react';
 import { updateAdminConfig } from '@/lib/api';
 import type {
@@ -43,10 +44,10 @@ function draftFromConfig(config: AdminConfig): AdminConfigUpdate {
       api_key_configured: _apiKeyConfigured,
       ...provider
     }) => ({
-        ...provider,
-        api_key: null,
-        clear_api_key: false,
-      })),
+      ...provider,
+      api_key: null,
+      clear_api_key: false,
+    })),
   };
 }
 
@@ -109,61 +110,40 @@ function validateProviders(
 }
 
 export default function ConfigForm({ accessToken, config, onSaved }: Props) {
-  const [draft, setDraft] = useState<AdminConfigUpdate>(() => draftFromConfig(config));
+  const { control, register, reset, watch, getValues, setValue, formState: { isDirty } } = useForm<AdminConfigUpdate>({
+    defaultValues: draftFromConfig(config),
+  });
+  const { fields, append, remove } = useFieldArray({ control, name: 'providers' });
+
   const [blacklist, setBlacklist] = useState(config.plugin_blacklist.join('\n'));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [savedConfig, setSavedConfig] = useState<AdminConfig | null>(null);
-  const [dirty, setDirty] = useState(false);
 
   useEffect(() => {
-    if (dirty) return;
-    setDraft(draftFromConfig(config));
+    if (isDirty) return;
+    reset(draftFromConfig(config));
     setBlacklist(config.plugin_blacklist.join('\n'));
-  }, [config, dirty]);
-
-  function markDirty() {
-    setDirty(true);
-    setSavedConfig(null);
-  }
-
-  function updateDraft(update: (current: AdminConfigUpdate) => AdminConfigUpdate) {
-    setDraft(update);
-    markDirty();
-  }
-
-  function updateProvider(index: number, patch: Partial<AdminProviderUpdate>) {
-    updateDraft(current => ({
-      ...current,
-      providers: current.providers.map((provider, providerIndex) => (
-        providerIndex === index ? { ...provider, ...patch } : provider
-      )),
-    }));
-  }
+  }, [config, isDirty, reset]);
 
   function addProvider() {
-    updateDraft(current => ({
-      ...current,
-      providers: [
-        ...current.providers,
-        {
-          id: `provider-${current.providers.length + 1}`,
-          name: 'New provider',
-          provider_type: 'ollama',
-          api_key: null,
-          clear_api_key: false,
-          url: 'http://localhost:11434',
-          default_model: '',
-          roles: ['chat'],
-          num_ctx: null,
-          num_predict: null,
-        },
-      ],
-    }));
+    append({
+      id: `provider-${fields.length + 1}`,
+      name: 'New provider',
+      provider_type: 'ollama' as ProviderType,
+      api_key: null,
+      clear_api_key: false,
+      url: 'http://localhost:11434',
+      default_model: '',
+      roles: ['chat'] as ProviderRole[],
+      num_ctx: null,
+      num_predict: null,
+    });
   }
 
   async function save() {
-    const validationError = validateProviders(draft.providers, config.providers);
+    const data = getValues();
+    const validationError = validateProviders(data.providers, config.providers);
     if (validationError) {
       setError(validationError);
       return;
@@ -173,15 +153,14 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
     setSavedConfig(null);
     try {
       const updated = await updateAdminConfig({
-        ...draft,
+        ...data,
         plugin_blacklist: blacklist
           .split(/[\n,]/)
           .map(item => item.trim())
           .filter(Boolean),
       }, accessToken);
-      setDraft(draftFromConfig(updated));
+      reset(draftFromConfig(updated));
       setBlacklist(updated.plugin_blacklist.join('\n'));
-      setDirty(false);
       onSaved(updated);
       setSavedConfig(updated);
     } catch (err) {
@@ -190,6 +169,8 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
       setSaving(false);
     }
   }
+
+  const values = watch();
 
   return (
     <div className="space-y-6">
@@ -218,48 +199,22 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
       <Section title="Server" description={`Saved to ${config.config_path}`}>
         <div className="grid gap-4 md:grid-cols-2">
           <Field label="Display name">
-            <input
-              value={draft.server.name}
-              onChange={event => updateDraft(current => ({
-                ...current,
-                server: { ...current.server, name: event.target.value },
-              }))}
-              className={inputClass}
-            />
+            <input {...register('server.name')} className={inputClass} />
           </Field>
           <Field label="Public URL" hint="How clients reach this server. Includes protocol, hostname, and port.">
-            <input
-              type="url"
-              value={draft.server.url}
-              onChange={event => updateDraft(current => ({
-                ...current,
-                server: { ...current.server, url: event.target.value },
-              }))}
-              className={inputClass}
-            />
+            <input type="url" {...register('server.url')} className={inputClass} />
           </Field>
           <Field label="Server port" hint="The local port the server binds to. Can differ from the public URL port behind a reverse proxy.">
             <input
               type="number"
               min={1}
               max={65535}
-              value={draft.server.port}
-              onChange={event => updateDraft(current => ({
-                ...current,
-                server: { ...current.server, port: Number(event.target.value) },
-              }))}
+              {...register('server.port', { valueAsNumber: true })}
               className={inputClass}
             />
           </Field>
           <Field label="Log level">
-            <select
-              value={draft.logging_level}
-              onChange={event => updateDraft(current => ({
-                ...current,
-                logging_level: event.target.value,
-              }))}
-              className={inputClass}
-            >
+            <select {...register('logging_level')} className={inputClass}>
               {['trace', 'debug', 'info', 'warn', 'error'].map(level => (
                 <option key={level} value={level}>{level}</option>
               ))}
@@ -274,24 +229,13 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
       >
         <div className="space-y-4">
           <Field label="Registry URL">
-            <input
-              type="url"
-              value={draft.registry_url}
-              onChange={event => updateDraft(current => ({
-                ...current,
-                registry_url: event.target.value,
-              }))}
-              className={inputClass}
-            />
+            <input type="url" {...register('registry_url')} className={inputClass} />
           </Field>
           <Field label="Blacklisted plugin IDs" hint="One ID per line. Blocked plugins remain visible in the catalog.">
             <textarea
               rows={4}
               value={blacklist}
-              onChange={event => {
-                setBlacklist(event.target.value);
-                markDirty();
-              }}
+              onChange={event => setBlacklist(event.target.value)}
               placeholder="untrusted-plugin"
               className={`${inputClass} resize-y`}
             />
@@ -314,35 +258,34 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
         )}
       >
         <div className="space-y-4">
-          {draft.providers.length === 0 && (
+          {fields.length === 0 && (
             <p className="rounded-xl border border-dashed border-slate-300 px-4 py-8 text-center text-sm text-slate-500 dark:border-slate-700 dark:text-slate-400">
               No providers configured. Chat will be unavailable until one is added.
             </p>
           )}
-          {draft.providers.map((provider, index) => {
-            const existing = config.providers.find(item => item.id === provider.id);
+          {fields.map((field, index) => {
+            const providerValues = values.providers?.[index];
+            const providerId = providerValues?.id ?? '';
+            const existing = config.providers.find(item => item.id === providerId);
             return (
               <div
-                key={`${provider.id}-${index}`}
+                key={field.id}
                 className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/50"
               >
                 <div className="mb-4 flex items-start justify-between gap-4">
                   <div>
                     <h3 className="font-medium text-slate-900 dark:text-slate-100">
-                      {provider.name || 'Unnamed provider'}
+                      {providerValues?.name || 'Unnamed provider'}
                     </h3>
                     <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                      {provider.id || 'Provider ID required'}
+                      {providerValues?.id || 'Provider ID required'}
                     </p>
                   </div>
                   <button
                     type="button"
-                    onClick={() => updateDraft(current => ({
-                      ...current,
-                      providers: current.providers.filter((_, itemIndex) => itemIndex !== index),
-                    }))}
+                    onClick={() => remove(index)}
                     className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 dark:hover:text-red-400"
-                    aria-label={`Remove ${provider.name || 'provider'}`}
+                    aria-label={`Remove ${providerValues?.name || 'provider'}`}
                   >
                     <Trash2 size={16} />
                   </button>
@@ -351,28 +294,24 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                 <div className="grid gap-4 md:grid-cols-2">
                   <Field label="ID">
                     <input
-                      value={provider.id}
-                      onChange={event => updateProvider(index, { id: event.target.value })}
+                      {...register(`providers.${index}.id`)}
                       className={inputClass}
                     />
                   </Field>
                   <Field label="Name">
                     <input
-                      value={provider.name}
-                      onChange={event => updateProvider(index, { name: event.target.value })}
+                      {...register(`providers.${index}.name`)}
                       className={inputClass}
                     />
                   </Field>
                   <Field label="Type">
                     <select
-                      value={provider.provider_type}
-                      onChange={event => {
-                        const providerType = event.target.value as ProviderType;
-                        updateProvider(index, {
-                          provider_type: providerType,
-                          url: defaultUrl(providerType),
-                        });
-                      }}
+                      {...register(`providers.${index}.provider_type`, {
+                        onChange: (e) => {
+                          const providerType = e.target.value as ProviderType;
+                          setValue(`providers.${index}.url`, defaultUrl(providerType));
+                        },
+                      })}
                       className={inputClass}
                     >
                       {providerTypes.map(type => (
@@ -382,26 +321,26 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                   </Field>
                   <Field label="Default model">
                     <input
-                      value={provider.default_model}
-                      onChange={event => updateProvider(index, { default_model: event.target.value })}
+                      {...register(`providers.${index}.default_model`)}
                       className={inputClass}
                     />
                   </Field>
                   <Field
                     label="Base URL"
                     hint={
-                      provider.provider_type === 'ollama'
+                      providerValues?.provider_type === 'ollama'
                         ? 'Required. URL of the Ollama server.'
-                        : provider.provider_type === 'openai_compatible'
+                        : providerValues?.provider_type === 'openai_compatible'
                           ? 'Required. Include the API version prefix when needed.'
                           : 'Optional. Leave blank to use the official API.'
                     }
                   >
                     <input
                       type="url"
-                      value={provider.url ?? ''}
-                      onChange={event => updateProvider(index, { url: event.target.value || null })}
-                      placeholder={defaultUrl(provider.provider_type) ?? 'Official API endpoint'}
+                      {...register(`providers.${index}.url`, {
+                        setValueAs: v => v === '' ? null : v,
+                      })}
+                      placeholder={defaultUrl(providerValues?.provider_type ?? 'ollama') ?? 'Official API endpoint'}
                       className={inputClass}
                     />
                   </Field>
@@ -410,17 +349,15 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                     hint={
                       existing?.api_key_configured
                         ? 'A key is saved. Leave blank to keep it.'
-                        : hostedProviderTypes.has(provider.provider_type)
+                        : hostedProviderTypes.has(providerValues?.provider_type ?? 'ollama')
                           ? 'Required. Stored only in the server config file.'
                           : 'Optional. Stored only in the server config file.'
                     }
                   >
                     <input
                       type="password"
-                      value={provider.api_key ?? ''}
-                      onChange={event => updateProvider(index, {
-                        api_key: event.target.value || null,
-                        clear_api_key: false,
+                      {...register(`providers.${index}.api_key`, {
+                        setValueAs: v => v === '' ? null : v,
                       })}
                       placeholder={existing?.api_key_configured ? 'Configured' : 'Not configured'}
                       className={inputClass}
@@ -429,11 +366,15 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                       <label className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                         <input
                           type="checkbox"
-                          checked={provider.clear_api_key ?? false}
-                          onChange={event => updateProvider(index, {
-                            clear_api_key: event.target.checked,
-                            api_key: null,
-                          })}
+                          checked={providerValues?.clear_api_key ?? false}
+                          onChange={e => {
+                            if (e.target.checked) {
+                              setValue(`providers.${index}.clear_api_key`, true);
+                              setValue(`providers.${index}.api_key`, null);
+                            } else {
+                              setValue(`providers.${index}.clear_api_key`, false);
+                            }
+                          }}
                         />
                         Remove saved key
                       </label>
@@ -443,11 +384,10 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                     <input
                       type="number"
                       min={1}
-                      value={provider.num_ctx ?? ''}
-                      onChange={event => updateProvider(index, {
-                        num_ctx: event.target.value ? Number(event.target.value) : null,
+                      {...register(`providers.${index}.num_ctx`, {
+                        setValueAs: v => (v === '' ? null : Number(v)),
                       })}
-                      placeholder={provider.provider_type === 'anthropic' ? '200000' : provider.provider_type === 'ollama' ? '8192' : '128000'}
+                      placeholder={providerValues?.provider_type === 'anthropic' ? '200000' : providerValues?.provider_type === 'ollama' ? '8192' : '128000'}
                       className={inputClass}
                     />
                   </Field>
@@ -455,9 +395,8 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                     <input
                       type="number"
                       min={1}
-                      value={provider.num_predict ?? ''}
-                      onChange={event => updateProvider(index, {
-                        num_predict: event.target.value ? Number(event.target.value) : null,
+                      {...register(`providers.${index}.num_predict`, {
+                        setValueAs: v => (v === '' ? null : Number(v)),
                       })}
                       placeholder="2048"
                       className={inputClass}
@@ -475,12 +414,15 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                       >
                         <input
                           type="checkbox"
-                          checked={provider.roles.includes(role.value)}
-                          onChange={event => updateProvider(index, {
-                            roles: event.target.checked
-                              ? [...provider.roles, role.value]
-                              : provider.roles.filter(item => item !== role.value),
-                          })}
+                          checked={providerValues?.roles?.includes(role.value) ?? false}
+                          onChange={() => {
+                            const current = (getValues(`providers.${index}.roles`) as ProviderRole[]) || [];
+                            if (current.includes(role.value)) {
+                              setValue(`providers.${index}.roles`, current.filter(r => r !== role.value), { shouldDirty: true });
+                            } else {
+                              setValue(`providers.${index}.roles`, [...current, role.value], { shouldDirty: true });
+                            }
+                          }}
                         />
                         {role.label}
                       </label>

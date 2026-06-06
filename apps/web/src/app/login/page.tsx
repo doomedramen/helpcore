@@ -19,8 +19,8 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
-      await login(email, password);
-      router.replace('/chat/');
+      const { forcePasswordChange } = await login(email, password);
+      router.replace(forcePasswordChange ? '/change-password/' : '/chat/');
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not sign in.');
     } finally {

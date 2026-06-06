@@ -123,6 +123,35 @@ enum Commands {
     /// Manage plugins
     #[command(subcommand)]
     Plugin(PluginCommands),
+
+    // ── API keys ──────────────────────────────────────────────────────────────
+
+    /// Manage API keys
+    #[command(subcommand)]
+    ApiKeys(ApiKeyCommands),
+}
+
+#[derive(Subcommand)]
+enum ApiKeyCommands {
+    /// List your API keys
+    Ls {
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Create a new API key (prints the full key — store it securely)
+    Create {
+        /// A memorable name for this key (e.g. "laptop CLI")
+        name: String,
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Revoke an API key by ID
+    Revoke {
+        /// Key ID (shown in `hc api-keys ls`)
+        id: String,
+        #[arg(long)]
+        server: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -296,6 +325,18 @@ pub async fn run() -> anyhow::Result<()> {
             }
             MemoryCommands::Rm { path, server } => {
                 commands::memory::memory_rm(&path, server.as_deref()).await
+            }
+        },
+
+        Commands::ApiKeys(sub) => match sub {
+            ApiKeyCommands::Ls { server } => {
+                commands::api_key::list(server.as_deref()).await
+            }
+            ApiKeyCommands::Create { name, server } => {
+                commands::api_key::create(&name, server.as_deref()).await
+            }
+            ApiKeyCommands::Revoke { id, server } => {
+                commands::api_key::revoke(&id, server.as_deref()).await
             }
         },
     }

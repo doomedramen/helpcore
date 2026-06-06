@@ -4,7 +4,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 
 use helpcore_api::{
-    ChatRequest, CompactResponse, LoginRequest, LoginResponse, LogoutRequest,
+    ApiKeyInfo, ChatRequest, CompactResponse, CreateApiKeyRequest, CreateApiKeyResponse,
+    ListApiKeysResponse, LoginRequest, LoginResponse, LogoutRequest,
     MemoryEntry, MemoryListResponse, MemoryReadResponse, MemoryWriteRequest,
     PersonalityResponse, PersonalityWriteRequest,
     PluginInfo, PluginListResponse, PluginTokenRequest, PluginTokenResponse,
@@ -287,6 +288,53 @@ impl Client {
             .put(format!("{}/api/plugins/{plugin_id}/enable", self.server_url))
             .bearer_auth(access_token)
             .json(&serde_json::json!({ "enabled": enabled }))
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp).await?;
+        Ok(())
+    }
+
+    // ── API keys ──────────────────────────────────────────────────────────────
+
+    pub async fn list_api_keys(&self, access_token: &str) -> anyhow::Result<Vec<ApiKeyInfo>> {
+        let resp = self
+            .inner
+            .get(format!("{}/api/auth/api-keys", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        let body: ListApiKeysResponse =
+            require_success(resp).await?.json().await.context("invalid api-keys response")?;
+        Ok(body.keys)
+    }
+
+    pub async fn create_api_key(
+        &self,
+        access_token: &str,
+        name: &str,
+    ) -> anyhow::Result<CreateApiKeyResponse> {
+        let resp = self
+            .inner
+            .post(format!("{}/api/auth/api-keys", self.server_url))
+            .bearer_auth(access_token)
+            .json(&CreateApiKeyRequest { name: name.to_string(), expires_at: None })
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp).await?.json().await.context("invalid create-key response")
+    }
+
+    pub async fn revoke_api_key(
+        &self,
+        access_token: &str,
+        key_id: &str,
+    ) -> anyhow::Result<()> {
+        let resp = self
+            .inner
+            .delete(format!("{}/api/auth/api-keys/{key_id}", self.server_url))
+            .bearer_auth(access_token)
             .send()
             .await
             .context("failed to reach server")?;

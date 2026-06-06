@@ -70,6 +70,15 @@ pub async fn create_user(
         })
         .await?;
 
+    // Seed default personality files for the new member.
+    let uid_personality = user_id.clone();
+    state
+        .db
+        .call(move |conn| {
+            crate::conversation::memory::seed_default_personality(conn, &uid_personality)
+        })
+        .await?;
+
     // Log the creation event
     let actor_id = admin.0.id.clone();
     let target_id = user_id.clone();

@@ -17,7 +17,7 @@ import { useAuth } from '@/context/auth';
 import type { ConversationSummary, Message, SseDone, SseStarted } from '@/lib/types';
 import MessageBubble from './message-bubble';
 import ChatInput from './chat-input';
-import { Pencil, Trash2 } from 'lucide-react';
+import { Pencil, Terminal, Trash2 } from 'lucide-react';
 
 interface QueueItem {
   id: string;
@@ -45,6 +45,17 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState('');
   const [queue, setQueue] = useState<QueueItem[]>([]);
+  const [showToolLogs, setShowToolLogs] = useState(false);
+  useEffect(() => {
+    const stored = localStorage.getItem('showToolLogs');
+    if (stored !== null) setShowToolLogs(stored === 'true');
+  }, []);
+  const toggleToolLogs = useCallback(() => {
+    setShowToolLogs(v => {
+      localStorage.setItem('showToolLogs', String(!v));
+      return !v;
+    });
+  }, []);
   const [selectedProviderId, setSelectedProviderId] = useState('');
   const providerSelectionsRef = useRef<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
@@ -293,11 +304,30 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     }
   }, [conversationId, refreshMessages, runWithRefresh, selectedProviderId, streamHandlers]);
 
+  const toolCount = messages.filter(m => m.role === 'tool').length;
+  const visibleMessages = showToolLogs ? messages : messages.filter(m => m.role !== 'tool');
   const empty = !historyLoading && messages.length === 0 && queue.length === 0;
   const visibleError = error || (historyError instanceof Error ? historyError.message : '');
 
   return (
     <div className="flex h-full flex-col">
+      {toolCount > 0 && (
+        <div className="flex items-center justify-end border-b border-slate-200 px-4 py-1.5 dark:border-slate-700">
+          <button
+            type="button"
+            onClick={toggleToolLogs}
+            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+              showToolLogs
+                ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
+                : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300'
+            }`}
+          >
+            <Terminal size={12} />
+            <span>Tool logs</span>
+            {!showToolLogs && <span className="ml-0.5 tabular-nums">({toolCount})</span>}
+          </button>
+        </div>
+      )}
       <div className="flex-1 overflow-y-auto">
         {empty ? (
           <div className="flex h-full items-center justify-center">
@@ -312,7 +342,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           </div>
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
-            {messages.map(message => (
+            {visibleMessages.map(message => (
               <MessageBubble
                 key={message.id}
                 message={message}
