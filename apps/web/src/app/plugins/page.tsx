@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import PluginManager from '@/components/plugin-manager';
 import Sidebar from '@/components/sidebar';
+import SettingsNav from '@/components/settings-nav';
 import { useAuth } from '@/context/auth';
 
 export default function PluginsPage() {
@@ -30,14 +31,17 @@ export default function PluginsPage() {
       />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-6 py-8">
-          <div className="mb-7">
-            <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Your account</p>
+          <div className="mb-6">
+            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Settings</p>
             <h1 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">Plugins</h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               Install and manage isolated plugin versions for your account.
             </p>
           </div>
-          <PluginManager accessToken={accessToken} />
+          <SettingsNav />
+          <div className="mt-6">
+            <PluginManager accessToken={accessToken} />
+          </div>
         </div>
       </main>
     </div>

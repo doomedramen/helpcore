@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useForm, useFieldArray } from 'react-hook-form';
-import { Plus, Save, Trash2 } from 'lucide-react';
+import { ChevronDown, ChevronRight, Plus, Save, Trash2 } from 'lucide-react';
 import { updateAdminConfig } from '@/lib/api';
 import type {
   AdminConfig,
@@ -119,6 +119,25 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [savedConfig, setSavedConfig] = useState<AdminConfig | null>(null);
+  const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
+  const prevFieldsLength = useRef(fields.length);
+
+  useEffect(() => {
+    if (fields.length > prevFieldsLength.current) {
+      const newField = fields[fields.length - 1];
+      setExpandedProviders(prev => new Set([...prev, newField.id]));
+    }
+    prevFieldsLength.current = fields.length;
+  }, [fields]);
+
+  function toggleProvider(fieldId: string) {
+    setExpandedProviders(prev => {
+      const next = new Set(prev);
+      if (next.has(fieldId)) next.delete(fieldId);
+      else next.add(fieldId);
+      return next;
+    });
+  }
 
   useEffect(() => {
     if (isDirty) return;
@@ -267,168 +286,180 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
             const providerValues = values.providers?.[index];
             const providerId = providerValues?.id ?? '';
             const existing = config.providers.find(item => item.id === providerId);
+            const isExpanded = expandedProviders.has(field.id);
+            const activeRoles = providerValues?.roles ?? [];
+            const roleLabels = providerRoles
+              .filter(r => activeRoles.includes(r.value))
+              .map(r => r.label);
+            const typeLabel = providerTypes.find(t => t.value === providerValues?.provider_type)?.label ?? '';
+
             return (
               <div
                 key={field.id}
-                className="rounded-xl border border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/50"
+                className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800"
               >
-                <div className="mb-4 flex items-start justify-between gap-4">
-                  <div>
-                    <h3 className="font-medium text-slate-900 dark:text-slate-100">
+                {/* Collapsed header — always visible */}
+                <button
+                  type="button"
+                  onClick={() => toggleProvider(field.id)}
+                  className="flex w-full items-center gap-3 bg-white px-4 py-3 text-left transition-colors hover:bg-slate-50 dark:bg-slate-900 dark:hover:bg-slate-800/60"
+                >
+                  {isExpanded
+                    ? <ChevronDown size={15} className="shrink-0 text-slate-400" />
+                    : <ChevronRight size={15} className="shrink-0 text-slate-400" />
+                  }
+                  <div className="min-w-0 flex-1">
+                    <span className="font-medium text-slate-900 dark:text-slate-100">
                       {providerValues?.name || 'Unnamed provider'}
-                    </h3>
-                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
-                      {providerValues?.id || 'Provider ID required'}
-                    </p>
+                    </span>
+                    <span className="ml-2 text-xs text-slate-400 dark:text-slate-500">
+                      {typeLabel}{roleLabels.length > 0 ? ` · ${roleLabels.join(', ')}` : ''}
+                    </span>
                   </div>
                   <button
                     type="button"
-                    onClick={() => remove(index)}
-                    className="rounded-lg p-2 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 dark:hover:text-red-400"
+                    onClick={e => { e.stopPropagation(); remove(index); }}
+                    className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                     aria-label={`Remove ${providerValues?.name || 'provider'}`}
                   >
-                    <Trash2 size={16} />
+                    <Trash2 size={15} />
                   </button>
-                </div>
+                </button>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <Field label="ID">
-                    <input
-                      {...register(`providers.${index}.id`)}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Name">
-                    <input
-                      {...register(`providers.${index}.name`)}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Type">
-                    <select
-                      {...register(`providers.${index}.provider_type`, {
-                        onChange: (e) => {
-                          const providerType = e.target.value as ProviderType;
-                          setValue(`providers.${index}.url`, defaultUrl(providerType));
-                        },
-                      })}
-                      className={inputClass}
-                    >
-                      {providerTypes.map(type => (
-                        <option key={type.value} value={type.value}>{type.label}</option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Default model">
-                    <input
-                      {...register(`providers.${index}.default_model`)}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field
-                    label="Base URL"
-                    hint={
-                      providerValues?.provider_type === 'ollama'
-                        ? 'Required. URL of the Ollama server.'
-                        : providerValues?.provider_type === 'openai_compatible'
-                          ? 'Required. Include the API version prefix when needed.'
-                          : 'Optional. Leave blank to use the official API.'
-                    }
-                  >
-                    <input
-                      type="url"
-                      {...register(`providers.${index}.url`, {
-                        setValueAs: v => v === '' ? null : v,
-                      })}
-                      placeholder={defaultUrl(providerValues?.provider_type ?? 'ollama') ?? 'Official API endpoint'}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field
-                    label="API key"
-                    hint={
-                      existing?.api_key_configured
-                        ? 'A key is saved. Leave blank to keep it.'
-                        : hostedProviderTypes.has(providerValues?.provider_type ?? 'ollama')
-                          ? 'Required. Stored only in the server config file.'
-                          : 'Optional. Stored only in the server config file.'
-                    }
-                  >
-                    <input
-                      type="password"
-                      {...register(`providers.${index}.api_key`, {
-                        setValueAs: v => v === '' ? null : v,
-                      })}
-                      placeholder={existing?.api_key_configured ? 'Configured' : 'Not configured'}
-                      className={inputClass}
-                    />
-                    {existing?.api_key_configured && (
-                      <label className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
-                        <input
-                          type="checkbox"
-                          checked={providerValues?.clear_api_key ?? false}
-                          onChange={e => {
-                            if (e.target.checked) {
-                              setValue(`providers.${index}.clear_api_key`, true);
-                              setValue(`providers.${index}.api_key`, null);
-                            } else {
-                              setValue(`providers.${index}.clear_api_key`, false);
-                            }
-                          }}
-                        />
-                        Remove saved key
-                      </label>
-                    )}
-                  </Field>
-                  <Field label="Context tokens">
-                    <input
-                      type="number"
-                      min={1}
-                      {...register(`providers.${index}.num_ctx`, {
-                        setValueAs: v => (v === '' ? null : Number(v)),
-                      })}
-                      placeholder={providerValues?.provider_type === 'anthropic' ? '200000' : providerValues?.provider_type === 'ollama' ? '8192' : '128000'}
-                      className={inputClass}
-                    />
-                  </Field>
-                  <Field label="Maximum response tokens">
-                    <input
-                      type="number"
-                      min={1}
-                      {...register(`providers.${index}.num_predict`, {
-                        setValueAs: v => (v === '' ? null : Number(v)),
-                      })}
-                      placeholder="2048"
-                      className={inputClass}
-                    />
-                  </Field>
-                </div>
-
-                <div className="mt-4">
-                  <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Roles</span>
-                  <div className="mt-2 flex flex-wrap gap-3">
-                    {providerRoles.map(role => (
-                      <label
-                        key={role.value}
-                        className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"
+                {/* Expanded fields */}
+                {isExpanded && (
+                  <div className="border-t border-slate-200 bg-slate-50/60 p-4 dark:border-slate-800 dark:bg-slate-950/50">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <Field label="ID">
+                        <input {...register(`providers.${index}.id`)} className={inputClass} />
+                      </Field>
+                      <Field label="Name">
+                        <input {...register(`providers.${index}.name`)} className={inputClass} />
+                      </Field>
+                      <Field label="Type">
+                        <select
+                          {...register(`providers.${index}.provider_type`, {
+                            onChange: (e) => {
+                              const providerType = e.target.value as ProviderType;
+                              setValue(`providers.${index}.url`, defaultUrl(providerType));
+                            },
+                          })}
+                          className={inputClass}
+                        >
+                          {providerTypes.map(type => (
+                            <option key={type.value} value={type.value}>{type.label}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Default model">
+                        <input {...register(`providers.${index}.default_model`)} className={inputClass} />
+                      </Field>
+                      <Field
+                        label="Base URL"
+                        hint={
+                          providerValues?.provider_type === 'ollama'
+                            ? 'Required. URL of the Ollama server.'
+                            : providerValues?.provider_type === 'openai_compatible'
+                              ? 'Required. Include the API version prefix when needed.'
+                              : 'Optional. Leave blank to use the official API.'
+                        }
                       >
                         <input
-                          type="checkbox"
-                          checked={providerValues?.roles?.includes(role.value) ?? false}
-                          onChange={() => {
-                            const current = (getValues(`providers.${index}.roles`) as ProviderRole[]) || [];
-                            if (current.includes(role.value)) {
-                              setValue(`providers.${index}.roles`, current.filter(r => r !== role.value), { shouldDirty: true });
-                            } else {
-                              setValue(`providers.${index}.roles`, [...current, role.value], { shouldDirty: true });
-                            }
-                          }}
+                          type="url"
+                          {...register(`providers.${index}.url`, {
+                            setValueAs: v => v === '' ? null : v,
+                          })}
+                          placeholder={defaultUrl(providerValues?.provider_type ?? 'ollama') ?? 'Official API endpoint'}
+                          className={inputClass}
                         />
-                        {role.label}
-                      </label>
-                    ))}
+                      </Field>
+                      <Field
+                        label="API key"
+                        hint={
+                          existing?.api_key_configured
+                            ? 'A key is saved. Leave blank to keep it.'
+                            : hostedProviderTypes.has(providerValues?.provider_type ?? 'ollama')
+                              ? 'Required. Stored only in the server config file.'
+                              : 'Optional. Stored only in the server config file.'
+                        }
+                      >
+                        <input
+                          type="password"
+                          {...register(`providers.${index}.api_key`, {
+                            setValueAs: v => v === '' ? null : v,
+                          })}
+                          placeholder={existing?.api_key_configured ? 'Configured' : 'Not configured'}
+                          className={inputClass}
+                        />
+                        {existing?.api_key_configured && (
+                          <label className="mt-2 flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                            <input
+                              type="checkbox"
+                              checked={providerValues?.clear_api_key ?? false}
+                              onChange={e => {
+                                if (e.target.checked) {
+                                  setValue(`providers.${index}.clear_api_key`, true);
+                                  setValue(`providers.${index}.api_key`, null);
+                                } else {
+                                  setValue(`providers.${index}.clear_api_key`, false);
+                                }
+                              }}
+                            />
+                            Remove saved key
+                          </label>
+                        )}
+                      </Field>
+                      <Field label="Context tokens">
+                        <input
+                          type="number"
+                          min={1}
+                          {...register(`providers.${index}.num_ctx`, {
+                            setValueAs: v => (v === '' ? null : Number(v)),
+                          })}
+                          placeholder={providerValues?.provider_type === 'anthropic' ? '200000' : providerValues?.provider_type === 'ollama' ? '8192' : '128000'}
+                          className={inputClass}
+                        />
+                      </Field>
+                      <Field label="Maximum response tokens">
+                        <input
+                          type="number"
+                          min={1}
+                          {...register(`providers.${index}.num_predict`, {
+                            setValueAs: v => (v === '' ? null : Number(v)),
+                          })}
+                          placeholder="2048"
+                          className={inputClass}
+                        />
+                      </Field>
+                    </div>
+
+                    <div className="mt-4">
+                      <span className="text-sm font-medium text-slate-700 dark:text-slate-300">Roles</span>
+                      <div className="mt-2 flex flex-wrap gap-3">
+                        {providerRoles.map(role => (
+                          <label
+                            key={role.value}
+                            className="flex items-center gap-2 text-sm text-slate-600 dark:text-slate-300"
+                          >
+                            <input
+                              type="checkbox"
+                              checked={providerValues?.roles?.includes(role.value) ?? false}
+                              onChange={() => {
+                                const current = (getValues(`providers.${index}.roles`) as ProviderRole[]) || [];
+                                if (current.includes(role.value)) {
+                                  setValue(`providers.${index}.roles`, current.filter(r => r !== role.value), { shouldDirty: true });
+                                } else {
+                                  setValue(`providers.${index}.roles`, [...current, role.value], { shouldDirty: true });
+                                }
+                              }}
+                            />
+                            {role.label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
-                </div>
+                )}
               </div>
             );
           })}

@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { FilePlus, Trash2 } from 'lucide-react';
 import Sidebar from '@/components/sidebar';
+import SettingsNav from '@/components/settings-nav';
 import { useAuth } from '@/context/auth';
 import { deleteMemoryFile, getMemoryFile, listMemory, putMemoryFile } from '@/lib/api';
 import type { MemoryEntry } from '@/lib/types';
@@ -119,7 +120,13 @@ export default function MemoryPage() {
         conversationId={null}
         onSelect={id => router.push(id ? `/chat/?id=${id}` : '/chat/')}
       />
-      <main className="flex-1 flex overflow-hidden">
+      <main className="flex-1 flex flex-col overflow-hidden">
+        {/* Settings sub-navigation */}
+        <div className="shrink-0 border-b border-slate-200 px-6 pt-3 dark:border-slate-800">
+          <SettingsNav />
+        </div>
+
+        <div className="flex flex-1 overflow-hidden">
         {/* File list */}
         <aside className="w-56 shrink-0 border-r border-slate-200 dark:border-slate-800 flex flex-col bg-white dark:bg-slate-900">
           <div className="px-4 pt-5 pb-3">
@@ -217,6 +224,7 @@ export default function MemoryPage() {
               Select a file or create a new one.
             </div>
           )}
+        </div>
         </div>
       </main>
     </div>

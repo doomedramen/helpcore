@@ -12,6 +12,14 @@ import {
   updateAdminUser,
 } from '@/lib/api';
 import type { AdminUserSummary } from '@/lib/types';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 
 export default function AdminUsersPage() {
   const { accessToken, currentUser, isLoading } = useAuth();
@@ -20,14 +28,12 @@ export default function AdminUsersPage() {
 
   const [error, setError] = useState<string | null>(null);
 
-  // Create form
   const [showCreate, setShowCreate] = useState(false);
   const [newEmail, setNewEmail] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [newDisplay, setNewDisplay] = useState('');
   const [creating, setCreating] = useState(false);
 
-  // Reset password form
   const [resetTarget, setResetTarget] = useState<AdminUserSummary | null>(null);
   const [newPass, setNewPass] = useState('');
   const [resetting, setResetting] = useState(false);
@@ -110,7 +116,7 @@ export default function AdminUsersPage() {
               </p>
             </div>
             <button
-              onClick={() => setShowCreate(v => !v)}
+              onClick={() => { setError(null); setShowCreate(true); }}
               className="rounded-lg px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 transition-colors"
             >
               + New user
@@ -120,94 +126,6 @@ export default function AdminUsersPage() {
           {error && (
             <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
               {error}
-            </div>
-          )}
-
-          {/* Create form */}
-          {showCreate && (
-            <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 mb-6">
-              <h2 className="text-sm font-semibold text-slate-900 dark:text-white mb-4">Create member account</h2>
-              <div className="grid gap-3 sm:grid-cols-3">
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Email</label>
-                  <input
-                    type="email"
-                    value={newEmail}
-                    onChange={e => setNewEmail(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Temporary password</label>
-                  <input
-                    type="password"
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-slate-500 mb-1">Display name (optional)</label>
-                  <input
-                    type="text"
-                    value={newDisplay}
-                    onChange={e => setNewDisplay(e.target.value)}
-                    className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  />
-                </div>
-              </div>
-              <div className="mt-4 flex gap-2 justify-end">
-                <button
-                  onClick={() => setShowCreate(false)}
-                  className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleCreate}
-                  disabled={creating || !newEmail.trim() || newPassword.length < 8}
-                  className="rounded-lg px-4 py-1.5 text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
-                >
-                  {creating ? 'Creating…' : 'Create'}
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Reset password modal */}
-          {resetTarget && (
-            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm">
-              <div className="w-full max-w-sm rounded-2xl bg-white dark:bg-slate-900 p-6 shadow-xl">
-                <h2 className="text-base font-semibold text-slate-900 dark:text-white mb-1">
-                  Reset password
-                </h2>
-                <p className="text-sm text-slate-500 dark:text-slate-400 mb-4">
-                  Set a new temporary password for <strong>{resetTarget.email}</strong>. They will be
-                  asked to change it on next login.
-                </p>
-                <input
-                  type="password"
-                  value={newPass}
-                  onChange={e => setNewPass(e.target.value)}
-                  placeholder="New password (min 8 chars)"
-                  className="w-full rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800 px-3 py-2 text-sm mb-4 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
-                <div className="flex gap-2 justify-end">
-                  <button
-                    onClick={() => { setResetTarget(null); setNewPass(''); }}
-                    className="rounded-lg px-3 py-1.5 text-sm text-slate-500 hover:text-slate-800 transition-colors"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleResetPassword}
-                    disabled={resetting || newPass.length < 8}
-                    className="rounded-lg px-4 py-1.5 text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
-                  >
-                    {resetting ? 'Saving…' : 'Set password'}
-                  </button>
-                </div>
-              </div>
             </div>
           )}
 
@@ -246,12 +164,12 @@ export default function AdminUsersPage() {
                       {new Date(user.created_at).toLocaleDateString()}
                     </td>
                     <td className="px-5 py-4">
-                      <div className="flex items-center justify-end gap-2">
+                      <div className="flex items-center justify-end gap-3">
                         <button
                           onClick={() => { setResetTarget(user); setError(null); }}
                           className="text-xs text-blue-600 dark:text-blue-400 hover:underline"
                         >
-                          Reset pwd
+                          Reset password
                         </button>
                         {user.id !== currentUser?.id && (
                           <button
@@ -281,6 +199,102 @@ export default function AdminUsersPage() {
           </div>
         </div>
       </main>
+
+      {/* Create user dialog */}
+      <Dialog open={showCreate} onOpenChange={open => { if (!open) { setShowCreate(false); setNewEmail(''); setNewPassword(''); setNewDisplay(''); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Create member account</DialogTitle>
+            <DialogDescription>
+              The user will be asked to set a new password on first login.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Email</label>
+              <input
+                type="email"
+                value={newEmail}
+                onChange={e => setNewEmail(e.target.value)}
+                autoFocus
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Temporary password</label>
+              <input
+                type="password"
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                className={inputClass}
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-slate-300 mb-1">Display name <span className="font-normal text-slate-500">(optional)</span></label>
+              <input
+                type="text"
+                value={newDisplay}
+                onChange={e => setNewDisplay(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') handleCreate(); }}
+                className={inputClass}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <button
+              onClick={() => setShowCreate(false)}
+              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleCreate}
+              disabled={creating || !newEmail.trim() || newPassword.length < 8}
+              className="rounded-lg px-4 py-1.5 text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+            >
+              {creating ? 'Creating…' : 'Create'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Reset password dialog */}
+      <Dialog open={resetTarget !== null} onOpenChange={open => { if (!open) { setResetTarget(null); setNewPass(''); } }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset password</DialogTitle>
+            <DialogDescription>
+              Set a new temporary password for <strong className="text-slate-200">{resetTarget?.email}</strong>. They will be asked to change it on next login.
+            </DialogDescription>
+          </DialogHeader>
+          <input
+            type="password"
+            value={newPass}
+            onChange={e => setNewPass(e.target.value)}
+            onKeyDown={e => { if (e.key === 'Enter') handleResetPassword(); }}
+            placeholder="New password (min 8 chars)"
+            autoFocus
+            className={inputClass}
+          />
+          <DialogFooter>
+            <button
+              onClick={() => { setResetTarget(null); setNewPass(''); }}
+              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleResetPassword}
+              disabled={resetting || newPass.length < 8}
+              className="rounded-lg px-4 py-1.5 text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+            >
+              {resetting ? 'Saving…' : 'Set password'}
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
+
+const inputClass = 'w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500';

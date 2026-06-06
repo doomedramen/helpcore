@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import useSWR, { useSWRConfig } from 'swr';
 import { Copy, Trash2 } from 'lucide-react';
 import Sidebar from '@/components/sidebar';
+import SettingsNav from '@/components/settings-nav';
 import { useAuth } from '@/context/auth';
 import { createApiKey, listApiKeys, revokeApiKey } from '@/lib/api';
 import type { ApiKeyInfo, CreateApiKeyResponse } from '@/lib/types';
@@ -78,13 +79,15 @@ export default function ApiKeysPage() {
       />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-2xl px-6 py-8">
-          <div className="mb-7">
+          <div className="mb-6">
             <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Settings</p>
             <h1 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">API keys</h1>
             <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
               API keys let CLI tools and scripts authenticate without a password.
             </p>
           </div>
+          <SettingsNav />
+          <div className="mt-6">
 
           {/* Create new key */}
           <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-5 mb-6">
@@ -175,6 +178,7 @@ export default function ApiKeysPage() {
                 </div>
               ))
             )}
+          </div>
           </div>
         </div>
       </main>
