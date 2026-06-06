@@ -10,7 +10,7 @@ use std::{
 };
 use wasmtime::{
     Config, Engine, Store, StoreLimits, StoreLimitsBuilder,
-    component::{Component, Linker},
+    component::{Component, HasData, Linker},
 };
 
 use crate::{
@@ -118,6 +118,10 @@ struct WasmState {
     config: serde_json::Value,
 }
 
+impl HasData for WasmState {
+    type Data<'a> = &'a mut WasmState;
+}
+
 async fn execute_wasm(
     state: &AppState,
     user_id: &str,
@@ -188,7 +192,7 @@ fn run_wasm_component(
     let component = Component::from_file(&engine, wasm_path)
         .with_context(|| format!("failed to load {}", wasm_path.display()))?;
     let mut linker = Linker::new(&engine);
-    Plugin::add_to_linker(&mut linker, |state: &mut WasmState| state)?;
+    Plugin::add_to_linker::<WasmState, WasmState>(&mut linker, |state: &mut WasmState| state)?;
     fs::create_dir_all(&workspace)?;
     set_private_directory(&workspace)?;
     let limits = StoreLimitsBuilder::new()
