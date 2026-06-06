@@ -53,6 +53,26 @@ export interface SseDone {
   message_id: string;
 }
 
+export interface ConfigField {
+  key: string;
+  label: string;
+  type: 'text' | 'url' | 'number' | 'select' | 'boolean' | 'secret';
+  required: boolean;
+  hint?: string;
+  default?: string;
+  options: string[];
+  min?: number;
+  max?: number;
+  role?: string;
+}
+
+/** Value for a non-secret config field. */
+export type ConfigScalar = string | number | boolean | null;
+/** Value returned for a secret field — never the raw value. */
+export interface SecretStatus { configured: boolean; }
+export type ConfigValue = ConfigScalar | SecretStatus;
+export type ConfigValues = Record<string, ConfigValue>;
+
 export interface PluginInfo {
   id: string;
   name: string;
@@ -64,10 +84,11 @@ export interface PluginInfo {
   permissions: string[];
   enabled: boolean;
   configured: boolean;
-  endpoint: string | null;
   update_available: boolean;
   blocked: boolean;
   user_managed: boolean;
+  config_schema: ConfigField[];
+  config_values: ConfigValues;
 }
 
 export interface PluginStoreItem {

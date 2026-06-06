@@ -3,6 +3,7 @@
 
 use anyhow::Context;
 use chrono::Utc;
+use helpcore_api::ConfigField;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
 use std::{collections::HashMap, path::Path, time::Duration};
@@ -26,6 +27,9 @@ pub struct Manifest {
     pub bridge: Option<BridgeConfig>,
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
+    /// User-configurable fields declared by the plugin.
+    #[serde(default)]
+    pub config_schema: Vec<ConfigField>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -115,6 +119,68 @@ pub struct PluginTool {
     pub name: String,
     pub description: String,
     pub input_schema: serde_json::Value,
+}
+
+// ── Config schema helpers ──────────────────────────────────────────────────────
+
+/// Returns the value of the field with `role = "bridge_endpoint"` from the stored config,
+/// or falls back to the legacy `"endpoint"` key for plugins without a schema.
+pub fn bridge_endpoint<'a>(schema: &[ConfigField], config: &'a serde_json::Value) -> Option<&'a str> {
+    let key = schema
+        .iter()
+        .find(|f| f.role.as_deref() == Some("bridge_endpoint"))
+        .map(|f| f.key.as_str())
+        .unwrap_or("endpoint");
+    config.get(key)?.as_str().filter(|s| !s.is_empty())
+}
+
+/// Returns true when all required config fields have values.
+/// Falls back to the legacy endpoint-only check for plugins with no schema.
+pub fn is_configured(schema: &[ConfigField], tier: &str, config: &serde_json::Value) -> bool {
+    if schema.is_empty() {
+        return if tier == "bridge" {
+            bridge_endpoint(schema, config).is_some()
+        } else {
+            true
+        };
+    }
+    let configured_secrets: std::collections::HashSet<&str> = config
+        .get("_secret_keys")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    schema.iter().filter(|f| f.required).all(|f| {
+        if f.field_type == "secret" {
+            configured_secrets.contains(f.key.as_str())
+        } else {
+            match config.get(&f.key) {
+                None | Some(serde_json::Value::Null) => false,
+                Some(v) => v.as_str().map(|s| !s.is_empty()).unwrap_or(true),
+            }
+        }
+    })
+}
+
+/// Builds the `config_values` map for API responses. Non-secret fields return their
+/// stored value; secret fields return `{"configured": bool}`.
+pub fn config_values(schema: &[ConfigField], config: &serde_json::Value) -> serde_json::Value {
+    let configured_secrets: std::collections::HashSet<&str> = config
+        .get("_secret_keys")
+        .and_then(|v| v.as_array())
+        .map(|arr| arr.iter().filter_map(|v| v.as_str()).collect())
+        .unwrap_or_default();
+    let mut map = serde_json::Map::new();
+    for field in schema {
+        if field.field_type == "secret" {
+            map.insert(
+                field.key.clone(),
+                serde_json::json!({ "configured": configured_secrets.contains(field.key.as_str()) }),
+            );
+        } else if let Some(value) = config.get(&field.key) {
+            map.insert(field.key.clone(), value.clone());
+        }
+    }
+    serde_json::Value::Object(map)
 }
 
 // ── Manifest loading ───────────────────────────────────────────────────────────
@@ -250,6 +316,7 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
                 min_core_version: None,
                 bridge: None,
                 allowed_hosts: Vec::new(),
+                config_schema: Vec::new(),
             });
             let tools_json: String = row.get(10)?;
             let config_json: String = row.get(11)?;
@@ -289,13 +356,10 @@ pub fn installed_states(
             let manifest: String = row.get(5)?;
             let config: serde_json::Value = serde_json::from_str(&config).unwrap_or_default();
             let manifest: Option<Manifest> = serde_json::from_str(&manifest).ok();
-            let configured = manifest
-                .as_ref()
-                .is_none_or(|item| item.tier != "bridge")
-                || config
-                    .get("endpoint")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|endpoint| !endpoint.is_empty());
+            let configured = match &manifest {
+                Some(m) => is_configured(&m.config_schema, &m.tier, &config),
+                None => true,
+            };
             Ok((
                 row.get::<_, String>(0)?,
                 InstalledState {
@@ -424,6 +488,7 @@ mod tests {
             min_core_version: None,
             bridge: None,
             allowed_hosts: Vec::new(),
+            config_schema: Vec::new(),
         }
     }
 

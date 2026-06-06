@@ -490,6 +490,7 @@ mod tests {
             min_core_version: None,
             bridge: None,
             allowed_hosts: hosts.iter().map(|host| host.to_string()).collect(),
+            config_schema: Vec::new(),
         }
     }
 

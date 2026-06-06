@@ -13,7 +13,7 @@ import {
   uninstallPlugin,
   updatePlugin,
 } from '@/lib/api';
-import type { PluginInfo } from '@/lib/types';
+import type { ConfigField, ConfigValues, PluginInfo, SecretStatus } from '@/lib/types';
 
 export default function PluginManager({ accessToken }: { accessToken: string }) {
   const [working, setWorking] = useState<string | null>(null);
@@ -106,9 +106,11 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
                 permissions={plugin.permissions}
               />
 
-              {plugin.tier === 'bridge' && !plugin.configured && (
+              {!plugin.configured && plugin.config_schema.length > 0 && (
                 <p className="mt-3 text-xs text-amber-700 dark:text-amber-300">
-                  Configure and health-check the bridge before enabling it.
+                  {plugin.tier === 'bridge'
+                    ? 'Configure and health-check the bridge before enabling it.'
+                    : 'Complete configuration before enabling this plugin.'}
                 </p>
               )}
               {!plugin.user_managed && (
@@ -118,25 +120,22 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
               )}
 
               {plugin.user_managed && configuring === plugin.id ? (
-                <BridgeConfigForm
-                  plugin={plugin}
+                <PluginConfigForm
+                  schema={plugin.config_schema}
+                  currentValues={plugin.config_values}
                   saving={working === `configure:${plugin.id}`}
                   onCancel={() => setConfiguring(null)}
-                  onSave={(endpoint, settings, secrets) => act(
+                  onSave={values => act(
                     `configure:${plugin.id}`,
                     async () => {
-                      await configurePlugin(
-                        plugin.id,
-                        { endpoint, settings, secrets },
-                        accessToken,
-                      );
+                      await configurePlugin(plugin.id, values, accessToken);
                       setConfiguring(null);
                     },
                   )}
                 />
               ) : plugin.user_managed ? (
                 <div className="mt-4 flex flex-wrap gap-2 border-t border-slate-200 pt-3 dark:border-slate-800">
-                  {plugin.tier === 'bridge' && (
+                  {plugin.config_schema.length > 0 && (
                     <ActionButton
                       label="Configure"
                       icon={<Settings2 size={14} />}
@@ -302,62 +301,117 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
   );
 }
 
-function BridgeConfigForm({
-  plugin,
+function isSecretStatus(value: unknown): value is SecretStatus {
+  return typeof value === 'object' && value !== null && 'configured' in value;
+}
+
+function PluginConfigForm({
+  schema,
+  currentValues,
   saving,
   onSave,
   onCancel,
 }: {
-  plugin: PluginInfo;
+  schema: ConfigField[];
+  currentValues: ConfigValues;
   saving: boolean;
-  onSave: (endpoint: string, settings: unknown, secrets: unknown) => void;
+  onSave: (values: Record<string, unknown>) => void;
   onCancel: () => void;
 }) {
-  const [endpoint, setEndpoint] = useState(plugin.endpoint ?? '');
-  const [settings, setSettings] = useState('{}');
-  const [secrets, setSecrets] = useState('{}');
-  const [error, setError] = useState('');
-
-  function submit() {
-    try {
-      onSave(endpoint, JSON.parse(settings), JSON.parse(secrets));
-    } catch {
-      setError('Settings and secrets must be valid JSON objects.');
+  const [draft, setDraft] = useState<Record<string, unknown>>(() => {
+    const initial: Record<string, unknown> = {};
+    for (const field of schema) {
+      if (field.type === 'secret') {
+        initial[field.key] = '';
+      } else {
+        initial[field.key] = currentValues[field.key] ?? field.default ?? '';
+      }
     }
+    return initial;
+  });
+
+  function set(key: string, value: unknown) {
+    setDraft(prev => ({ ...prev, [key]: value }));
   }
 
   return (
     <div className="mt-4 space-y-3 border-t border-slate-200 pt-4 dark:border-slate-800">
-      {error && <ErrorMessage message={error} />}
-      <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-        Bridge endpoint
-        <input
-          type="url"
-          value={endpoint}
-          onChange={event => setEndpoint(event.target.value)}
-          placeholder="http://home-assistant-bridge:8765"
-          className={inputClass}
-        />
-      </label>
-      <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-        Settings JSON
-        <textarea value={settings} onChange={event => setSettings(event.target.value)} className={inputClass} />
-      </label>
-      <label className="block text-xs font-medium text-slate-600 dark:text-slate-300">
-        Secrets JSON
-        <textarea
-          value={secrets}
-          onChange={event => setSecrets(event.target.value)}
-          className={inputClass}
-          placeholder='{"token":"…"}'
-        />
-      </label>
-      <p className="text-xs text-slate-400 dark:text-slate-500">
-        Secrets are encrypted at rest and are never returned by the API.
-      </p>
+      {schema.map(field => {
+        const current = currentValues[field.key];
+        const secretConfigured = isSecretStatus(current) && current.configured;
+
+        return (
+          <label key={field.key} className="block text-xs font-medium text-slate-600 dark:text-slate-300">
+            <span>
+              {field.label}
+              {field.required && <span className="ml-1 text-red-500">*</span>}
+            </span>
+            {field.hint && (
+              <span className="ml-2 font-normal text-slate-400 dark:text-slate-500">{field.hint}</span>
+            )}
+
+            {field.type === 'select' ? (
+              <select
+                value={String(draft[field.key] ?? '')}
+                onChange={e => set(field.key, e.target.value)}
+                className={inputClass}
+              >
+                {!field.required && <option value="">— select —</option>}
+                {field.options.map(opt => (
+                  <option key={opt} value={opt}>{opt}</option>
+                ))}
+              </select>
+            ) : field.type === 'boolean' ? (
+              <input
+                type="checkbox"
+                checked={Boolean(draft[field.key])}
+                onChange={e => set(field.key, e.target.checked)}
+                className="ml-2"
+              />
+            ) : field.type === 'number' ? (
+              <input
+                type="number"
+                min={field.min}
+                max={field.max}
+                value={String(draft[field.key] ?? '')}
+                onChange={e => set(field.key, e.target.value === '' ? '' : Number(e.target.value))}
+                className={inputClass}
+              />
+            ) : field.type === 'secret' ? (
+              <input
+                type="password"
+                value={String(draft[field.key] ?? '')}
+                onChange={e => set(field.key, e.target.value)}
+                placeholder={secretConfigured ? 'Configured — leave blank to keep' : 'Not configured'}
+                className={inputClass}
+                autoComplete="new-password"
+              />
+            ) : (
+              <input
+                type={field.type === 'url' ? 'url' : 'text'}
+                value={String(draft[field.key] ?? '')}
+                onChange={e => set(field.key, e.target.value)}
+                className={inputClass}
+              />
+            )}
+          </label>
+        );
+      })}
+
+      {schema.some(f => f.type === 'secret') && (
+        <p className="text-xs text-slate-400 dark:text-slate-500">
+          Secret fields are encrypted at rest and never returned by the API.
+        </p>
+      )}
+
       <div className="flex gap-2">
-        <button type="button" onClick={submit} disabled={saving || !endpoint} className={primaryButtonClass}>
-          {saving ? 'Checking…' : 'Save and health-check'}
+        <button
+          type="button"
+          onClick={() => onSave(draft)}
+          disabled={saving}
+          className={primaryButtonClass}
+        >
+          {saving ? 'Saving…' : 'Save'}
         </button>
         <ActionButton label="Cancel" onClick={onCancel} disabled={saving} />
       </div>

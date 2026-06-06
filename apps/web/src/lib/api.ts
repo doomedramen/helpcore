@@ -176,16 +176,12 @@ export function uninstallPlugin(id: string, token: string): Promise<void> {
 
 export function configurePlugin(
   id: string,
-  config: {
-    endpoint?: string | null;
-    settings?: unknown;
-    secrets?: unknown;
-  },
+  values: Record<string, unknown>,
   token: string,
 ): Promise<void> {
   return req(`/plugins/${id}/config`, {
     method: 'PUT',
-    body: JSON.stringify(config),
+    body: JSON.stringify({ values }),
   }, token);
 }
 

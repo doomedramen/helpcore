@@ -117,6 +117,7 @@ mod tests {
             min_core_version: None,
             bridge: None,
             allowed_hosts: Vec::new(),
+            config_schema: Vec::new(),
         }
     }
 

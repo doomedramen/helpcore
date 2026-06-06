@@ -196,6 +196,29 @@ pub struct CompactResponse {
 
 // ── Plugins ───────────────────────────────────────────────────────────────────
 
+/// A single field in a plugin's configuration schema.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ConfigField {
+    pub key: String,
+    pub label: String,
+    /// One of: "text" | "url" | "number" | "select" | "boolean" | "secret"
+    #[serde(rename = "type")]
+    pub field_type: String,
+    #[serde(default)]
+    pub required: bool,
+    pub hint: Option<String>,
+    pub default: Option<String>,
+    /// Valid options for "select" fields.
+    #[serde(default)]
+    pub options: Vec<String>,
+    /// Inclusive minimum for "number" fields.
+    pub min: Option<f64>,
+    /// Inclusive maximum for "number" fields.
+    pub max: Option<f64>,
+    /// Semantic role. "bridge_endpoint" marks the field used for routing/health-checks.
+    pub role: Option<String>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PluginInfo {
     pub id:          String,
@@ -208,10 +231,13 @@ pub struct PluginInfo {
     pub permissions: Vec<String>,
     pub enabled:     bool,
     pub configured:  bool,
-    pub endpoint:     Option<String>,
     pub update_available: bool,
     pub blocked:     bool,
     pub user_managed: bool,
+    pub config_schema: Vec<ConfigField>,
+    /// Current config values. Non-secret fields contain their stored value.
+    /// Secret fields contain `{"configured": bool}` — the value is never returned.
+    pub config_values: serde_json::Value,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -272,11 +298,10 @@ pub struct PluginEnableRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PluginConfigureRequest {
-    pub endpoint: Option<String>,
-    #[serde(default)]
-    pub settings: serde_json::Value,
-    #[serde(default)]
-    pub secrets: serde_json::Value,
+    /// Flat map of all config values keyed by field `key`.
+    /// Secret fields: provide the new value to update, omit (or set null) to keep existing.
+    /// Secret fields with an empty string value are cleared.
+    pub values: serde_json::Value,
 }
 
 // ── Admin configuration ──────────────────────────────────────────────────────

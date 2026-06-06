@@ -59,17 +59,13 @@ pub async fn list_plugins(
             let update_available = available_version
                 .as_deref()
                 .is_some_and(|version| is_newer(version, &plugin.version));
-            let configured = plugin.tier != "bridge"
-                || plugin
-                    .config
-                    .get("endpoint")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|endpoint| !endpoint.is_empty());
-            let endpoint = plugin
-                .config
-                .get("endpoint")
-                .and_then(serde_json::Value::as_str)
-                .map(str::to_string);
+            let configured = registry::is_configured(
+                &plugin.manifest.config_schema,
+                &plugin.tier,
+                &plugin.config,
+            );
+            let config_schema = plugin.manifest.config_schema.clone();
+            let config_values = registry::config_values(&config_schema, &plugin.config);
             PluginInfo {
                 blocked: blacklist.contains(&plugin.plugin_id),
                 id: plugin.plugin_id,
@@ -82,9 +78,10 @@ pub async fn list_plugins(
                 permissions: plugin.permissions,
                 enabled: plugin.enabled,
                 configured,
-                endpoint,
                 update_available,
                 user_managed: plugin.source_url.is_some(),
+                config_schema,
+                config_values,
             }
         })
         .collect();
@@ -392,80 +389,118 @@ pub async fn configure_plugin(
     Path(plugin_id): Path<String>,
     Json(request): Json<PluginConfigureRequest>,
 ) -> Result<StatusCode, AppError> {
-    ensure_user_managed(&state, &auth_user.id, &plugin_id).await?;
     let uid = auth_user.id.clone();
     let pid = plugin_id.clone();
-    let install: Option<(Manifest, Option<String>)> = state
+    let install: Option<(Manifest, serde_json::Value, Option<String>)> = state
         .db
         .call(move |conn| {
             match conn.query_row(
-                "SELECT manifest, secrets FROM plugin_installs
+                "SELECT manifest, config, secrets FROM plugin_installs
                  WHERE user_id = ?1 AND plugin_id = ?2",
                 rusqlite::params![uid, pid],
-                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+                |row| {
+                    Ok((
+                        row.get::<_, String>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, Option<String>>(2)?,
+                    ))
+                },
             ) {
-                Ok((raw, encrypted)) => Ok(Some((serde_json::from_str(&raw)?, encrypted))),
+                Ok((manifest_raw, config_raw, secrets)) => {
+                    let manifest: Manifest = serde_json::from_str(&manifest_raw)?;
+                    let config: serde_json::Value = serde_json::from_str(&config_raw).unwrap_or_default();
+                    Ok(Some((manifest, config, secrets)))
+                }
                 Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
                 Err(error) => Err(error.into()),
             }
         })
         .await?;
-    let Some((manifest, existing_secrets)) = install else {
+    let Some((manifest, existing_config, existing_secrets)) = install else {
         return Err(AppError::NotFound);
     };
 
-    let PluginConfigureRequest {
-        endpoint,
-        settings,
-        secrets: requested_secrets,
-    } = request;
-    let endpoint = endpoint.map(|value| value.trim_end_matches('/').to_string());
-    let has_new_secrets = !requested_secrets.is_null()
-        && !requested_secrets
-            .as_object()
-            .is_some_and(serde_json::Map::is_empty);
-    let effective_secrets = if has_new_secrets {
-        Some(requested_secrets.clone())
-    } else if let Some(encrypted) = existing_secrets.as_deref() {
-        Some(
-            decrypt_plugin_secrets(
-                state.data_dir.clone(),
-                auth_user.id.clone(),
-                plugin_id.clone(),
-                encrypted.to_string(),
-            )
-            .await?,
-        )
+    let values = request
+        .values
+        .as_object()
+        .ok_or_else(|| AppError::BadRequest("values must be a JSON object".into()))?;
+
+    // Split values by field type based on the declared schema.
+    let mut config_map = serde_json::Map::new();
+    let mut new_secret_map = serde_json::Map::new();
+
+    for field in &manifest.config_schema {
+        if let Some(value) = values.get(&field.key) {
+            if field.field_type == "secret" {
+                if let Some(s) = value.as_str() {
+                    if !s.is_empty() {
+                        new_secret_map.insert(field.key.clone(), value.clone());
+                    }
+                    // empty string = clear this secret (omit from map)
+                }
+                // null = keep existing (handled below)
+            } else {
+                config_map.insert(field.key.clone(), value.clone());
+            }
+        }
+    }
+
+    // Determine updated secret_keys and secrets blob.
+    // If any new secret values were submitted, treat as a full secrets replacement.
+    // Otherwise, preserve the existing secrets and _secret_keys unchanged.
+    let has_new_secrets = !new_secret_map.is_empty();
+    let (secrets_json, secret_keys): (Option<String>, Vec<serde_json::Value>) = if has_new_secrets {
+        let keys = new_secret_map
+            .keys()
+            .map(|k| serde_json::Value::String(k.clone()))
+            .collect();
+        let value = serde_json::Value::Object(new_secret_map.clone());
+        let encrypted = tokio::task::spawn_blocking({
+            let data_dir = state.data_dir.clone();
+            let uid = auth_user.id.clone();
+            let pid = plugin_id.clone();
+            move || secrets::encrypt(&data_dir, &uid, &pid, &value)
+        })
+        .await
+        .map_err(|error| AppError::Internal(anyhow::anyhow!("plugin secret task failed: {error}")))?
+        .map_err(AppError::Internal)?;
+        (Some(encrypted), keys)
     } else {
-        None
+        let keys = existing_config
+            .get("_secret_keys")
+            .and_then(|v| v.as_array())
+            .cloned()
+            .unwrap_or_default();
+        (existing_secrets, keys)
     };
+
+    // Store the configured secret key names alongside the config (never the values).
+    config_map.insert("_secret_keys".into(), serde_json::Value::Array(secret_keys));
+
+    // Bridge health check using schema-driven endpoint lookup.
     if manifest.tier == "bridge" {
-        let endpoint = endpoint
-            .as_deref()
-            .filter(|value| !value.is_empty())
+        let config_so_far = serde_json::Value::Object(config_map.clone());
+        let endpoint = registry::bridge_endpoint(&manifest.config_schema, &config_so_far)
             .ok_or_else(|| AppError::BadRequest("bridge endpoint is required".into()))?;
+        let effective_secrets = if has_new_secrets {
+            Some(serde_json::Value::Object(new_secret_map))
+        } else if let Some(encrypted) = secrets_json.as_deref() {
+            Some(
+                decrypt_plugin_secrets(
+                    state.data_dir.clone(),
+                    auth_user.id.clone(),
+                    plugin_id.clone(),
+                    encrypted.to_string(),
+                )
+                .await?,
+            )
+        } else {
+            None
+        };
         check_bridge_health(endpoint, &manifest, effective_secrets.as_ref()).await?;
     }
-    let config = serde_json::json!({
-        "endpoint": endpoint,
-        "settings": settings,
-    });
-    let config_json = serde_json::to_string(&config)?;
-    let secrets_json = if has_new_secrets {
-        let data_dir = state.data_dir.clone();
-        let uid = auth_user.id.clone();
-        let pid = plugin_id.clone();
-        let value = requested_secrets;
-        Some(
-            tokio::task::spawn_blocking(move || secrets::encrypt(&data_dir, &uid, &pid, &value))
-                .await
-                .map_err(|error| {
-                    AppError::Internal(anyhow::anyhow!("plugin secret task failed: {error}"))
-                })??,
-        )
-    } else {
-        existing_secrets
-    };
+
+    let config_json = serde_json::to_string(&serde_json::Value::Object(config_map))?;
     let uid = auth_user.id;
     let pid = plugin_id;
     state
@@ -525,10 +560,7 @@ pub async fn set_enabled(
     let plugin_config: serde_json::Value = serde_json::from_str(&config_raw)?;
 
     if request.enabled && manifest.tier == "bridge" {
-        let endpoint = plugin_config
-            .get("endpoint")
-            .and_then(serde_json::Value::as_str)
-            .filter(|value| !value.is_empty())
+        let endpoint = registry::bridge_endpoint(&manifest.config_schema, &plugin_config)
             .ok_or_else(|| {
                 AppError::Conflict("configure the bridge endpoint before enabling".into())
             })?;
