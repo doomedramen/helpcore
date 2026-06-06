@@ -59,7 +59,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   // Track the actively-generating conversation separately so we never show
   // the stop button for stale data from a different conversation.
   const generationConvRef = useRef<string | null>(null);
-  const active = generationConvRef.current === conversationId || messages.some(isActive);
+  const active = (conversationId !== null && generationConvRef.current === conversationId) || messages.some(isActive);
 
   // Reset generation tracking when switching conversations
   const prevConvRef = useRef(conversationId);
@@ -270,37 +270,41 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                 {visibleError}
               </div>
             )}
-            {queue.map(item => (
-              <div
-                key={item.id}
-                className="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400"
-              >
-                <div className="flex-1 whitespace-pre-wrap leading-relaxed">{item.text}</div>
-                <div className="flex shrink-0 gap-1">
-                  <button
-                    type="button"
-                    onClick={() => handleEditQueueItem(item.id)}
-                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
-                    aria-label="Edit message"
-                  >
-                    <Pencil size={14} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleDeleteQueueItem(item.id)}
-                    className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                    aria-label="Delete message"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </div>
-              </div>
-            ))}
             <div ref={bottomRef} />
           </div>
         )}
       </div>
 
+      {queue.length > 0 && (
+        <div className="mx-auto w-full max-w-3xl space-y-2 px-4 pb-2">
+          {queue.map(item => (
+            <div
+              key={item.id}
+              className="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400"
+            >
+              <div className="flex-1 whitespace-pre-wrap leading-relaxed">{item.text}</div>
+              <div className="flex shrink-0 gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleEditQueueItem(item.id)}
+                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-200 hover:text-slate-600 dark:hover:bg-slate-700 dark:hover:text-slate-300"
+                  aria-label="Edit message"
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteQueueItem(item.id)}
+                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
+                  aria-label="Delete message"
+                >
+                  <Trash2 size={14} />
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
       <div className="mx-auto w-full max-w-3xl px-4 pb-4 pt-2">
         <ChatInput
           value={inputValue}
