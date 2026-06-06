@@ -31,6 +31,7 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
     data: store,
     error: storeError,
     isLoading: storeLoading,
+    isValidating: storeValidating,
     mutate: refreshStore,
   } = useSWR(
     ['/api/plugins/store', accessToken],
@@ -199,7 +200,7 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
             className="rounded-lg border border-slate-300 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
             aria-label="Refresh plugin store"
           >
-            <RefreshCw size={16} className={storeLoading ? 'animate-spin' : ''} />
+            <RefreshCw size={16} className={storeValidating ? 'animate-spin' : ''} />
           </button>
         </div>
 
