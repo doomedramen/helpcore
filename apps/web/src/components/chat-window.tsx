@@ -2,141 +2,174 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import useSWR from 'swr';
-import { chat, getMessages, ApiError } from '@/lib/api';
+import useSWR, { useSWRConfig } from 'swr';
+import { chat, getMessages, retryMessage, ApiError } from '@/lib/api';
 import { useAuth } from '@/context/auth';
-import type { Message } from '@/lib/types';
+import type { Message, SseDone, SseStarted } from '@/lib/types';
 import MessageBubble from './message-bubble';
 import ChatInput from './chat-input';
-
-interface LocalMessage {
-  id: string;
-  role: 'user' | 'assistant';
-  content: string;
-  streaming?: boolean;
-}
 
 interface Props {
   conversationId: string | null;
   onConversationCreated: (id: string) => void;
 }
 
+const isActive = (message: Message) => (
+  message.status === 'pending' || message.status === 'streaming'
+);
+
 export default function ChatWindow({ conversationId, onConversationCreated }: Props) {
   const { accessToken, refreshAccessToken } = useAuth();
   const router = useRouter();
+  const { mutate: mutateGlobal } = useSWRConfig();
   const bottomRef = useRef<HTMLDivElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
-
-  const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [inputValue, setInputValue] = useState('');
-  const [streaming, setStreaming] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
+  const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState('');
 
-  // Fetch historical messages when conversation changes
-  const { data: history } = useSWR<Message[]>(
-    accessToken && conversationId ? [`/conversations/${conversationId}/messages`, accessToken] : null,
+  const messageKey = accessToken && conversationId
+    ? [`/conversations/${conversationId}/messages`, accessToken] as const
+    : null;
+  const {
+    data: messages = [],
+    error: historyError,
+    mutate: refreshMessages,
+    isLoading: historyLoading,
+  } = useSWR<Message[]>(
+    messageKey,
     ([, token]) => getMessages(conversationId!, token as string),
+    {
+      refreshInterval: data => data?.some(isActive) ? 500 : 0,
+      revalidateOnFocus: true,
+    },
   );
 
-  useEffect(() => {
-    if (history) {
-      setMessages(history.map(m => ({ ...m, streaming: false })));
-    }
-  }, [history]);
+  const active = messages.some(isActive);
 
-  // Clear messages when switching to a new (null) conversation
-  useEffect(() => {
-    if (!conversationId) setMessages([]);
-  }, [conversationId]);
-
-  // Scroll to bottom on new messages
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const sendMessage = useCallback(async (text: string) => {
+  const refreshConversation = useCallback(async (id: string) => {
+    if (!accessToken) return;
+    await Promise.all([
+      mutateGlobal([`/conversations/${id}/messages`, accessToken]),
+      mutateGlobal(['/api/conversations', accessToken]),
+    ]);
+  }, [accessToken, mutateGlobal]);
+
+  const streamHandlers = useCallback((fallbackConversationId?: string) => {
+    let activeConversationId = fallbackConversationId;
+    return {
+      onStarted: (started: SseStarted) => {
+        activeConversationId = started.conversation_id;
+        if (!fallbackConversationId) {
+          onConversationCreated(started.conversation_id);
+          router.replace(`/chat/?id=${started.conversation_id}`, { scroll: false });
+        }
+        void refreshConversation(started.conversation_id);
+      },
+      onChunk: (_delta: string) => {
+        const id = activeConversationId;
+        if (id) void refreshConversation(id);
+      },
+      onDone: (done: SseDone) => {
+        void refreshConversation(done.conversation_id);
+      },
+    };
+  }, [onConversationCreated, refreshConversation, router]);
+
+  const runWithRefresh = useCallback(async (
+    operation: (token: string) => Promise<void>,
+  ) => {
     if (!accessToken) {
       router.replace('/login/');
       return;
     }
-
-    abortRef.current?.abort();
-    const controller = new AbortController();
-    abortRef.current = controller;
-
-    const userMsg: LocalMessage = { id: `user-${Date.now()}`, role: 'user', content: text };
-    const assistantMsg: LocalMessage = { id: 'streaming', role: 'assistant', content: '', streaming: true };
-
-    setMessages(prev => [...prev, userMsg, assistantMsg]);
-    setStreaming(true);
-    setError('');
-
-    const tryChat = async (token: string): Promise<void> => {
-      await chat({
-        message: text,
-        conversation_id: conversationId ?? undefined,
-        token,
-        signal: controller.signal,
-        onChunk: delta => {
-          setMessages(prev =>
-            prev.map(m => m.id === 'streaming' ? { ...m, content: m.content + delta } : m),
-          );
-        },
-        onDone: done => {
-          setMessages(prev =>
-            prev.map(m => m.id === 'streaming' ? { ...m, id: done.message_id, streaming: false } : m),
-          );
-          if (!conversationId) {
-            onConversationCreated(done.conversation_id);
-            router.replace(`/chat/?id=${done.conversation_id}`, { scroll: false });
-          }
-        },
-      });
-    };
-
     try {
-      await tryChat(accessToken);
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
-
-      // Try once to refresh the token on 401
-      if (err instanceof ApiError && err.status === 401) {
+      await operation(accessToken);
+    } catch (caught) {
+      if (caught instanceof ApiError && caught.status === 401) {
         const fresh = await refreshAccessToken();
         if (fresh) {
-          try {
-            await tryChat(fresh);
-            return;
-          } catch {}
+          await operation(fresh);
+          return;
         }
         router.replace('/login/');
         return;
       }
-
-      setMessages(prev => prev.filter(m => m.id !== 'streaming'));
-      setError(err instanceof ApiError ? err.message : 'Something went wrong.');
-    } finally {
-      setStreaming(false);
+      throw caught;
     }
-  }, [accessToken, conversationId, onConversationCreated, refreshAccessToken, router]);
+  }, [accessToken, refreshAccessToken, router]);
+
+  const sendMessage = useCallback(async (text: string) => {
+    setSubmitting(true);
+    setError('');
+    try {
+      await runWithRefresh(token => chat({
+        message: text,
+        conversation_id: conversationId ?? undefined,
+        token,
+        ...streamHandlers(conversationId ?? undefined),
+      }));
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
+      if (conversationId) await refreshMessages();
+    } finally {
+      setSubmitting(false);
+    }
+  }, [conversationId, refreshMessages, runWithRefresh, streamHandlers]);
+
+  const retry = useCallback(async (messageId: string) => {
+    if (!conversationId) return;
+    setRetryingId(messageId);
+    setError('');
+    try {
+      await runWithRefresh(token => retryMessage({
+        conversationId,
+        messageId,
+        token,
+        ...streamHandlers(conversationId),
+      }));
+    } catch (caught) {
+      setError(caught instanceof ApiError ? caught.message : 'Could not retry the response.');
+      await refreshMessages();
+    } finally {
+      setRetryingId(null);
+    }
+  }, [conversationId, refreshMessages, runWithRefresh, streamHandlers]);
+
+  const empty = !historyLoading && messages.length === 0;
+  const visibleError = error || (historyError instanceof Error ? historyError.message : '');
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex h-full flex-col">
       <div className="flex-1 overflow-y-auto">
-        {messages.length === 0 ? (
+        {empty ? (
           <div className="flex h-full items-center justify-center">
-            <div className="text-center space-y-2">
-              <p className="text-xl font-medium text-slate-400 dark:text-slate-500">What can I help you with?</p>
-              <p className="text-sm text-slate-400 dark:text-slate-500">Start typing below to begin a conversation.</p>
+            <div className="space-y-2 text-center">
+              <p className="text-xl font-medium text-slate-400 dark:text-slate-500">
+                What can I help you with?
+              </p>
+              <p className="text-sm text-slate-400 dark:text-slate-500">
+                Start typing below to begin a conversation.
+              </p>
             </div>
           </div>
         ) : (
-          <div className="max-w-3xl mx-auto px-4 py-6 space-y-4">
-            {messages.map(m => (
-              <MessageBubble key={m.id} message={m} />
+          <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+            {messages.map(message => (
+              <MessageBubble
+                key={message.id}
+                message={message}
+                onRetry={retry}
+                retrying={retryingId === message.id}
+              />
             ))}
-            {error && (
+            {visibleError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/60 dark:text-red-300">
-                {error}
+                {visibleError}
               </div>
             )}
             <div ref={bottomRef} />
@@ -149,7 +182,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           value={inputValue}
           onChange={setInputValue}
           onSend={sendMessage}
-          disabled={streaming}
+          disabled={active || submitting || retryingId !== null}
         />
       </div>
     </div>

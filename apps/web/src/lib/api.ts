@@ -10,6 +10,7 @@ import type {
   RefreshResponse,
   SetupStatusResponse,
   SseDone,
+  SseStarted,
 } from './types';
 
 class ApiError extends Error {
@@ -100,6 +101,26 @@ export function deleteConversation(id: string, token: string): Promise<void> {
   return req(`/conversations/${id}`, { method: 'DELETE' }, token);
 }
 
+export function retryMessage(args: {
+  conversationId: string;
+  messageId: string;
+  token: string;
+  onStarted: (started: SseStarted) => void;
+  onChunk: (delta: string) => void;
+  onDone: (done: SseDone) => void;
+  signal?: AbortSignal;
+}): Promise<void> {
+  return consumeChatStream({
+    url: `/api/conversations/${args.conversationId}/messages/${args.messageId}/retry`,
+    token: args.token,
+    method: 'POST',
+    onStarted: args.onStarted,
+    onChunk: args.onChunk,
+    onDone: args.onDone,
+    signal: args.signal,
+  });
+}
+
 // ── Admin configuration ──────────────────────────────────────────────────────
 
 export function getAdminConfig(token: string): Promise<AdminConfig> {
@@ -137,20 +158,42 @@ export async function chat(args: {
   message: string;
   conversation_id?: string;
   token: string;
+  onStarted: (started: SseStarted) => void;
   onChunk: (delta: string) => void;
   onDone: (done: SseDone) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { message, conversation_id, token, onChunk, onDone, signal } = args;
-
-  const resp = await fetch('/api/chat', {
+  const { message, conversation_id, token, onStarted, onChunk, onDone, signal } = args;
+  return consumeChatStream({
+    url: '/api/chat',
+    token,
     method: 'POST',
+    body: JSON.stringify({ message, conversation_id }),
+    onStarted,
+    onChunk,
+    onDone,
+    signal,
+  });
+}
+
+async function consumeChatStream(args: {
+  url: string;
+  token: string;
+  method: 'POST';
+  body?: string;
+  onStarted: (started: SseStarted) => void;
+  onChunk: (delta: string) => void;
+  onDone: (done: SseDone) => void;
+  signal?: AbortSignal;
+}): Promise<void> {
+  const resp = await fetch(args.url, {
+    method: args.method,
     headers: {
       'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
+      Authorization: `Bearer ${args.token}`,
     },
-    body: JSON.stringify({ message, conversation_id }),
-    signal,
+    body: args.body,
+    signal: args.signal,
   });
 
   if (!resp.ok) {
@@ -165,34 +208,71 @@ export async function chat(args: {
   const reader = resp.body!.getReader();
   const decoder = new TextDecoder();
   let buffer = '';
+  let terminal = false;
 
   while (true) {
     const { done, value } = await reader.read();
-    if (done) break;
+    if (done) {
+      buffer += decoder.decode();
+      break;
+    }
 
     buffer += decoder.decode(value, { stream: true });
-    const parts = buffer.split('\n\n');
-    buffer = parts.pop() ?? '';
-
-    for (const part of parts) {
-      let eventName = '';
-      let eventData = '';
-
-      for (const line of part.split('\n')) {
-        if (line.startsWith('event: ')) eventName = line.slice(7).trim();
-        else if (line.startsWith('data: ')) eventData = line.slice(6).trim();
-      }
-
-      if (eventName === 'chunk') {
-        const parsed = JSON.parse(eventData) as { delta: string };
-        onChunk(parsed.delta);
-      } else if (eventName === 'done') {
-        onDone(JSON.parse(eventData) as SseDone);
-      } else if (eventName === 'error') {
-        throw new ApiError(eventData, 500);
-      }
+    const events = takeSseEvents(buffer);
+    buffer = events.remainder;
+    for (const event of events.parts) {
+      terminal = processChatEvent(event, args) || terminal;
     }
   }
+
+  if (buffer.trim()) {
+    terminal = processChatEvent(buffer, args) || terminal;
+  }
+  if (!terminal) {
+    throw new ApiError('Response stream ended before the server reported completion.', 502);
+  }
+}
+
+function takeSseEvents(buffer: string): { parts: string[]; remainder: string } {
+  const normalized = buffer.replaceAll('\r\n', '\n');
+  const parts = normalized.split('\n\n');
+  return {
+    remainder: parts.pop() ?? '',
+    parts,
+  };
+}
+
+function processChatEvent(
+  raw: string,
+  handlers: {
+    onStarted: (started: SseStarted) => void;
+    onChunk: (delta: string) => void;
+    onDone: (done: SseDone) => void;
+  },
+): boolean {
+  let eventName = '';
+  const data: string[] = [];
+  for (const line of raw.split(/\r?\n/)) {
+    if (line.startsWith('event:')) eventName = line.slice(6).trim();
+    else if (line.startsWith('data:')) data.push(line.slice(5).trimStart());
+  }
+  const eventData = data.join('\n');
+
+  if (eventName === 'started') {
+    handlers.onStarted(JSON.parse(eventData) as SseStarted);
+  } else if (eventName === 'chunk') {
+    handlers.onChunk((JSON.parse(eventData) as { delta: string }).delta);
+  } else if (eventName === 'done') {
+    handlers.onDone(JSON.parse(eventData) as SseDone);
+    return true;
+  } else if (eventName === 'error') {
+    let message = eventData;
+    try {
+      message = (JSON.parse(eventData) as { message?: string }).message ?? message;
+    } catch {}
+    throw new ApiError(message || 'Response generation failed.', 500);
+  }
+  return false;
 }
 
 export { ApiError };

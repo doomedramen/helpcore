@@ -109,6 +109,9 @@ mod tests {
             content: content.to_string(),
             sequence: 1,
             created_at: "now".to_string(),
+            status: helpcore_api::MessageStatus::Complete,
+            error: None,
+            updated_at: "now".to_string(),
         }
     }
 

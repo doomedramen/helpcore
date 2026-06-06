@@ -76,6 +76,14 @@ pub struct SseChunk {
     pub delta: String,
 }
 
+/// Sent as the first SSE event after the turn has been persisted.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SseStarted {
+    pub conversation_id: String,
+    pub user_message_id: String,
+    pub message_id: String,
+}
+
 /// Sent as SSE `event: done` data.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SseDone {
@@ -103,6 +111,25 @@ pub struct MessageSummary {
     pub content: String,
     pub sequence: i64,
     pub created_at: String,
+    pub status: MessageStatus,
+    pub error: Option<String>,
+    pub updated_at: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum MessageStatus {
+    Pending,
+    Streaming,
+    Complete,
+    Failed,
+    Interrupted,
+}
+
+impl MessageStatus {
+    pub fn is_active(&self) -> bool {
+        matches!(self, Self::Pending | Self::Streaming)
+    }
 }
 
 // ── Personality ───────────────────────────────────────────────────────────────
@@ -158,10 +185,15 @@ pub struct PluginInfo {
     pub id:          String,
     pub name:        String,
     pub description: String,
-    pub version:     String,
+    pub active_version: String,
+    pub previous_version: Option<String>,
+    pub available_version: Option<String>,
     pub tier:        String,
     pub permissions: Vec<String>,
     pub enabled:     bool,
+    pub configured:  bool,
+    pub update_available: bool,
+    pub blocked:     bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -193,15 +225,40 @@ pub struct PluginStoreItem {
     pub homepage:    String,
     pub setup_guide: Option<String>,
     pub permissions: Vec<String>,
+    pub installable: bool,
     pub installed:   bool,
     pub enabled:     bool,
     pub blocked:     bool,
+    pub active_version: Option<String>,
+    pub previous_version: Option<String>,
+    pub configured: bool,
+    pub update_available: bool,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PluginStoreResponse {
     pub registry_url: String,
     pub plugins: Vec<PluginStoreItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PluginInstallRequest {
+    #[serde(default)]
+    pub permissions: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PluginEnableRequest {
+    pub enabled: bool,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct PluginConfigureRequest {
+    pub endpoint: Option<String>,
+    #[serde(default)]
+    pub settings: serde_json::Value,
+    #[serde(default)]
+    pub secrets: serde_json::Value,
 }
 
 // ── Admin configuration ──────────────────────────────────────────────────────

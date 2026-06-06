@@ -31,9 +31,19 @@ export interface ConversationSummary {
 
 export interface Message {
   id: string;
-  role: 'user' | 'assistant';
+  role: 'user' | 'assistant' | 'summary' | 'tool';
   content: string;
+  sequence: number;
   created_at: string;
+  status: 'pending' | 'streaming' | 'complete' | 'failed' | 'interrupted';
+  error: string | null;
+  updated_at: string;
+}
+
+export interface SseStarted {
+  conversation_id: string;
+  user_message_id: string;
+  message_id: string;
 }
 
 export interface SseDone {

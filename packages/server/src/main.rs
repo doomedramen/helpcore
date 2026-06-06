@@ -1,4 +1,4 @@
-use helpcore_server::{api, auth, config, db, plugins, providers, state};
+use helpcore_server::{api, auth, config, conversation, db, plugins, providers, state};
 
 use anyhow::Context;
 use std::sync::Arc;
@@ -42,6 +42,10 @@ async fn main() -> anyhow::Result<()> {
 
     let db_path = data_dir.join("helpcore.db");
     let db = db::DbPool::open(&db_path)?;
+    let interrupted = db.call_sync(conversation::history::interrupt_active_messages)?;
+    if interrupted > 0 {
+        tracing::warn!(count = interrupted, "marked unfinished responses as interrupted");
+    }
 
     // First-run check.
     let server_url = config.server.url.trim_end_matches('/').to_string();
@@ -81,6 +85,7 @@ async fn main() -> anyhow::Result<()> {
     let state = Arc::new(state::AppState {
         config: Arc::new(config),
         config_path,
+        data_dir,
         db: Arc::new(db),
         providers: provider_list,
     });

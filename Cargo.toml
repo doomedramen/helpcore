@@ -74,6 +74,9 @@ futures-util = { version = "0.3", default-features = false }
 tempfile     = "3"
 tokio-util   = { version = "0.7", default-features = false }
 wiremock     = "0.6"
+flate2       = "1"
+tar          = "0.4"
+semver       = "1"
 
 [profile.dev]
 incremental = true

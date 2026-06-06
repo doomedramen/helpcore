@@ -24,6 +24,8 @@ pub struct Manifest {
     pub permissions: Vec<String>,
     pub min_core_version: Option<String>,
     pub bridge: Option<BridgeConfig>,
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -40,10 +42,14 @@ pub struct InstalledPlugin {
     pub name: String,
     pub description: String,
     pub version: String,
+    pub previous_version: Option<String>,
     pub tier: String,
     pub enabled: bool,
     pub skill_md: Option<String>,
     pub permissions: Vec<String>,
+    pub manifest: Manifest,
+    pub tools: PluginTools,
+    pub config: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -64,6 +70,14 @@ pub struct StorePlugin {
     pub permissions: Vec<String>,
     pub source: StorePluginSource,
     pub setup_guide: Option<String>,
+    pub package: Option<StorePluginPackage>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct StorePluginPackage {
+    pub url: String,
+    pub sha256: String,
+    pub size: Option<u64>,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -75,6 +89,19 @@ pub struct StorePluginSource {
     pub source_ref: Option<String>,
     pub wasm_asset: Option<String>,
     pub url: Option<String>,
+}
+
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
+pub struct PluginTools {
+    #[serde(default)]
+    pub tools: Vec<PluginTool>,
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PluginTool {
+    pub name: String,
+    pub description: String,
+    pub input_schema: serde_json::Value,
 }
 
 // ── Manifest loading ───────────────────────────────────────────────────────────
@@ -145,9 +172,19 @@ pub fn ensure_installed(
     if let Some(id) = existing {
         // Update skill and enabled state.
         conn.execute(
-            "UPDATE plugin_installs SET skill_md = ?1, enabled = ?2, version = ?3
-              WHERE user_id = ?4 AND plugin_id = ?5",
-            params![skill_md, enabled as i32, manifest.version, user_id, manifest.id],
+            "UPDATE plugin_installs
+             SET skill_md = ?1, enabled = ?2, version = ?3, manifest = ?4,
+                 updated_at = ?5
+              WHERE user_id = ?6 AND plugin_id = ?7",
+            params![
+                skill_md,
+                enabled as i32,
+                manifest.version,
+                serde_json::to_string(manifest)?,
+                now,
+                user_id,
+                manifest.id
+            ],
         )?;
         return Ok(id);
     }
@@ -155,9 +192,20 @@ pub fn ensure_installed(
     let id = Uuid::new_v4().to_string();
     conn.execute(
         "INSERT INTO plugin_installs
-           (id, user_id, plugin_id, version, permissions, enabled, skill_md, installed_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![id, user_id, manifest.id, manifest.version, permissions_json, enabled as i32, skill_md, now],
+           (id, user_id, plugin_id, version, permissions, enabled, skill_md,
+            manifest, installed_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+        params![
+            id,
+            user_id,
+            manifest.id,
+            manifest.version,
+            permissions_json,
+            enabled as i32,
+            skill_md,
+            serde_json::to_string(manifest)?,
+            now
+        ],
     )
     .context("failed to insert plugin_installs")?;
     Ok(id)
@@ -166,8 +214,9 @@ pub fn ensure_installed(
 /// Load all enabled plugins for a user (skill fragments included).
 pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<InstalledPlugin>> {
     let mut stmt = conn.prepare_cached(
-        "SELECT pi.id, pi.plugin_id, p.name, p.manifest, pi.version, p.tier,
-                pi.enabled, pi.skill_md, pi.permissions
+        "SELECT pi.id, pi.plugin_id, p.name, COALESCE(pi.manifest, p.manifest),
+                pi.version, p.tier, pi.enabled, pi.skill_md, pi.permissions,
+                pi.previous_version, pi.tools, pi.config
            FROM plugin_installs pi
            JOIN plugins p ON p.id = pi.plugin_id
           WHERE pi.user_id = ?1
@@ -178,16 +227,33 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
             let manifest_json: String = row.get(3)?;
             let manifest: Option<Manifest> = serde_json::from_str(&manifest_json).ok();
             let permissions_json: String = row.get(8)?;
+            let manifest = manifest.unwrap_or_else(|| Manifest {
+                id: row.get(1).unwrap_or_default(),
+                name: row.get(2).unwrap_or_default(),
+                version: row.get(4).unwrap_or_default(),
+                description: String::new(),
+                tier: row.get(5).unwrap_or_default(),
+                permissions: Vec::new(),
+                min_core_version: None,
+                bridge: None,
+                allowed_hosts: Vec::new(),
+            });
+            let tools_json: String = row.get(10)?;
+            let config_json: String = row.get(11)?;
             Ok(InstalledPlugin {
                 install_id: row.get(0)?,
                 plugin_id:  row.get(1)?,
                 name:       row.get(2)?,
-                description: manifest.map(|m| m.description).unwrap_or_default(),
+                description: manifest.description.clone(),
                 version:    row.get(4)?,
+                previous_version: row.get(9)?,
                 tier:       row.get(5)?,
                 enabled:    row.get::<_, i32>(6)? != 0,
                 skill_md:   row.get(7)?,
                 permissions: serde_json::from_str(&permissions_json).unwrap_or_default(),
+                manifest,
+                tools: serde_json::from_str(&tools_json).unwrap_or_default(),
+                config: serde_json::from_str(&config_json).unwrap_or_default(),
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

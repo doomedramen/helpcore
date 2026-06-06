@@ -3,7 +3,14 @@ use chrono::Utc;
 use rusqlite::Connection;
 use uuid::Uuid;
 
-use helpcore_api::{ConversationSummary, MessageSummary};
+use helpcore_api::{ConversationSummary, MessageStatus, MessageSummary};
+
+pub struct StartedTurn {
+    pub conversation: ConversationSummary,
+    pub history: Vec<MessageSummary>,
+    pub user_message: MessageSummary,
+    pub assistant_message_id: String,
+}
 
 /// Loads a conversation that belongs to `user_id`. Returns `None` if not found
 /// or if it belongs to another user (caller should 404 in both cases).
@@ -55,7 +62,8 @@ pub fn get_or_create(
 /// Loads all non-compacted messages for a conversation, ordered by sequence.
 pub fn load_messages(conn: &Connection, conversation_id: &str) -> anyhow::Result<Vec<MessageSummary>> {
     let mut stmt = conn.prepare(
-        "SELECT id, role, content, sequence, created_at
+        "SELECT id, role, content, sequence, created_at, status, error,
+                COALESCE(updated_at, created_at)
          FROM messages
          WHERE conversation_id = ?1 AND compacted = 0
          ORDER BY sequence ASC",
@@ -64,6 +72,129 @@ pub fn load_messages(conn: &Connection, conversation_id: &str) -> anyhow::Result
         .query_map([conversation_id], row_to_message)?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(rows)
+}
+
+pub fn load_messages_before(
+    conn: &Connection,
+    conversation_id: &str,
+    sequence: i64,
+) -> anyhow::Result<Vec<MessageSummary>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, role, content, sequence, created_at, status, error,
+                COALESCE(updated_at, created_at)
+         FROM messages
+         WHERE conversation_id = ?1 AND compacted = 0 AND sequence < ?2
+         ORDER BY sequence ASC",
+    )?;
+    let rows = stmt
+        .query_map(rusqlite::params![conversation_id, sequence], row_to_message)?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(rows)
+}
+
+pub fn start_turn(
+    conn: &Connection,
+    user_id: &str,
+    conversation_id: Option<&str>,
+    content: &str,
+    provider_id: &str,
+    model: &str,
+) -> anyhow::Result<StartedTurn> {
+    let tx = conn.unchecked_transaction()?;
+    let conversation = get_or_create(&tx, user_id, conversation_id)?;
+    ensure_no_active_generation(&tx, &conversation.id, None)?;
+    let history = load_messages(&tx, &conversation.id)?;
+    let user_message = insert_user_message(&tx, &conversation.id, content)?;
+    let assistant_message_id =
+        insert_assistant_placeholder(&tx, &conversation.id, provider_id, model)?;
+    tx.commit()?;
+
+    Ok(StartedTurn {
+        conversation,
+        history,
+        user_message,
+        assistant_message_id,
+    })
+}
+
+pub fn retry_turn(
+    conn: &Connection,
+    user_id: &str,
+    conversation_id: &str,
+    assistant_message_id: &str,
+) -> anyhow::Result<(ConversationSummary, Vec<MessageSummary>, MessageSummary, String, String)> {
+    let tx = conn.unchecked_transaction()?;
+    let conversation =
+        get_conversation(&tx, conversation_id, user_id)?.context("conversation not found")?;
+    ensure_no_active_generation(&tx, conversation_id, Some(assistant_message_id))?;
+
+    let (assistant_sequence, status, provider_id, model): (
+        i64,
+        String,
+        Option<String>,
+        Option<String>,
+    ) = tx
+        .query_row(
+            "SELECT sequence, status, provider_id, model
+             FROM messages
+             WHERE id = ?1 AND conversation_id = ?2 AND role = 'assistant'",
+            rusqlite::params![assistant_message_id, conversation_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+        )
+        .context("assistant message not found")?;
+
+    if matches!(status.as_str(), "pending" | "streaming" | "complete") {
+        anyhow::bail!("only failed or interrupted responses can be retried");
+    }
+
+    let user_message = tx
+        .query_row(
+            "SELECT id, role, content, sequence, created_at, status, error,
+                    COALESCE(updated_at, created_at)
+             FROM messages
+             WHERE conversation_id = ?1 AND role = 'user' AND sequence < ?2
+             ORDER BY sequence DESC LIMIT 1",
+            rusqlite::params![conversation_id, assistant_sequence],
+            row_to_message,
+        )
+        .context("original user message not found")?;
+    let history = load_messages_before(&tx, conversation_id, user_message.sequence)?;
+    let now = Utc::now().to_rfc3339();
+    tx.execute(
+        "UPDATE messages
+         SET content = '', status = 'pending', error = NULL, updated_at = ?1
+         WHERE id = ?2",
+        rusqlite::params![now, assistant_message_id],
+    )?;
+    tx.commit()?;
+
+    Ok((
+        conversation,
+        history,
+        user_message,
+        provider_id.context("retry response has no provider")?,
+        model.context("retry response has no model")?,
+    ))
+}
+
+fn ensure_no_active_generation(
+    conn: &Connection,
+    conversation_id: &str,
+    except_message_id: Option<&str>,
+) -> anyhow::Result<()> {
+    let active: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM messages
+         WHERE conversation_id = ?1
+           AND role = 'assistant'
+           AND status IN ('pending', 'streaming')
+           AND (?2 IS NULL OR id != ?2)",
+        rusqlite::params![conversation_id, except_message_id],
+        |row| row.get(0),
+    )?;
+    if active > 0 {
+        anyhow::bail!("a response is already in progress for this conversation");
+    }
+    Ok(())
 }
 
 /// Inserts a user message. On the first message in the conversation, updates
@@ -111,16 +242,17 @@ pub fn insert_user_message(
         role: "user".to_string(),
         content: content.to_string(),
         sequence,
-        created_at: now,
+        created_at: now.clone(),
+        status: MessageStatus::Complete,
+        error: None,
+        updated_at: now,
     })
 }
 
-/// Inserts the assistant response after streaming completes.
-/// Returns the message id.
-pub fn insert_assistant_message(
+/// Inserts an empty durable assistant row before generation starts.
+pub fn insert_assistant_placeholder(
     conn: &Connection,
     conversation_id: &str,
-    content: &str,
     provider_id: &str,
     model: &str,
 ) -> anyhow::Result<String> {
@@ -136,11 +268,12 @@ pub fn insert_assistant_message(
 
     conn.execute(
         "INSERT INTO messages
-             (id, conversation_id, role, content, provider_id, model, sequence, created_at)
-         VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, ?7)",
-        rusqlite::params![id, conversation_id, content, provider_id, model, sequence, now],
+             (id, conversation_id, role, content, provider_id, model, sequence,
+              status, created_at, updated_at)
+         VALUES (?1, ?2, 'assistant', '', ?3, ?4, ?5, 'pending', ?6, ?6)",
+        rusqlite::params![id, conversation_id, provider_id, model, sequence, now],
     )
-    .context("failed to insert assistant message")?;
+    .context("failed to insert assistant placeholder")?;
 
     conn.execute(
         "UPDATE conversations
@@ -153,6 +286,76 @@ pub fn insert_assistant_message(
     )?;
 
     Ok(id)
+}
+
+pub fn append_assistant_content(
+    conn: &Connection,
+    message_id: &str,
+    content: &str,
+) -> anyhow::Result<()> {
+    let now = Utc::now().to_rfc3339();
+    let changed = conn.execute(
+        "UPDATE messages
+         SET content = content || ?1, status = 'streaming', updated_at = ?2
+         WHERE id = ?3 AND role = 'assistant' AND status IN ('pending', 'streaming')",
+        rusqlite::params![content, now, message_id],
+    )?;
+    if changed == 0 {
+        anyhow::bail!("assistant message is not active");
+    }
+    Ok(())
+}
+
+pub fn finish_assistant_message(conn: &Connection, message_id: &str) -> anyhow::Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE messages SET status = 'complete', error = NULL, updated_at = ?1
+         WHERE id = ?2 AND role = 'assistant'",
+        rusqlite::params![now, message_id],
+    )?;
+    Ok(())
+}
+
+/// Convenience helper for non-streaming internal writes and tests.
+pub fn insert_assistant_message(
+    conn: &Connection,
+    conversation_id: &str,
+    content: &str,
+    provider_id: &str,
+    model: &str,
+) -> anyhow::Result<String> {
+    let id = insert_assistant_placeholder(conn, conversation_id, provider_id, model)?;
+    if !content.is_empty() {
+        append_assistant_content(conn, &id, content)?;
+    }
+    finish_assistant_message(conn, &id)?;
+    Ok(id)
+}
+
+pub fn fail_assistant_message(
+    conn: &Connection,
+    message_id: &str,
+    error: &str,
+) -> anyhow::Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE messages SET status = 'failed', error = ?1, updated_at = ?2
+         WHERE id = ?3 AND role = 'assistant'",
+        rusqlite::params![error, now, message_id],
+    )?;
+    Ok(())
+}
+
+pub fn interrupt_active_messages(conn: &Connection) -> anyhow::Result<usize> {
+    let now = Utc::now().to_rfc3339();
+    Ok(conn.execute(
+        "UPDATE messages
+         SET status = 'interrupted',
+             error = 'The server restarted while this response was being generated.',
+             updated_at = ?1
+         WHERE role = 'assistant' AND status IN ('pending', 'streaming')",
+        [now],
+    )?)
 }
 
 /// A message row returned for compaction analysis (includes the compacted flag).
@@ -175,6 +378,7 @@ pub fn load_compactable_messages(
           WHERE conversation_id = ?1
             AND compacted = 0
             AND role != 'summary'
+            AND status = 'complete'
           ORDER BY sequence ASC",
     )?;
     let rows = stmt
@@ -255,12 +459,22 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConversationSumma
 }
 
 fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary> {
+    let status: String = row.get(5)?;
     Ok(MessageSummary {
         id: row.get(0)?,
         role: row.get(1)?,
         content: row.get(2)?,
         sequence: row.get(3)?,
         created_at: row.get(4)?,
+        status: match status.as_str() {
+            "pending" => MessageStatus::Pending,
+            "streaming" => MessageStatus::Streaming,
+            "failed" => MessageStatus::Failed,
+            "interrupted" => MessageStatus::Interrupted,
+            _ => MessageStatus::Complete,
+        },
+        error: row.get(6)?,
+        updated_at: row.get(7)?,
     })
 }
 
@@ -351,7 +565,9 @@ mod tests {
         pool.call_sync(|conn| {
             let conv = create_conversation(conn, &uid)?;
             insert_user_message(conn, &conv.id, "Hello")?;
-            insert_assistant_message(conn, &conv.id, "Hi there!", "p", "m")?;
+            let assistant = insert_assistant_placeholder(conn, &conv.id, "p", "m")?;
+            append_assistant_content(conn, &assistant, "Hi there!")?;
+            finish_assistant_message(conn, &assistant)?;
             insert_user_message(conn, &conv.id, "How are you?")?;
             let msgs = load_messages(conn, &conv.id)?;
             assert_eq!(msgs.len(), 3);
@@ -371,7 +587,9 @@ mod tests {
         pool.call_sync(|conn| {
             let conv = create_conversation(conn, &uid)?;
             insert_user_message(conn, &conv.id, "msg 1")?;
-            insert_assistant_message(conn, &conv.id, "reply", "p", "m")?;
+            let assistant = insert_assistant_placeholder(conn, &conv.id, "p", "m")?;
+            append_assistant_content(conn, &assistant, "reply")?;
+            finish_assistant_message(conn, &assistant)?;
             let convs = list_conversations(conn, &uid)?;
             assert_eq!(convs[0].message_count, 2);
             Ok(())

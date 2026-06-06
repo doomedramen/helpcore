@@ -28,12 +28,18 @@ fn test_state_with_providers(
 name = "test"
 url  = "http://localhost:3000""#)
             .unwrap();
+    let data_dir = std::env::temp_dir().join(format!(
+        "helpcore-test-data-{}",
+        uuid::Uuid::new_v4()
+    ));
+    std::fs::create_dir_all(&data_dir).unwrap();
     Arc::new(state::AppState {
         config: Arc::new(cfg),
         config_path: std::env::temp_dir().join(format!(
             "helpcore-test-config-{}.toml",
             uuid::Uuid::new_v4()
         )),
+        data_dir,
         db: db_pool,
         providers,
     })
