@@ -66,7 +66,7 @@ URL and blacklist policy remain admin-only.
 
 | Field | Required for | Notes |
 |---|---|---|
-| `type` | both | `github`, `url`, or `local` (dev only) |
+| `type` | both | `github` or `url` |
 | `repo` | `github` | `owner/repo` |
 | `ref` | `github` | release tag (e.g. `1.1.1`) or branch name (e.g. `main`) |
 | `wasm_asset` | `wasm` tier | filename of the WASM binary |
@@ -139,7 +139,6 @@ Anyone can submit a plugin by opening a pull request that adds an entry to
 
 Requirements for a PR to be accepted:
 
-- Entry passes JSON schema validation (CI enforces this)
 - `id` is unique, lowercase, hyphen-separated
 - `homepage` links to a public repository with source code
 - `permissions` accurately lists everything the plugin requests — do not
@@ -154,8 +153,6 @@ Requirements for a PR to be accepted:
 ```
 registry/
   plugins.json        ← the registry (one entry per plugin)
-  schema.json         ← JSON Schema for entry validation
-  CONTRIBUTING.md     ← plugin submission guidelines
 ```
 
 ---
@@ -164,11 +161,8 @@ registry/
 
 Every PR that touches `registry/plugins.json` should run:
 
-- JSON schema validation against `registry/schema.json`
 - Duplicate `id` check
-- HTTP HEAD request to verify the package URL resolves
-- SHA-256 verification of the published package
-- Lint: `description` and `name` present and non-empty
+- `description` and `name` present and non-empty
 
 Merging a PR is the only publish mechanism — there is no separate publish step.
 

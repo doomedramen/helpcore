@@ -1,8 +1,5 @@
 # helpcore — Providers & Context Assembly
 
-Reference implementation: `references/zeroclaw/crates/zeroclaw-providers/`
-Personality templates: `references/zeroclaw/crates/zeroclaw-runtime/src/agent/personality_templates/`
-
 ---
 
 ## What a provider is
@@ -44,32 +41,16 @@ Providers are declared in `~/.helpcore/config.toml` (or the path selected by
 
 ```toml
 [[providers]]
-id          = "anthropic-main"
-name        = "Anthropic Claude"
-type        = "anthropic"
-roles       = ["chat", "code"]
-api_key     = "sk-ant-..."
-default_model = "claude-sonnet-4-6"
-
-[[providers]]
-id          = "openai-main"
-name        = "OpenAI"
-type        = "openai"
-roles       = ["chat", "image_gen"]
-api_key     = "sk-..."
-default_model = "gpt-4o"
-
-[[providers]]
-id          = "local-ollama"
-name        = "Local Ollama"
-type        = "ollama"
-roles       = ["chat"]
-url         = "http://localhost:11434"
+id            = "local-ollama"
+name          = "Local Ollama"
+type          = "ollama"
+roles         = ["chat"]
+url           = "http://localhost:11434"
 default_model = "llama3.2"
 ```
 
-Supported types at launch: `anthropic`, `openai`, `ollama`, `openai_compatible`
-(covers any provider that speaks the OpenAI chat completions API).
+Supported types: `ollama` is currently implemented. `anthropic`, `openai`, and
+`openai_compatible` are declared in config but not yet implemented.
 
 ---
 
@@ -87,19 +68,12 @@ available provider with the same role is tried (fallback chain).
 
 ## Reliability
 
-Every provider is wrapped in a reliability layer (adapted from zeroclaw's
-`ReliableModelProvider`):
+Every provider is wrapped in a reliability layer:
 
 - **Retry with exponential backoff** — transient errors (5xx, timeouts, 429)
   are retried up to a configured limit
 - **Non-retryable detection** — 4xx errors, auth failures, and model-not-found
   errors abort immediately without burning retry budget
-- **Provider fallback** — if all retries are exhausted, the next provider with
-  the same role is tried
-- **Context truncation** — if context window is exceeded, oldest non-system
-  messages are dropped and the request is retried
-- **Empty completion re-roll** — blank responses are retried rather than
-  returned to the user
 
 ---
 
@@ -154,7 +128,7 @@ placeholders at account creation time:
 ## Database schema additions
 
 ### `user_providers`
-Per-user provider access grants.
+Per-user provider access grants (schema not yet finalised).
 
 | Column | Type | Notes |
 |---|---|---|

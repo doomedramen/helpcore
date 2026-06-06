@@ -3,12 +3,7 @@
 This document captures the architectural decisions made during the design phase.
 Update it when decisions change; do not let it drift from reality.
 
-**Reference implementation:** `references/zeroclaw/` contains the full zeroclaw source,
-used as architectural inspiration. If that directory is missing, clone it:
 
-```bash
-git clone https://github.com/zeroclaw-labs/zeroclaw references/zeroclaw
-```
 
 ---
 
@@ -31,14 +26,13 @@ helpcore/               ← this repo (Cargo workspace root)
   Cargo.toml            ← workspace manifest
   Dockerfile            ← server image (Linux)
   docker-compose.yml    ← local dev environment
-  core/                 ← server binary (Linux target in production)
-  cli/                  ← CLI binary (macOS native in dev, Linux in prod)
-  crates/
-    helpcore-api/       ← shared types and traits (core + CLI both depend on this)
+  packages/
+    server/             ← server binary (Linux target in production)
+    cli/                ← CLI binary (macOS native in dev, Linux in prod)
+    api/                ← shared types and traits (server + CLI both depend on this)
   apps/
-    ios/                ← Swift client (outside Cargo workspace)
     web/                ← Next.js client (outside Cargo workspace)
-  registry/             ← plugin store registry app + plugins.json
+  registry/             ← plugin store registry JSON file
   plugins/              ← first-party plugin examples
   docs/                 ← architecture decisions (here)
 ```
@@ -53,12 +47,12 @@ The Rust server owns exactly these concerns:
 |---|---|
 | Auth & users | Registration, sessions, tokens, per-user data isolation |
 | Permissions | What each user and plugin is allowed to access |
-| Database | Conversations, user settings, plugin registry, sessions, audit log |
+| Database | Conversations, user settings, plugin registry, sessions |
 | AI provider routing | Abstraction over Anthropic, OpenAI, Ollama; streaming; fallback chains |
 | Plugin registry | WASM module loading + sandboxed execution; bridge service registration |
 | Tool dispatch | Route LLM tool calls to the correct WASM plugin or bridge service |
 | Slash command registry | Clients query this to discover available slash commands |
-| Audit log | Every action logged per user — non-optional, cannot be disabled |
+
 
 The server does **not** implement channels (WhatsApp, Telegram), integrations
 (Home Assistant, Obsidian), or any domain-specific features. Those are plugins.
@@ -127,7 +121,7 @@ call — can interact with the entire API. Plugins do not need special libraries
 - Each user has an isolated data partition
 - No user can access another user's conversations, plugin configuration, or data
 - Plugins installed by one user do not apply to other users
-- The audit log is per-user and tamper-evident
+
 
 ---
 
@@ -137,7 +131,7 @@ call — can interact with the entire API. Plugins do not need special libraries
 Appropriate given the small expected user count (personal + family).
 
 Tables owned by the core: users, sessions, conversations, messages, plugin registry,
-plugin installs (per user), slash commands, audit log.
+plugin installs (per user), memory files, personality files.
 
 Migration tool: `sqlx` with compile-time checked queries and versioned migrations.
 
@@ -149,12 +143,8 @@ Migration tool: `sqlx` with compile-time checked queries and versioned migration
 **Dev machine:** macOS
 
 **Local dev workflow:**
-- OrbStack runs the server in a Linux container or VM
-- `docker-compose.yml` at repo root provides one-command dev startup
+- `docker compose --profile with-ollama up -d` at repo root provides one-command dev startup
 - CLI is a native macOS binary pointing at `http://localhost:<PORT>`
-- Linux-only features (landlock, seccomp) are gated behind `#[cfg(target_os = "linux")]` and compile away silently on macOS
-
-**Building Linux release binaries from macOS:** `cross` (wraps Docker to cross-compile for the Linux target).
 
 ---
 

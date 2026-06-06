@@ -37,9 +37,9 @@ enabled = true
 Restart helpcore:
 
 ```bash
-make prod-update   # production
+docker compose -f docker-compose.prod.yml restart helpcore   # production
 # or
-make docker-up     # local dev
+docker compose restart helpcore                              # local dev
 ```
 
 On restart, the plugin is registered for all users and the skill prompt is active.
@@ -87,27 +87,7 @@ EOF
 docker compose up --build
 ```
 
-Or, if running alongside the main helpcore stack, add the service block to `docker-compose.prod.yml`:
-
-```yaml
-# In docker-compose.prod.yml, under services:
-voice-kittentts:
-  build: plugins/voice-kittentts/service
-  ports:
-    - "8080:8080"
-  environment:
-    HELPCORE_URL: http://helpcore:3000
-    HELPCORE_TOKEN: "hcp_abc123defg456..."
-    WHISPER_BIN: /whisper/whisper-cli
-    WHISPER_MODEL: /whisper/models/ggml-base.en.bin
-    KITTEN_VOICE: Jasper
-  volumes:
-    - ./plugins/voice-kittentts/whisper:/whisper:ro
-  restart: unless-stopped
-  depends_on:
-    helpcore:
-      condition: service_healthy
-```
+Or, if running alongside the main helpcore stack, add the service block to `docker-compose.prod.yml`. See the plugin's own `docker-compose.yml` for the full config — it uses `build: ./service`, a healthcheck with `start_period: 60s`, and the same environment variables.
 
 ### 5. Verify the service is healthy
 

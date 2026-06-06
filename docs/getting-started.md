@@ -28,7 +28,7 @@ This is the recommended production setup. Pre-built images are published to GHCR
 ### 1. Clone the repo on the server
 
 ```bash
-git clone https://github.com/martin/helpcore
+git clone https://github.com/doomedramen/helpcore
 cd helpcore
 ```
 
@@ -54,7 +54,7 @@ server URL to `http://YOUR_SERVER_IP:3000`. See
 docker compose -f docker-compose.prod.yml --profile with-ollama up -d
 ```
 
-This pulls `ghcr.io/martin/helpcore:latest` from GHCR — no build step needed.
+This pulls `ghcr.io/doomedramen/helpcore:latest` from GHCR — no build step needed.
 
 Watch the logs to confirm the server is ready:
 
@@ -84,7 +84,7 @@ Recommended models for a 4 GB RAM budget:
 
 ```bash
 # macOS Apple Silicon
-curl -L https://github.com/martin/helpcore/releases/latest/download/hc-aarch64-apple-darwin \
+curl -L https://github.com/doomedramen/helpcore/releases/latest/download/hc-aarch64-apple-darwin \
   -o /usr/local/bin/hc && chmod +x /usr/local/bin/hc
 ```
 
@@ -123,7 +123,7 @@ docker compose -f docker-compose.prod.yml up -d
 For development or testing on your own machine.
 
 ```bash
-git clone https://github.com/martin/helpcore
+git clone https://github.com/doomedramen/helpcore
 cd helpcore
 
 # Start (helpcore + Ollama sidecar)
@@ -157,7 +157,7 @@ docker compose down              # stop everything
 Requirements: Rust 1.87+.
 
 ```bash
-git clone https://github.com/martin/helpcore
+git clone https://github.com/doomedramen/helpcore
 cd helpcore
 
 # Build everything

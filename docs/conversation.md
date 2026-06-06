@@ -1,8 +1,5 @@
 # helpcore — Conversation & Context Model
 
-Reference: `references/zeroclaw/crates/zeroclaw-runtime/src/agent/history.rs`
-Reference: `references/zeroclaw/crates/zeroclaw-memory/`
-
 ---
 
 ## Conversations
@@ -56,41 +53,12 @@ user turn. Only one assistant generation may be active per conversation.
 
 ## Memory
 
-Memory is a per-user filesystem of `.md` files stored on the server, searched
-at query time via SQLite FTS5. The AI manages this filesystem directly — it
+Memory files are stored in the SQLite database (`memory_files` table) and
+searched at query time via SQLite FTS5. The AI manages memory directly — it
 decides what to write, how to name files, and how to organise them.
 
-### Storage location
-
-```
-{data_dir}/users/{user_id}/memory/
-  alice-chen.md
-  project-eeva.md
-  obsidian-setup.md
-  home/
-    devices.md
-    automation-rules.md
-```
-
-One `.md` file per person, project, or topic. The AI owns the structure.
-
-### Organisation rules (given to the AI in its instructions)
-
-The AI is instructed to keep memory organised as follows:
-
-- **Start flat.** Put new files directly in the memory root. Add subdirectories
-  only when there are enough related files to justify one — not before.
-- **Name files clearly.** The filename should say what's inside without opening
-  it: `alice-chen.md` not `contacts/a.md`. Lowercase with hyphens. Include
-  context: `project-eeva.md`, `obsidian-user-count.md`.
-- **One thing per file.** One person, one project, one topic.
-- **Create a folder when you feel friction.** If the root is getting hard to
-  scan, that is the signal to group. Two levels of hierarchy is almost always
-  enough.
-- **Keep files current.** When information changes, update the file — don't
-  create a new one alongside the old one. Stale files erode trust.
-- **Offer to tidy up.** If the structure looks messy or redundant, say so and
-  suggest a reorganisation. Always ask before moving or renaming files.
+One `.md` file per person, project, or topic. Paths use `parent/key` notation
+(flat by default, subdirectories when justified). The AI owns the structure.
 
 ### Built-in memory tools (core-level, not plugins)
 
@@ -229,7 +197,7 @@ User can rename at any time.
 
 ---
 
-## Key invariants (from zeroclaw — carry forward)
+## Key invariants
 
 - Tool-use/result pairs are always dropped atomically. A tool result without
   its call causes a provider 400 error.

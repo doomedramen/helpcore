@@ -89,7 +89,7 @@ curl -L https://github.com/doomedramen/helpcore/releases/latest/download/helpcor
   -o helpcore-server && chmod +x helpcore-server
 
 # From source (requires Rust + cross for Linux target on macOS)
-cross build --release --target x86_64-unknown-linux-gnu -p helpcore-server
+cross build --release --target x86_64-unknown-linux-musl -p helpcore-server
 
 # Run
 ./helpcore-server
@@ -132,7 +132,7 @@ On first start with an empty database the server prints to stdout:
 ║  helpcore — setup required                               ║
 ║                                                          ║
 ║  Web:  http://localhost:3000/setup?token=<token>         ║
-║  CLI:  helpcore setup --server http://localhost:3000     ║
+║  CLI:  hc setup --server http://localhost:3000     ║
 ║                                                          ║
 ║  Token expires in 15 minutes.                            ║
 ╚══════════════════════════════════════════════════════════╝
@@ -158,14 +158,6 @@ Edit `config.toml` to add AI providers, then restart the server.
 Provider credentials live in this file only — they never touch the database.
 
 ```toml
-[[providers]]
-id            = "anthropic-main"
-name          = "Anthropic Claude"
-type          = "anthropic"
-roles         = ["chat", "code"]
-api_key       = "sk-ant-..."
-default_model = "claude-sonnet-4-6"
-
 [[providers]]
 id            = "local-ollama"
 name          = "Local Ollama"
@@ -199,27 +191,24 @@ Provider changes always require a restart. Hot-reload is deferred.
 Install the `helpcore` CLI binary on your local machine:
 
 ```bash
-# macOS (native)
-curl -L https://github.com/doomedramen/helpcore/releases/latest/download/helpcore-macos-arm64 \
-  -o /usr/local/bin/helpcore && chmod +x /usr/local/bin/helpcore
-
-# Alias
-echo 'alias hc=helpcore' >> ~/.zshrc
+# macOS (native) — binary is named `hc`
+curl -L https://github.com/doomedramen/helpcore/releases/latest/download/hc-aarch64-apple-darwin \
+  -o /usr/local/bin/hc && chmod +x /usr/local/bin/hc
 ```
 
 Log in:
 
 ```bash
-helpcore login --server https://your-server.com
+hc login --server https://your-server.com
 # Email: martin@example.com
 # Password: ···············
 # ✓ Logged in. Credentials saved to ~/.helpcore/credentials
 ```
 
-Open the TUI:
+Send a message:
 
 ```bash
-helpcore   # or: hc
+hc ask "hello"
 ```
 
 ### Web
@@ -228,19 +217,8 @@ Visit `https://your-server.com` in a browser and log in with email + password.
 
 ### Adding more users
 
-As admin, create an account for each additional user:
-
-```bash
-helpcore users create --email wife@example.com
-# Temporary password: printed to terminal
-# User must change it on first login
-```
-
-Then grant them provider access via chat or CLI:
-
-```bash
-helpcore providers grant --user <user-id> --provider anthropic-main
-```
+User management is available through the web admin UI. CLI user and provider
+management commands are not yet implemented.
 
 ---
 
@@ -250,9 +228,9 @@ After the above stages are complete:
 
 - [ ] Admin account created
 - [ ] At least one provider configured and restarted
-- [ ] Admin granted access to provider(s): `helpcore providers grant ...`
+- [ ] Admin granted access to provider(s) via web UI
 - [ ] CLI connected and `helpcore` opens TUI successfully
 - [ ] Web UI accessible at server URL
 - [ ] Other users created and granted provider access
 - [ ] Soul / personality files reviewed (`helpcore ask "show me my SOUL.md"`)
-- [ ] First plugin installed (`helpcore ask "what plugins are available?"`)
+- [ ] First plugin installed via web UI or `hc ask "install the ... plugin"`

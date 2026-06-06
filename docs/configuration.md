@@ -1,13 +1,10 @@
 # Configuration reference
 
-helpcore is configured via `config.toml`. Create it from the example:
+helpcore is configured via `config.toml`. The server reads the path set by
+`HELPCORE_CONFIG`, falling back to `~/.helpcore/config.toml`.
 
-```bash
-cp config.toml.example config.toml
-```
-
-The server reads the path set by `HELPCORE_CONFIG`, falling back to
-`~/.helpcore/config.toml`.
+The Docker image ships a default config at `docker/default-config.toml` and
+copies it to the configured path on first start if no config file exists.
 
 > **Docker users:** see the note at the bottom about bind mounts.
 
@@ -129,8 +126,8 @@ num_ctx       = 4096
 | `type` | yes | Provider type: `ollama`, `anthropic`, `openai`, `openai_compatible` |
 | `default_model` | yes | Model used when the client doesn't specify one |
 | `roles` | yes | List of roles this provider serves; at least one must be `"chat"` |
-| `num_ctx` | no | Context window size in tokens (default: 8192). Set to match the model's actual window. |
-| `num_predict` | no | Max tokens to generate per response (default: 2048) |
+| `num_ctx` | no | Context window size in tokens (Ollama default: 8192). Set to match the model's actual window. |
+| `num_predict` | no | Max tokens to generate per response (Ollama default: 2048) |
 
 ### Ollama
 
@@ -158,45 +155,8 @@ num_ctx       = 4096
 | helpcore in Docker, Ollama on Docker Desktop host | `http://host.docker.internal:11434` |
 | helpcore in Docker, Ollama on a separate server | `http://192.168.1.x:11434` |
 
-### Anthropic
-
-```toml
-[[providers]]
-id            = "anthropic"
-name          = "Anthropic Claude"
-type          = "anthropic"
-api_key       = "sk-ant-..."
-default_model = "claude-opus-4-5"
-roles         = ["chat"]
-```
-
-| Key | Description |
-|---|---|
-| `api_key` | Anthropic API key |
-
-### OpenAI
-
-```toml
-[[providers]]
-id            = "openai"
-name          = "OpenAI"
-type          = "openai"
-api_key       = "sk-..."
-default_model = "gpt-4o"
-roles         = ["chat"]
-```
-
-### OpenAI-compatible (LM Studio, vLLM, etc.)
-
-```toml
-[[providers]]
-id            = "lm-studio"
-name          = "LM Studio"
-type          = "openai_compatible"
-url           = "http://localhost:1234/v1"
-default_model = "local-model"
-roles         = ["chat"]
-```
+> Currently only `ollama` is implemented. `anthropic`, `openai`, and
+> `openai_compatible` are declared in config but not yet supported.
 
 ---
 
@@ -235,15 +195,15 @@ Rough RAM requirements for the model itself (helpcore + OS overhead is ~200 MB a
 
 ## Environment variables
 
-Any config value can be overridden with environment variables using the pattern `HELPCORE_<SECTION>_<KEY>` (uppercase, underscores). Examples:
+The Docker image sets `HELPCORE_DATA=/data` automatically.
+
+Selected config values are overridable via environment variables:
 
 | Env var | config.toml equivalent |
 |---|---|
 | `HELPCORE_DATA=/data` | `[data] dir = "/data"` |
-| `HELPCORE_SERVER_PORT=3000` | `[server] port = 3000` |
-| `HELPCORE_LOGGING_LEVEL=debug` | `[logging] level = "debug"` |
 
-The Docker image sets `HELPCORE_DATA=/data` automatically.
+The server can also be pointed at a different config file with `HELPCORE_CONFIG`.
 
 ---
 
