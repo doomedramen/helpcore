@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 pub const DEFAULT_REGISTRY_URL: &str =
-    "https://raw.githubusercontent.com/doomedramen/helpcore-plugins/main/registry/plugins.json";
+    "https://github.com/doomedramen/helpcore-plugins/releases/download/plugins-latest/plugins.json";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -218,7 +218,9 @@ impl Config {
     fn migrate(&mut self, path: &Path) {
         const OLD_REGISTRY_URL: &str =
             "https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json";
-        if self.registry.url == OLD_REGISTRY_URL {
+        const STALE_REGISTRY_URL: &str =
+            "https://raw.githubusercontent.com/doomedramen/helpcore-plugins/main/registry/plugins.json";
+        if self.registry.url == OLD_REGISTRY_URL || self.registry.url == STALE_REGISTRY_URL {
             self.registry.url = DEFAULT_REGISTRY_URL.to_string();
             let _ = self.save(path);
         }

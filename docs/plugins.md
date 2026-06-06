@@ -136,7 +136,7 @@ url  = "https://helpcore.example.com"
 blacklist = ["untrusted-plugin-id"]  # plugins that cannot be installed on this server
 
 [registry]
-url = "https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json"
+url = "https://github.com/doomedramen/helpcore-plugins/releases/download/plugins-latest/plugins.json"
 ```
 
 The blacklist is enforced before any install attempt. Blacklisted plugins are
@@ -150,9 +150,10 @@ when setup completes.
 
 ## Store registry
 
-Lives in `registry/` in this monorepo. It consists of:
-
-- `plugins.json` — the curated list of available plugins
+Published as a release asset from the
+[helpcore-plugins](https://github.com/doomedramen/helpcore-plugins) repository.
+`plugins.json` is auto-generated from plugin manifests and uploaded to the
+`plugins-latest` release alongside the package archives.
 
 The core fetches the configured registry URL directly. Operators can point it
 at another compatible JSON file to run a private catalog.

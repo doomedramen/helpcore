@@ -33,7 +33,7 @@ blacklist = []
 
 [registry]
 # Direct URL to a plugin registry JSON file. This can be self-hosted.
-url = "https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json"
+url = "https://github.com/doomedramen/helpcore-plugins/releases/download/plugins-latest/plugins.json"
 
 # ── Providers ──────────────────────────────────────────────────────────────────
 # At least one provider with role "chat" is required for /chat to work.
