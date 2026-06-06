@@ -559,6 +559,12 @@ pub async fn set_enabled(
     let manifest: Manifest = serde_json::from_str(&manifest_raw)?;
     let plugin_config: serde_json::Value = serde_json::from_str(&config_raw)?;
 
+    if request.enabled && !registry::is_configured(&manifest.config_schema, &manifest.tier, &plugin_config) {
+        return Err(AppError::Conflict(
+            "complete configuration before enabling this plugin".into(),
+        ));
+    }
+
     if request.enabled && manifest.tier == "bridge" {
         let endpoint = registry::bridge_endpoint(&manifest.config_schema, &plugin_config)
             .ok_or_else(|| {
