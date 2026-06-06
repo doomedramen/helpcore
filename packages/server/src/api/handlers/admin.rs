@@ -1,4 +1,4 @@
-use axum::{extract::State, Json};
+use axum::{Json, extract::State};
 use helpcore_api::{
     AdminConfigResponse, AdminConfigUpdateRequest, AdminProviderConfig, AdminServerConfig,
 };
@@ -73,7 +73,9 @@ pub async fn update_config(
         } else if let Some(key) = provider.api_key.filter(|key| !key.trim().is_empty()) {
             Some(key.trim().to_string())
         } else {
-            existing.get(id.as_str()).and_then(|item| item.api_key.clone())
+            existing
+                .get(id.as_str())
+                .and_then(|item| item.api_key.clone())
         };
 
         let url = provider
@@ -146,10 +148,7 @@ async fn load_persisted_config(state: &AppState) -> Result<Config, AppError> {
     .map_err(AppError::Internal)
 }
 
-fn config_response(
-    state: &AppState,
-    config: &Config,
-) -> AdminConfigResponse {
+fn config_response(state: &AppState, config: &Config) -> AdminConfigResponse {
     let writability = Config::writability(&state.config_path);
     AdminConfigResponse {
         config_path: state.config_path.display().to_string(),

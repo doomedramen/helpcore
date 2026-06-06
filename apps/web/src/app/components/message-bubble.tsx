@@ -1,26 +1,26 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import ReactMarkdown from 'react-markdown';
-import remarkGfm from 'remark-gfm';
-import rehypeHighlight from 'rehype-highlight';
-import { ChevronDown, ChevronRight, Volume2, VolumeX } from 'lucide-react';
-import { tts } from '@/lib/api';
-import type { Message } from '@/lib/types';
+import { useCallback, useEffect, useRef, useState } from "react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeHighlight from "rehype-highlight";
+import { ChevronDown, ChevronRight, Volume2, VolumeX } from "lucide-react";
+import { tts } from "@/lib/api";
+import type { Message } from "@/lib/types";
 
-import 'highlight.js/styles/github.css';
+import "highlight.js/styles/github.css";
 
 function stripMarkdown(text: string): string {
   return text
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .replace(/[*_~]{1,2}([^*_~]+)[*_~]{1,2}/g, '$1')
-    .replace(/^#{1,6}\s+/gm, '')
-    .replace(/^>+\s+/gm, '')
-    .replace(/^\s*[-*+]\s+/gm, '')
-    .replace(/^\s*\d+\.\s+/gm, '')
-    .replace(/\n{3,}/g, '\n\n')
+    .replace(/```[\s\S]*?```/g, "")
+    .replace(/`([^`]+)`/g, "$1")
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")
+    .replace(/[*_~]{1,2}([^*_~]+)[*_~]{1,2}/g, "$1")
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/^>+\s+/gm, "")
+    .replace(/^\s*[-*+]\s+/gm, "")
+    .replace(/^\s*\d+\.\s+/gm, "")
+    .replace(/\n{3,}/g, "\n\n")
     .trim();
 }
 
@@ -36,7 +36,11 @@ function ToolMessage({ message }: { message: Message }) {
   const [expanded, setExpanded] = useState(false);
   const pretty = prettyJson(message.content);
   const isError = (() => {
-    try { return (JSON.parse(message.content) as { ok?: boolean }).ok === false; } catch { return false; }
+    try {
+      return (JSON.parse(message.content) as { ok?: boolean }).ok === false;
+    } catch {
+      return false;
+    }
   })();
 
   return (
@@ -44,12 +48,14 @@ function ToolMessage({ message }: { message: Message }) {
       <div className="max-w-[85%] rounded-xl border border-slate-200 bg-slate-50 text-xs dark:border-slate-700 dark:bg-slate-900/50">
         <button
           type="button"
-          onClick={() => setExpanded(v => !v)}
+          onClick={() => setExpanded((v) => !v)}
           className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
         >
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span className={`font-mono font-medium ${isError ? 'text-red-500 dark:text-red-400' : 'text-slate-500 dark:text-slate-400'}`}>
-            {isError ? 'tool error' : 'tool result'}
+          <span
+            className={`font-mono font-medium ${isError ? "text-red-500 dark:text-red-400" : "text-slate-500 dark:text-slate-400"}`}
+          >
+            {isError ? "tool error" : "tool result"}
           </span>
           {message.tool_call_id && (
             <span className="ml-1 truncate text-slate-400 dark:text-slate-500">
@@ -75,25 +81,14 @@ interface Props {
   hasAudio?: boolean;
 }
 
-export default function MessageBubble({ message, onRetry, retrying = false, accessToken, hasAudio = false }: Props) {
-  const isUser = message.role === 'user';
-
-  if (message.role === 'tool') {
-    return <ToolMessage message={message} />;
-  }
-
-  if (isUser) {
-    return (
-      <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-blue-600 px-4 py-2.5 text-sm text-white shadow-sm">
-          <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
-        </div>
-      </div>
-    );
-  }
-
-  const active = message.status === 'pending' || message.status === 'streaming';
-  const retryable = message.status === 'failed' || message.status === 'interrupted';
+export default function MessageBubble({
+  message,
+  onRetry,
+  retrying = false,
+  accessToken,
+  hasAudio = false,
+}: Props) {
+  const isUser = message.role === "user";
 
   const [playing, setPlaying] = useState(false);
   const [playError, setPlayError] = useState(false);
@@ -156,7 +151,24 @@ export default function MessageBubble({ message, onRetry, retrying = false, acce
     };
   }, []);
 
-  const canSpeak = hasAudio && message.status === 'complete' && !!message.content;
+  if (message.role === "tool") {
+    return <ToolMessage message={message} />;
+  }
+
+  if (isUser) {
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-blue-600 px-4 py-2.5 text-sm text-white shadow-sm">
+          <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
+        </div>
+      </div>
+    );
+  }
+
+  const active = message.status === "pending" || message.status === "streaming";
+  const retryable = message.status === "failed" || message.status === "interrupted";
+
+  const canSpeak = hasAudio && message.status === "complete" && !!message.content;
 
   if (!isUser && !active && !retryable && !message.content) return null;
 
@@ -171,10 +183,7 @@ export default function MessageBubble({ message, onRetry, retrying = false, acce
           </span>
         ) : (
           <div className="prose prose-sm max-w-none">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[rehypeHighlight]}
-            >
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
               {message.content}
             </ReactMarkdown>
           </div>
@@ -185,7 +194,7 @@ export default function MessageBubble({ message, onRetry, retrying = false, acce
         {retryable && (
           <div className="mt-3 border-t border-slate-200 pt-3 dark:border-slate-700">
             <p className="text-xs text-red-600 dark:text-red-400">
-              {message.error || 'This response did not finish.'}
+              {message.error || "This response did not finish."}
             </p>
             {onRetry && (
               <button
@@ -194,7 +203,7 @@ export default function MessageBubble({ message, onRetry, retrying = false, acce
                 disabled={retrying}
                 className="mt-2 rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 transition-colors hover:bg-slate-50 disabled:cursor-wait disabled:opacity-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
               >
-                {retrying ? 'Retrying…' : 'Retry response'}
+                {retrying ? "Retrying…" : "Retry response"}
               </button>
             )}
           </div>
@@ -206,12 +215,12 @@ export default function MessageBubble({ message, onRetry, retrying = false, acce
               onClick={handleSpeak}
               className={`rounded-lg p-1.5 transition-colors ${
                 playError
-                  ? 'text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30'
+                  ? "text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30"
                   : playing
-                    ? 'text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30'
-                    : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300'
+                    ? "text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/30"
+                    : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:hover:bg-slate-800 dark:hover:text-slate-300"
               }`}
-              aria-label={playing ? 'Stop' : 'Read aloud'}
+              aria-label={playing ? "Stop" : "Read aloud"}
             >
               {playing ? <VolumeX size={14} /> : <Volume2 size={14} />}
             </button>

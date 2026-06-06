@@ -1,6 +1,6 @@
 [advisories]
 ignore = []
+informational_warnings = ["unmaintained"]
 
-[deny]
-unmaintained = "warn"
-yanked       = "deny"
+[yanked]
+enabled = true

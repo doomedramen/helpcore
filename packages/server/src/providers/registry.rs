@@ -27,9 +27,7 @@ pub struct ProviderRegistry {
 }
 
 impl ProviderRegistry {
-    pub fn from_providers(
-        providers: Vec<(Arc<dyn ChatProvider>, Vec<ProviderRole>)>,
-    ) -> Self {
+    pub fn from_providers(providers: Vec<(Arc<dyn ChatProvider>, Vec<ProviderRole>)>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(
                 providers
@@ -127,8 +125,16 @@ mod tests {
             .unwrap(),
         );
 
-        assert!(registry.find_for_role(Some("chat"), ProviderRole::Chat).is_some());
-        assert!(registry.find_for_role(Some("code"), ProviderRole::Chat).is_none());
+        assert!(
+            registry
+                .find_for_role(Some("chat"), ProviderRole::Chat)
+                .is_some()
+        );
+        assert!(
+            registry
+                .find_for_role(Some("code"), ProviderRole::Chat)
+                .is_none()
+        );
         assert_eq!(registry.list_for_role(ProviderRole::Chat)[0].id, "chat");
 
         let in_flight = registry
@@ -138,7 +144,15 @@ mod tests {
             ProviderRegistry::prepare(&[config("new", vec![ProviderRole::Chat])]).unwrap(),
         );
         assert_eq!(in_flight.id(), "chat");
-        assert!(registry.find_for_role(Some("chat"), ProviderRole::Chat).is_none());
-        assert!(registry.find_for_role(Some("new"), ProviderRole::Chat).is_some());
+        assert!(
+            registry
+                .find_for_role(Some("chat"), ProviderRole::Chat)
+                .is_none()
+        );
+        assert!(
+            registry
+                .find_for_role(Some("new"), ProviderRole::Chat)
+                .is_some()
+        );
     }
 }

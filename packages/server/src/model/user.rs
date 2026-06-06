@@ -83,7 +83,9 @@ fn row_to_user(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
             _ => UserStatus::Deleted,
         },
         force_password_change: row.get::<_, i64>(6)? != 0,
-        timezone: row.get::<_, Option<String>>(7)?.unwrap_or_else(|| "UTC".into()),
+        timezone: row
+            .get::<_, Option<String>>(7)?
+            .unwrap_or_else(|| "UTC".into()),
     })
 }
 
@@ -270,7 +272,10 @@ mod tests {
             let changed = set_status(conn, &id, UserStatus::Deactivated)?;
             assert!(changed);
             let user = find_by_id(conn, &id)?;
-            assert!(user.is_none(), "deactivated user must not be found by find_by_id");
+            assert!(
+                user.is_none(),
+                "deactivated user must not be found by find_by_id"
+            );
             Ok(())
         })
         .unwrap();

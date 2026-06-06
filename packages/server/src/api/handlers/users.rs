@@ -1,4 +1,8 @@
-use axum::{Json, extract::{Path, State}, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use std::sync::Arc;
 
 use helpcore_api::{
@@ -20,16 +24,16 @@ pub async fn list_users(
 ) -> Result<Json<AdminListUsersResponse>, AppError> {
     let users = state
         .db
-        .call(|conn| crate::model::user::list_users(conn))
+        .call(crate::model::user::list_users)
         .await?
         .into_iter()
         .map(|u| AdminUserSummary {
-            id:           u.id,
-            email:        u.email,
+            id: u.id,
+            email: u.email,
             display_name: u.display_name,
-            role:         u.role.as_str().to_string(),
-            status:       u.status.as_str().to_string(),
-            created_at:   u.created_at,
+            role: u.role.as_str().to_string(),
+            status: u.status.as_str().to_string(),
+            created_at: u.created_at,
         })
         .collect();
 
@@ -46,7 +50,9 @@ pub async fn create_user(
         return Err(AppError::BadRequest("email is required".into()));
     }
     if req.password.len() < 8 {
-        return Err(AppError::BadRequest("password must be at least 8 characters".into()));
+        return Err(AppError::BadRequest(
+            "password must be at least 8 characters".into(),
+        ));
     }
 
     let email_check = email.clone();
@@ -140,7 +146,9 @@ pub async fn update_user(
 
     // Prevent an admin from deactivating themselves
     if user_id == admin.0.id && matches!(new_status, UserStatus::Deactivated) {
-        return Err(AppError::BadRequest("cannot deactivate your own account".into()));
+        return Err(AppError::BadRequest(
+            "cannot deactivate your own account".into(),
+        ));
     }
 
     let uid = user_id.clone();
@@ -159,13 +167,7 @@ pub async fn update_user(
     state
         .db
         .call(move |conn| {
-            crate::db::audit::log_event(
-                conn,
-                &event,
-                Some(&actor_id),
-                Some(&user_id),
-                payload,
-            )
+            crate::db::audit::log_event(conn, &event, Some(&actor_id), Some(&user_id), payload)
         })
         .await?;
 
@@ -179,7 +181,9 @@ pub async fn reset_password(
     Json(req): Json<AdminResetPasswordRequest>,
 ) -> Result<StatusCode, AppError> {
     if req.password.len() < 8 {
-        return Err(AppError::BadRequest("password must be at least 8 characters".into()));
+        return Err(AppError::BadRequest(
+            "password must be at least 8 characters".into(),
+        ));
     }
 
     let hash = crate::auth::password::hash_password(&req.password)?;
@@ -244,7 +248,10 @@ pub async fn list_provider_grants(
         })
         .collect();
 
-    Ok(Json(ListProviderGrantsResponse { grants, ungrated_providers }))
+    Ok(Json(ListProviderGrantsResponse {
+        grants,
+        ungrated_providers,
+    }))
 }
 
 pub async fn set_provider_grants(

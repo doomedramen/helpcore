@@ -13,7 +13,10 @@ pub async fn list(server_flag: Option<&str>) -> anyhow::Result<()> {
     }
     for p in &plugins {
         let state = if p.enabled { "enabled" } else { "disabled" };
-        println!("{:<24} v{}  [{}]  {}", p.id, p.active_version, p.tier, state);
+        println!(
+            "{:<24} v{}  [{}]  {}",
+            p.id, p.active_version, p.tier, state
+        );
     }
     Ok(())
 }
@@ -28,7 +31,9 @@ pub async fn token(
     let tok = require_token(&creds)?;
     let client = Client::new(&server);
 
-    let resp = client.create_plugin_token(tok, plugin_id, permissions).await?;
+    let resp = client
+        .create_plugin_token(tok, plugin_id, permissions)
+        .await?;
 
     println!("{}", resp.token);
     eprintln!("token id: {}", resp.token_id);

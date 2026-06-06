@@ -60,16 +60,21 @@ pub async fn tts_handler(
         .get("tts_url")
         .and_then(|v| v.as_str())
         .map(|s| s.trim_end_matches('/').to_string())
-        .ok_or_else(|| AppError::BadRequest(
-            "TTS URL is not configured. Configure the Voice plugin's TTS URL first.".into()
-        ))?;
+        .ok_or_else(|| {
+            AppError::BadRequest(
+                "TTS URL is not configured. Configure the Voice plugin's TTS URL first.".into(),
+            )
+        })?;
 
-    let tts_api_key = secrets_encrypted
-        .and_then(|encrypted| {
-            secrets::decrypt(&state.data_dir, &auth_user.id, "voice", &encrypted)
-                .ok()
-                .and_then(|v| v.get("tts_api_key").and_then(|v| v.as_str()).map(String::from))
-        });
+    let tts_api_key = secrets_encrypted.and_then(|encrypted| {
+        secrets::decrypt(&state.data_dir, &auth_user.id, "voice", &encrypted)
+            .ok()
+            .and_then(|v| {
+                v.get("tts_api_key")
+                    .and_then(|v| v.as_str())
+                    .map(String::from)
+            })
+    });
 
     let model = config
         .get("tts_model")
@@ -123,10 +128,7 @@ pub async fn tts_handler(
         .map_err(|e| AppError::Upstream(format!("Failed to read TTS response: {e}")))?;
 
     let mut headers = HeaderMap::new();
-    headers.insert(
-        reqwest::header::CONTENT_TYPE,
-        content_type.parse().unwrap(),
-    );
+    headers.insert(reqwest::header::CONTENT_TYPE, content_type.parse().unwrap());
 
     Ok((StatusCode::OK, headers, audio_bytes.to_vec()))
 }

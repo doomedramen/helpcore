@@ -98,7 +98,10 @@ pub async fn list_plugins(
         })
         .collect();
 
-    Ok(Json(PluginListResponse { plugins, capabilities }))
+    Ok(Json(PluginListResponse {
+        plugins,
+        capabilities,
+    }))
 }
 
 pub async fn list_store(
@@ -428,7 +431,8 @@ pub async fn configure_plugin(
             ) {
                 Ok((manifest_raw, config_raw, secrets)) => {
                     let manifest: Manifest = serde_json::from_str(&manifest_raw)?;
-                    let config: serde_json::Value = serde_json::from_str(&config_raw).unwrap_or_default();
+                    let config: serde_json::Value =
+                        serde_json::from_str(&config_raw).unwrap_or_default();
                     Ok(Some((manifest, config, secrets)))
                 }
                 Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -579,7 +583,9 @@ pub async fn set_enabled(
     let manifest: Manifest = serde_json::from_str(&manifest_raw)?;
     let plugin_config: serde_json::Value = serde_json::from_str(&config_raw)?;
 
-    if request.enabled && !registry::is_configured(&manifest.config_schema, &manifest.tier, &plugin_config) {
+    if request.enabled
+        && !registry::is_configured(&manifest.config_schema, &manifest.tier, &plugin_config)
+    {
         return Err(AppError::Conflict(
             "complete configuration before enabling this plugin".into(),
         ));

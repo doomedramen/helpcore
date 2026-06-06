@@ -1,0 +1,27 @@
+pre-commit:
+  parallel: true
+  commands:
+    fmt-rust:
+      glob: "*.rs"
+      run: cargo fmt -- --check
+    lint-web:
+      glob: "apps/web/**/*.{ts,tsx}"
+      run: npm run lint
+      root: apps/web
+    format-web:
+      glob: "apps/web/**/*.{ts,tsx}"
+      run: npm run format:check
+      root: apps/web
+
+pre-push:
+  parallel: true
+  commands:
+    clippy:
+      run: cargo clippy --all-targets --all-features -- -D warnings
+    test:
+      run: cargo test --workspace
+    audit:
+      run: cargo audit
+    tsc:
+      run: npx tsc --noEmit
+      root: apps/web

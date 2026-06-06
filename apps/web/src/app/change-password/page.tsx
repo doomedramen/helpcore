@@ -1,35 +1,41 @@
-'use client';
+"use client";
 
-import { FormEvent, useEffect, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import { useAuth } from '@/context/auth';
-import { changePassword } from '@/lib/api';
+import { FormEvent, useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/auth";
+import { changePassword } from "@/lib/api";
 
 export default function ChangePasswordPage() {
   const { accessToken, isLoading, clearForcePasswordChange } = useAuth();
   const router = useRouter();
-  const [current, setCurrent] = useState('');
-  const [next, setNext] = useState('');
-  const [confirm, setConfirm] = useState('');
-  const [error, setError] = useState('');
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    if (!isLoading && !accessToken) router.replace('/login/');
+    if (!isLoading && !accessToken) router.replace("/login/");
   }, [accessToken, isLoading, router]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
-    if (next !== confirm) { setError('Passwords do not match.'); return; }
-    if (next.length < 8) { setError('New password must be at least 8 characters.'); return; }
-    setError('');
+    if (next !== confirm) {
+      setError("Passwords do not match.");
+      return;
+    }
+    if (next.length < 8) {
+      setError("New password must be at least 8 characters.");
+      return;
+    }
+    setError("");
     setSaving(true);
     try {
       await changePassword({ current_password: current, new_password: next }, accessToken!);
       clearForcePasswordChange();
-      router.replace('/chat/');
+      router.replace("/chat/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Could not change password.');
+      setError(err instanceof Error ? err.message : "Could not change password.");
     } finally {
       setSaving(false);
     }
@@ -65,7 +71,7 @@ export default function ChangePasswordPage() {
               type="password"
               required
               value={current}
-              onChange={e => setCurrent(e.target.value)}
+              onChange={(e) => setCurrent(e.target.value)}
               autoComplete="current-password"
               className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
@@ -79,7 +85,7 @@ export default function ChangePasswordPage() {
               type="password"
               required
               value={next}
-              onChange={e => setNext(e.target.value)}
+              onChange={(e) => setNext(e.target.value)}
               autoComplete="new-password"
               className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
@@ -93,7 +99,7 @@ export default function ChangePasswordPage() {
               type="password"
               required
               value={confirm}
-              onChange={e => setConfirm(e.target.value)}
+              onChange={(e) => setConfirm(e.target.value)}
               autoComplete="new-password"
               className="block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100"
             />
@@ -104,7 +110,7 @@ export default function ChangePasswordPage() {
             disabled={saving}
             className="w-full rounded-lg bg-blue-600 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            {saving ? 'Saving…' : 'Set new password'}
+            {saving ? "Saving…" : "Set new password"}
           </button>
         </form>
       </div>

@@ -10,8 +10,8 @@ use futures_util::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use helpcore_api::{
-    ChatRequest, ConversationSummary, MessageSummary, SseChunk, SseDone, SseStarted,
-    SseToolCall, SseToolResult,
+    ChatRequest, ConversationSummary, MessageSummary, SseChunk, SseDone, SseStarted, SseToolCall,
+    SseToolResult,
 };
 
 use helpcore_api::CompactResponse;
@@ -21,8 +21,8 @@ use crate::{
     config::ProviderRole,
     conversation::{compact, context, context::ContextOptions, history, memory},
     plugins::{registry, runtime::ToolCatalog},
-    providers::types::{ChatMessage, ToolCall},
     providers::traits::ChatProvider,
+    providers::types::{ChatMessage, ToolCall},
     state::AppState,
 };
 
@@ -307,7 +307,9 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
             let _ = job.tx.send(Ok(call_event)).await;
             let result = match tool_catalog.execute(&job.state, &job.user_id, call).await {
                 Ok(result) => serde_json::json!({"ok": true, "result": result}).to_string(),
-                Err(error) => serde_json::json!({"ok": false, "error": error.to_string()}).to_string(),
+                Err(error) => {
+                    serde_json::json!({"ok": false, "error": error.to_string()}).to_string()
+                }
             };
             let result_event = Event::default()
                 .event("tool_result")
@@ -327,12 +329,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         job.state
             .db
             .call(move |conn| {
-                history::persist_tool_round(
-                    conn,
-                    &message_id,
-                    &persisted_calls,
-                    &persisted_results,
-                )
+                history::persist_tool_round(conn, &message_id, &persisted_calls, &persisted_results)
             })
             .await?;
         messages.push(ChatMessage::assistant_with_tools(
@@ -421,9 +418,7 @@ async fn fail_job(job: &GenerationJob, message: String) -> anyhow::Result<()> {
     let persisted_error = message.clone();
     job.state
         .db
-        .call(move |conn| {
-            history::fail_assistant_message(conn, &message_id, &persisted_error)
-        })
+        .call(move |conn| history::fail_assistant_message(conn, &message_id, &persisted_error))
         .await?;
     let event = Event::default()
         .event("error")
@@ -471,8 +466,7 @@ pub async fn get_messages(
     let exists = state
         .db
         .call(move |conn| {
-            let c: Option<ConversationSummary> =
-                history::get_conversation(conn, &cid, &user_id)?;
+            let c: Option<ConversationSummary> = history::get_conversation(conn, &cid, &user_id)?;
             Ok(c.is_some())
         })
         .await?;
@@ -509,7 +503,11 @@ pub async fn delete_conversation(
         })
         .await?;
 
-    if deleted { Ok(StatusCode::NO_CONTENT) } else { Err(AppError::NotFound) }
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AppError::NotFound)
+    }
 }
 
 // ── POST /conversations/:id/cancel ───────────────────────────────────────────
@@ -526,8 +524,7 @@ pub async fn cancel_conversation(
     let exists = state
         .db
         .call(move |conn| {
-            let c: Option<ConversationSummary> =
-                history::get_conversation(conn, &cid, &user_id)?;
+            let c: Option<ConversationSummary> = history::get_conversation(conn, &cid, &user_id)?;
             Ok(c.is_some())
         })
         .await?;
@@ -564,11 +561,7 @@ pub async fn compact_conversation(
     let provider = conv
         .provider_id
         .as_deref()
-        .and_then(|pid| {
-            state
-                .providers
-                .find_for_role(Some(pid), ProviderRole::Chat)
-        })
+        .and_then(|pid| state.providers.find_for_role(Some(pid), ProviderRole::Chat))
         .or_else(|| state.providers.find_for_role(None, ProviderRole::Chat))
         .ok_or_else(|| AppError::BadRequest("no chat providers configured".into()))?;
 
@@ -580,8 +573,8 @@ pub async fn compact_conversation(
         })?;
 
     Ok(Json(CompactResponse {
-        conversation_id:   conv.id,
+        conversation_id: conv.id,
         messages_compacted: result.messages_compacted,
-        summary_length:     result.summary_length,
+        summary_length: result.summary_length,
     }))
 }

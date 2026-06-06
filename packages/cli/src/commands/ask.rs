@@ -64,7 +64,10 @@ pub async fn run(
 
     // Show conversation ID hint so the user can continue.
     if is_new_conversation {
-        eprintln!("\n→ conversation {} (use -c {} to continue)", done.conversation_id, done.conversation_id);
+        eprintln!(
+            "\n→ conversation {} (use -c {} to continue)",
+            done.conversation_id, done.conversation_id
+        );
     }
 
     Ok(())

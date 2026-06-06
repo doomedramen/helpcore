@@ -1,18 +1,18 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import PluginManager from '@/app/components/plugin-manager';
-import Sidebar from '@/app/components/sidebar';
-import SettingsNav from '@/app/components/settings-nav';
-import { useAuth } from '@/context/auth';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import PluginManager from "@/app/components/plugin-manager";
+import Sidebar from "@/app/components/sidebar";
+import SettingsNav from "@/app/components/settings-nav";
+import { useAuth } from "@/context/auth";
 
 export default function PluginsPage() {
   const { accessToken, isLoading } = useAuth();
   const router = useRouter();
 
   useEffect(() => {
-    if (!isLoading && !accessToken) router.replace('/login/');
+    if (!isLoading && !accessToken) router.replace("/login/");
   }, [accessToken, isLoading, router]);
 
   if (isLoading || !accessToken) {
@@ -27,7 +27,7 @@ export default function PluginsPage() {
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Sidebar
         conversationId={null}
-        onSelect={id => router.push(id ? `/chat/?id=${id}` : '/chat/')}
+        onSelect={(id) => router.push(id ? `/chat/?id=${id}` : "/chat/")}
       />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-6 py-8">

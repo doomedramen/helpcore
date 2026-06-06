@@ -31,10 +31,18 @@ impl ReliableProvider {
 
 #[async_trait]
 impl ChatProvider for ReliableProvider {
-    fn id(&self) -> &str { self.inner.id() }
-    fn name(&self) -> &str { self.inner.name() }
-    fn default_model(&self) -> &str { self.inner.default_model() }
-    fn context_limit(&self) -> u32 { self.inner.context_limit() }
+    fn id(&self) -> &str {
+        self.inner.id()
+    }
+    fn name(&self) -> &str {
+        self.inner.name()
+    }
+    fn default_model(&self) -> &str {
+        self.inner.default_model()
+    }
+    fn context_limit(&self) -> u32 {
+        self.inner.context_limit()
+    }
 
     async fn complete(
         &self,
@@ -98,16 +106,27 @@ mod tests {
 
     impl FlakyProvider {
         fn new(fail_count: u32) -> Arc<Self> {
-            Arc::new(Self { calls: AtomicU32::new(0), fail_count })
+            Arc::new(Self {
+                calls: AtomicU32::new(0),
+                fail_count,
+            })
         }
     }
 
     #[async_trait]
     impl ChatProvider for FlakyProvider {
-        fn id(&self) -> &str { "flaky" }
-        fn name(&self) -> &str { "Flaky" }
-        fn default_model(&self) -> &str { "test" }
-        fn context_limit(&self) -> u32 { 4096 }
+        fn id(&self) -> &str {
+            "flaky"
+        }
+        fn name(&self) -> &str {
+            "Flaky"
+        }
+        fn default_model(&self) -> &str {
+            "test"
+        }
+        fn context_limit(&self) -> u32 {
+            4096
+        }
 
         async fn complete(
             &self,
@@ -119,10 +138,7 @@ mod tests {
             if n < self.fail_count {
                 Err(ProviderError::Unavailable)
             } else {
-                let s = stream::iter(vec![
-                    Ok(StreamChunk::delta("ok")),
-                    Ok(StreamChunk::done()),
-                ]);
+                let s = stream::iter(vec![Ok(StreamChunk::delta("ok")), Ok(StreamChunk::done())]);
                 Ok(Box::pin(s))
             }
         }
@@ -132,24 +148,44 @@ mod tests {
 
     #[async_trait]
     impl ChatProvider for AlwaysFailProvider {
-        fn id(&self) -> &str { "fail" }
-        fn name(&self) -> &str { "Fail" }
-        fn default_model(&self) -> &str { "test" }
-        fn context_limit(&self) -> u32 { 4096 }
-        async fn complete(&self, _: &[ChatMessage], _: &[ToolDefinition], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
+        fn id(&self) -> &str {
+            "fail"
+        }
+        fn name(&self) -> &str {
+            "Fail"
+        }
+        fn default_model(&self) -> &str {
+            "test"
+        }
+        fn context_limit(&self) -> u32 {
+            4096
+        }
+        async fn complete(
+            &self,
+            _: &[ChatMessage],
+            _: &[ToolDefinition],
+            _: Option<&str>,
+        ) -> Result<ProviderStream, ProviderError> {
             Err(ProviderError::Unavailable)
         }
     }
 
     fn fast_reliable(inner: Arc<dyn ChatProvider>) -> ReliableProvider {
-        ReliableProvider { inner, max_retries: 3, initial_delay: Duration::from_millis(1) }
+        ReliableProvider {
+            inner,
+            max_retries: 3,
+            initial_delay: Duration::from_millis(1),
+        }
     }
 
     #[tokio::test]
     async fn succeeds_on_first_try() {
         let inner = FlakyProvider::new(0);
         let reliable = fast_reliable(inner.clone());
-        let mut stream = reliable.complete(&[ChatMessage::user("hi")], &[], None).await.unwrap();
+        let mut stream = reliable
+            .complete(&[ChatMessage::user("hi")], &[], None)
+            .await
+            .unwrap();
         let first = stream.next().await.unwrap().unwrap();
         assert_eq!(first.delta, "ok");
     }
@@ -158,7 +194,9 @@ mod tests {
     async fn retries_and_eventually_succeeds() {
         let inner = FlakyProvider::new(2); // fail twice, succeed on 3rd
         let reliable = fast_reliable(inner.clone());
-        let result = reliable.complete(&[ChatMessage::user("hi")], &[], None).await;
+        let result = reliable
+            .complete(&[ChatMessage::user("hi")], &[], None)
+            .await;
         assert!(result.is_ok(), "should succeed after retries");
         assert_eq!(inner.calls.load(Ordering::SeqCst), 3);
     }
@@ -167,7 +205,9 @@ mod tests {
     async fn exhausts_retries_and_returns_error() {
         let inner = Arc::new(AlwaysFailProvider);
         let reliable = fast_reliable(inner);
-        let result = reliable.complete(&[ChatMessage::user("hi")], &[], None).await;
+        let result = reliable
+            .complete(&[ChatMessage::user("hi")], &[], None)
+            .await;
         assert!(result.is_err());
     }
 
@@ -176,16 +216,31 @@ mod tests {
         struct AuthFail;
         #[async_trait]
         impl ChatProvider for AuthFail {
-            fn id(&self) -> &str { "authfail" }
-            fn name(&self) -> &str { "AuthFail" }
-            fn default_model(&self) -> &str { "test" }
-            fn context_limit(&self) -> u32 { 4096 }
-            async fn complete(&self, _: &[ChatMessage], _: &[ToolDefinition], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
+            fn id(&self) -> &str {
+                "authfail"
+            }
+            fn name(&self) -> &str {
+                "AuthFail"
+            }
+            fn default_model(&self) -> &str {
+                "test"
+            }
+            fn context_limit(&self) -> u32 {
+                4096
+            }
+            async fn complete(
+                &self,
+                _: &[ChatMessage],
+                _: &[ToolDefinition],
+                _: Option<&str>,
+            ) -> Result<ProviderStream, ProviderError> {
                 Err(ProviderError::AuthenticationFailed)
             }
         }
         let reliable = fast_reliable(Arc::new(AuthFail));
-        let result = reliable.complete(&[ChatMessage::user("hi")], &[], None).await;
+        let result = reliable
+            .complete(&[ChatMessage::user("hi")], &[], None)
+            .await;
         assert!(matches!(result, Err(ProviderError::AuthenticationFailed)));
     }
 }

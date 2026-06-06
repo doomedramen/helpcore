@@ -6,7 +6,10 @@ use helpcore_api::{
     RefreshRequest, RefreshResponse, UpdateMeRequest,
 };
 
-use crate::{api::{error::AppError, extractor::AuthUser}, state::AppState};
+use crate::{
+    api::{error::AppError, extractor::AuthUser},
+    state::AppState,
+};
 
 pub async fn current_user(
     State(state): State<Arc<AppState>>,
@@ -44,12 +47,7 @@ pub async fn update_me(
     state
         .db
         .call(move |conn| {
-            crate::model::user::update_me(
-                conn,
-                &user_id,
-                dn.as_deref(),
-                tz.as_deref(),
-            )
+            crate::model::user::update_me(conn, &user_id, dn.as_deref(), tz.as_deref())
         })
         .await?;
 
@@ -73,7 +71,9 @@ pub async fn change_password(
     }
 
     if req.new_password.len() < 8 {
-        return Err(AppError::BadRequest("new password must be at least 8 characters".into()));
+        return Err(AppError::BadRequest(
+            "new password must be at least 8 characters".into(),
+        ));
     }
 
     let new_hash = crate::auth::password::hash_password(&req.new_password)?;

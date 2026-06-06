@@ -33,7 +33,10 @@ pub fn get_conversation(
 
 /// Creates a new conversation with a placeholder title. The title is updated
 /// to the first user message when `insert_user_message` is called.
-pub fn create_conversation(conn: &Connection, user_id: &str) -> anyhow::Result<ConversationSummary> {
+pub fn create_conversation(
+    conn: &Connection,
+    user_id: &str,
+) -> anyhow::Result<ConversationSummary> {
     let id = Uuid::new_v4().to_string();
     let now = Utc::now().to_rfc3339();
     conn.execute(
@@ -60,7 +63,10 @@ pub fn get_or_create(
 }
 
 /// Loads all non-compacted messages for a conversation, ordered by sequence.
-pub fn load_messages(conn: &Connection, conversation_id: &str) -> anyhow::Result<Vec<MessageSummary>> {
+pub fn load_messages(
+    conn: &Connection,
+    conversation_id: &str,
+) -> anyhow::Result<Vec<MessageSummary>> {
     let mut stmt = conn.prepare(
         "SELECT id, role, content, tool_call_id, tool_calls, sequence, created_at,
                 status, error, COALESCE(updated_at, created_at)
@@ -122,7 +128,13 @@ pub fn retry_turn(
     user_id: &str,
     conversation_id: &str,
     assistant_message_id: &str,
-) -> anyhow::Result<(ConversationSummary, Vec<MessageSummary>, MessageSummary, String, String)> {
+) -> anyhow::Result<(
+    ConversationSummary,
+    Vec<MessageSummary>,
+    MessageSummary,
+    String,
+    String,
+)> {
     let tx = conn.unchecked_transaction()?;
     let conversation =
         get_conversation(&tx, conversation_id, user_id)?.context("conversation not found")?;
@@ -337,7 +349,15 @@ pub fn persist_tool_round(
              FROM messages
              WHERE id = ?1 AND role = 'assistant' AND status IN ('pending', 'streaming')",
             [assistant_message_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .context("assistant message is not active")?;
     let inserted_count = 1_i64 + results.len() as i64;
@@ -475,9 +495,9 @@ pub fn load_compactable_messages(
     let rows = stmt
         .query_map([conversation_id], |row| {
             Ok(CompactableMessage {
-                id:       row.get(0)?,
-                role:     row.get(1)?,
-                content:  row.get(2)?,
+                id: row.get(0)?,
+                role: row.get(1)?,
+                content: row.get(2)?,
                 sequence: row.get(3)?,
             })
         })?
@@ -488,10 +508,7 @@ pub fn load_compactable_messages(
 /// Marks a set of messages as compacted (soft-delete — rows are retained for export).
 pub fn mark_compacted(conn: &Connection, ids: &[String]) -> anyhow::Result<()> {
     for id in ids {
-        conn.execute(
-            "UPDATE messages SET compacted = 1 WHERE id = ?1",
-            [id],
-        )?;
+        conn.execute("UPDATE messages SET compacted = 1 WHERE id = ?1", [id])?;
     }
     Ok(())
 }
@@ -579,7 +596,11 @@ fn truncate_title(text: &str) -> String {
         return text.to_string();
     }
     // Find byte offset of the 60th character boundary.
-    let cut = text.char_indices().nth(60).map(|(i, _)| i).unwrap_or(text.len());
+    let cut = text
+        .char_indices()
+        .nth(60)
+        .map(|(i, _)| i)
+        .unwrap_or(text.len());
     let truncated = &text[..cut];
     match truncated.rfind(char::is_whitespace) {
         Some(pos) => format!("{}…", text[..pos].trim_end()),
@@ -646,7 +667,7 @@ mod tests {
             insert_user_message(conn, &conv.id, &long)?;
             let updated = list_conversations(conn, &uid)?;
             // 60 chars + "…" (1 char) = 61 chars
-        assert!(updated[0].title.chars().count() <= 62);
+            assert!(updated[0].title.chars().count() <= 62);
             Ok(())
         })
         .unwrap();
@@ -738,7 +759,9 @@ mod tests {
 
     #[test]
     fn truncate_title_at_word_boundary() {
-        let title = truncate_title("hello world this is a very long title that exceeds sixty characters in total");
+        let title = truncate_title(
+            "hello world this is a very long title that exceeds sixty characters in total",
+        );
         assert!(title.ends_with('…'));
         assert!(title.len() <= 62);
     }

@@ -74,7 +74,10 @@ pub fn assemble(
             .and_then(|id| tool_names.get(id))
             .cloned();
         let (role, content) = if msg.role == "summary" {
-            ("user".to_string(), format!("[Earlier conversation summary]\n{}", msg.content))
+            (
+                "user".to_string(),
+                format!("[Earlier conversation summary]\n{}", msg.content),
+            )
         } else {
             (msg.role.clone(), msg.content.clone())
         };
@@ -129,7 +132,9 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
         .timezone
         .and_then(|s| s.parse().ok())
         .unwrap_or(Tz::UTC);
-    let today = chrono::Utc::now().with_timezone(&tz).format("%A, %B %-d, %Y");
+    let today = chrono::Utc::now()
+        .with_timezone(&tz)
+        .format("%A, %B %-d, %Y");
     out.push_str(&format!("\n\n## Current date\n{today}"));
 
     out
@@ -166,10 +171,7 @@ mod tests {
 
     #[test]
     fn history_is_preserved_in_order() {
-        let history = vec![
-            msg("user", "first"),
-            msg("assistant", "reply"),
-        ];
+        let history = vec![msg("user", "first"), msg("assistant", "reply")];
         let messages = assemble(&history, "follow up", ContextOptions::default());
         assert_eq!(messages.len(), 4); // system + 2 history + user
         assert_eq!(messages[1].content, "first");
@@ -183,28 +185,41 @@ mod tests {
             &[],
             "hi",
             ContextOptions {
-                soul:         Some("Be direct."),
+                soul: Some("Be direct."),
                 user_profile: Some("I am Martin."),
                 ..Default::default()
             },
         );
         let system = &messages[0].content;
-        assert!(system.contains("## Soul\nBe direct."), "missing soul section");
-        assert!(system.contains("## User\nI am Martin."), "missing user section");
+        assert!(
+            system.contains("## Soul\nBe direct."),
+            "missing soul section"
+        );
+        assert!(
+            system.contains("## User\nI am Martin."),
+            "missing user section"
+        );
     }
 
     #[test]
     fn memories_are_injected_with_headers() {
-        let mems = vec![
-            MemoryResult { path: "rust.md".into(), content: "Rust is great.".into() },
-        ];
+        let mems = vec![MemoryResult {
+            path: "rust.md".into(),
+            content: "Rust is great.".into(),
+        }];
         let messages = assemble(
             &[],
             "hi",
-            ContextOptions { memories: &mems, ..Default::default() },
+            ContextOptions {
+                memories: &mems,
+                ..Default::default()
+            },
         );
         let system = &messages[0].content;
-        assert!(system.contains("## Current memories"), "missing memories section");
+        assert!(
+            system.contains("## Current memories"),
+            "missing memories section"
+        );
         assert!(system.contains("### rust.md"), "missing memory file header");
         assert!(system.contains("Rust is great."), "missing memory content");
     }
@@ -213,14 +228,24 @@ mod tests {
     fn summary_role_is_converted_to_user() {
         let history = vec![msg("summary", "We discussed Rust async.")];
         let messages = assemble(&history, "continue", ContextOptions::default());
-        let summary_msg = messages.iter().find(|m| m.content.contains("We discussed Rust async.")).unwrap();
+        let summary_msg = messages
+            .iter()
+            .find(|m| m.content.contains("We discussed Rust async."))
+            .unwrap();
         assert_eq!(summary_msg.role, "user");
-        assert!(summary_msg.content.starts_with("[Earlier conversation summary]"));
+        assert!(
+            summary_msg
+                .content
+                .starts_with("[Earlier conversation summary]")
+        );
     }
 
     #[test]
     fn current_date_is_always_present() {
         let messages = assemble(&[], "hi", ContextOptions::default());
-        assert!(messages[0].content.contains("## Current date"), "missing current date");
+        assert!(
+            messages[0].content.contains("## Current date"),
+            "missing current date"
+        );
     }
 }

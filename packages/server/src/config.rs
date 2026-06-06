@@ -44,7 +44,9 @@ pub struct LocalPluginConfig {
     pub enabled: bool,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServerConfig {
@@ -90,7 +92,9 @@ pub struct LoggingConfig {
 
 impl Default for LoggingConfig {
     fn default() -> Self {
-        Self { level: default_log_level() }
+        Self {
+            level: default_log_level(),
+        }
     }
 }
 
@@ -201,7 +205,9 @@ pub struct RegistryConfig {
 
 impl Default for RegistryConfig {
     fn default() -> Self {
-        Self { url: default_registry_url() }
+        Self {
+            url: default_registry_url(),
+        }
     }
 }
 
@@ -222,8 +228,7 @@ impl Config {
     fn migrate(&mut self, path: &Path) {
         const OLD_REGISTRY_URL: &str =
             "https://raw.githubusercontent.com/doomedramen/helpcore/main/registry/plugins.json";
-        const STALE_REGISTRY_URL: &str =
-            "https://raw.githubusercontent.com/doomedramen/helpcore-plugins/main/registry/plugins.json";
+        const STALE_REGISTRY_URL: &str = "https://raw.githubusercontent.com/doomedramen/helpcore-plugins/main/registry/plugins.json";
         if self.registry.url == OLD_REGISTRY_URL || self.registry.url == STALE_REGISTRY_URL {
             self.registry.url = DEFAULT_REGISTRY_URL.to_string();
             let _ = self.save(path);
@@ -233,7 +238,9 @@ impl Config {
     /// Migrate provider IDs from user-chosen strings to UUIDs.
     /// Returns a map of old_id → new_id for providers that were migrated.
     /// Updates config.toml in place.
-    pub fn migrate_provider_ids(path: &Path) -> anyhow::Result<std::collections::HashMap<String, String>> {
+    pub fn migrate_provider_ids(
+        path: &Path,
+    ) -> anyhow::Result<std::collections::HashMap<String, String>> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config from {}", path.display()))?;
         let mut cfg: Self = toml::from_str(&content)
@@ -278,7 +285,10 @@ impl Config {
         if self.server.port == 0 {
             anyhow::bail!("server port must be greater than zero");
         }
-        if !matches!(self.logging.level.as_str(), "trace" | "debug" | "info" | "warn" | "error") {
+        if !matches!(
+            self.logging.level.as_str(),
+            "trace" | "debug" | "info" | "warn" | "error"
+        ) {
             anyhow::bail!("logging level must be trace, debug, info, warn, or error");
         }
         if self.registry.url.trim().is_empty() {
@@ -303,7 +313,10 @@ impl Config {
                 anyhow::bail!("provider {} must have at least one role", provider.id);
             }
             if provider.num_ctx == Some(0) {
-                anyhow::bail!("provider {} context tokens must be greater than zero", provider.id);
+                anyhow::bail!(
+                    "provider {} context tokens must be greater than zero",
+                    provider.id
+                );
             }
             if provider.num_predict == Some(0) {
                 anyhow::bail!(
@@ -333,10 +346,7 @@ impl Config {
                 let parsed = reqwest::Url::parse(url)
                     .with_context(|| format!("provider {} base URL is invalid", provider.id))?;
                 if !matches!(parsed.scheme(), "http" | "https") {
-                    anyhow::bail!(
-                        "provider {} base URL must use http or https",
-                        provider.id
-                    );
+                    anyhow::bail!("provider {} base URL must use http or https", provider.id);
                 }
             }
         }
@@ -347,13 +357,17 @@ impl Config {
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         self.validate()?;
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("failed to create config directory {}", parent.display()))?;
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!("failed to create config directory {}", parent.display())
+            })?;
         }
 
         let content = toml::to_string_pretty(self).context("failed to serialise config")?;
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
-        let file_name = path.file_name().and_then(|name| name.to_str()).unwrap_or("config.toml");
+        let file_name = path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("config.toml");
         let temp_path = parent.join(format!(".{file_name}.tmp-{}", uuid::Uuid::new_v4()));
         let result = (|| {
             let mut temp = std::fs::OpenOptions::new()
@@ -386,7 +400,10 @@ impl Config {
 
     pub fn writability(path: &Path) -> Result<(), String> {
         if path.is_dir() {
-            return Err(format!("{} is a directory, not a config file", path.display()));
+            return Err(format!(
+                "{} is a directory, not a config file",
+                path.display()
+            ));
         }
         if path.exists() {
             if let Err(error) = std::fs::OpenOptions::new().write(true).open(path) {
@@ -395,10 +412,17 @@ impl Config {
         }
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         if !parent.exists() {
-            return Err(format!("config directory {} does not exist", parent.display()));
+            return Err(format!(
+                "config directory {} does not exist",
+                parent.display()
+            ));
         }
         let probe = parent.join(format!(".helpcore-write-test-{}", uuid::Uuid::new_v4()));
-        match std::fs::OpenOptions::new().create_new(true).write(true).open(&probe) {
+        match std::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&probe)
+        {
             Ok(file) => {
                 drop(file);
                 let _ = std::fs::remove_file(probe);
@@ -510,7 +534,10 @@ mod tests {
         .unwrap();
         assert_eq!(cfg.providers.len(), 2);
         assert_eq!(cfg.providers[1].provider_type, ProviderType::Ollama);
-        assert_eq!(cfg.providers[1].url.as_deref(), Some("http://localhost:11434"));
+        assert_eq!(
+            cfg.providers[1].url.as_deref(),
+            Some("http://localhost:11434")
+        );
     }
 
     #[test]

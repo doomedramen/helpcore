@@ -48,10 +48,7 @@ impl FromRequestParts<Arc<AppState>> for AdminUser {
     }
 }
 
-async fn try_bearer(
-    parts: &Parts,
-    state: &Arc<AppState>,
-) -> Result<Option<AuthUser>, AppError> {
+async fn try_bearer(parts: &Parts, state: &Arc<AppState>) -> Result<Option<AuthUser>, AppError> {
     let token = parts
         .headers
         .get(header::AUTHORIZATION)
@@ -77,13 +74,13 @@ async fn try_bearer(
         .map_err(AppError::Internal)?
         .ok_or(AppError::Unauthorized)?;
 
-    Ok(Some(AuthUser { id: user.id, role: user.role }))
+    Ok(Some(AuthUser {
+        id: user.id,
+        role: user.role,
+    }))
 }
 
-async fn try_api_key(
-    parts: &Parts,
-    state: &Arc<AppState>,
-) -> Result<Option<AuthUser>, AppError> {
+async fn try_api_key(parts: &Parts, state: &Arc<AppState>) -> Result<Option<AuthUser>, AppError> {
     let key = parts
         .headers
         .get("x-api-key")
@@ -108,5 +105,8 @@ async fn try_api_key(
         .map_err(AppError::Internal)?
         .ok_or(AppError::Unauthorized)?;
 
-    Ok(Some(AuthUser { id: user.id, role: user.role }))
+    Ok(Some(AuthUser {
+        id: user.id,
+        role: user.role,
+    }))
 }

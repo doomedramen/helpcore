@@ -120,17 +120,24 @@
 }
 
 @layer base {
-  *, *::before, *::after {
+  *,
+  *::before,
+  *::after {
     box-sizing: border-box;
   }
 
-  html, body {
+  html,
+  body {
     height: 100%;
   }
 
   body {
     @apply antialiased dark:bg-slate-950 dark:text-slate-100 bg-background text-foreground;
-    font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+    font-family:
+      ui-sans-serif,
+      system-ui,
+      -apple-system,
+      sans-serif;
   }
 
   /* Code block styles (used by rehype-highlight) */
@@ -143,18 +150,34 @@
   }
 
   /* Prose inside assistant messages */
-  .prose h1, .prose h2, .prose h3 {
+  .prose h1,
+  .prose h2,
+  .prose h3 {
     @apply font-semibold leading-tight mt-4 mb-2;
   }
-  .prose h1 { @apply text-xl; }
-  .prose h2 { @apply text-lg; }
-  .prose h3 { @apply text-base; }
+  .prose h1 {
+    @apply text-xl;
+  }
+  .prose h2 {
+    @apply text-lg;
+  }
+  .prose h3 {
+    @apply text-base;
+  }
 
-  .prose p { @apply leading-relaxed; }
-  .prose p + p { @apply mt-3; }
+  .prose p {
+    @apply leading-relaxed;
+  }
+  .prose p + p {
+    @apply mt-3;
+  }
 
-  .prose ul { @apply list-disc pl-5 space-y-1; }
-  .prose ol { @apply list-decimal pl-5 space-y-1; }
+  .prose ul {
+    @apply list-disc pl-5 space-y-1;
+  }
+  .prose ol {
+    @apply list-decimal pl-5 space-y-1;
+  }
 
   .prose blockquote {
     @apply border-l-4 border-slate-300 pl-4 text-slate-600 italic my-3 dark:border-slate-600 dark:text-slate-300;

@@ -1,9 +1,16 @@
-use axum::{Json, extract::{Path, State}, http::StatusCode};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::StatusCode,
+};
 use std::sync::Arc;
 
 use helpcore_api::{ApiKeyInfo, CreateApiKeyRequest, CreateApiKeyResponse, ListApiKeysResponse};
 
-use crate::{api::{error::AppError, extractor::AuthUser}, state::AppState};
+use crate::{
+    api::{error::AppError, extractor::AuthUser},
+    state::AppState,
+};
 
 pub async fn list_api_keys(
     State(state): State<Arc<AppState>>,
@@ -52,7 +59,9 @@ pub async fn create_api_key(
         Some(
             chrono::DateTime::parse_from_rfc3339(s)
                 .map(|d| d.with_timezone(&chrono::Utc))
-                .map_err(|_| AppError::BadRequest("invalid expires_at: expected RFC-3339".into()))?,
+                .map_err(|_| {
+                    AppError::BadRequest("invalid expires_at: expected RFC-3339".into())
+                })?,
         )
     } else {
         None
@@ -63,7 +72,8 @@ pub async fn create_api_key(
     let created = state
         .db
         .call(move |conn| {
-            let key = crate::auth::api_key::create_api_key(conn, &user_id, &name, None, expires_at)?;
+            let key =
+                crate::auth::api_key::create_api_key(conn, &user_id, &name, None, expires_at)?;
             crate::db::audit::log_event(
                 conn,
                 "api_key.create",

@@ -1,8 +1,8 @@
-'use client';
+"use client";
 
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { useRouter } from 'next/navigation';
-import useSWR, { useSWRConfig } from 'swr';
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
+import useSWR, { useSWRConfig } from "swr";
 import {
   ApiError,
   cancelGeneration,
@@ -12,12 +12,12 @@ import {
   listPlugins,
   listProviders,
   retryMessage,
-} from '@/lib/api';
-import { useAuth } from '@/context/auth';
-import type { ConversationSummary, Message, SseDone, SseStarted } from '@/lib/types';
-import MessageBubble from './message-bubble';
-import ChatInput from './chat-input';
-import { Pencil, Terminal, Trash2 } from 'lucide-react';
+} from "@/lib/api";
+import { useAuth } from "@/context/auth";
+import type { ConversationSummary, Message, SseDone, SseStarted } from "@/lib/types";
+import MessageBubble from "./message-bubble";
+import ChatInput from "./chat-input";
+import { Pencil, Terminal, Trash2 } from "lucide-react";
 
 interface QueueItem {
   id: string;
@@ -30,9 +30,8 @@ interface Props {
   onConversationCreated: (id: string) => void;
 }
 
-const isActive = (message: Message) => (
-  message.status === 'pending' || message.status === 'streaming'
-);
+const isActive = (message: Message) =>
+  message.status === "pending" || message.status === "streaming";
 
 let nextQueueId = 1;
 
@@ -41,83 +40,85 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   const router = useRouter();
   const { mutate: mutateGlobal } = useSWRConfig();
   const bottomRef = useRef<HTMLDivElement>(null);
-  const [inputValue, setInputValue] = useState('');
+  const [inputValue, setInputValue] = useState("");
   const [retryingId, setRetryingId] = useState<string | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [showToolLogs, setShowToolLogs] = useState(false);
   useEffect(() => {
-    const stored = localStorage.getItem('showToolLogs');
-    if (stored !== null) setShowToolLogs(stored === 'true');
+    const stored = localStorage.getItem("showToolLogs");
+    if (stored !== null) setShowToolLogs(stored === "true");
   }, []);
   const toggleToolLogs = useCallback(() => {
-    setShowToolLogs(v => {
-      localStorage.setItem('showToolLogs', String(!v));
+    setShowToolLogs((v) => {
+      localStorage.setItem("showToolLogs", String(!v));
       return !v;
     });
   }, []);
-  const [selectedProviderId, setSelectedProviderId] = useState('');
+  const [selectedProviderId, setSelectedProviderId] = useState("");
   const providerSelectionsRef = useRef<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const processingRef = useRef(false);
 
-  const messageKey = accessToken && conversationId
-    ? [`/conversations/${conversationId}/messages`, accessToken] as const
-    : null;
+  const messageKey =
+    accessToken && conversationId
+      ? ([`/conversations/${conversationId}/messages`, accessToken] as const)
+      : null;
   const {
     data: messages = [],
     error: historyError,
     mutate: refreshMessages,
     isLoading: historyLoading,
-  } = useSWR<Message[]>(
-    messageKey,
-    ([, token]) => getMessages(conversationId!, token as string),
-    {
-      refreshInterval: data => data?.some(isActive) ? 500 : 0,
-      revalidateOnFocus: true,
-      keepPreviousData: false,
-    },
-  );
+  } = useSWR<Message[]>(messageKey, ([, token]) => getMessages(conversationId!, token as string), {
+    refreshInterval: (data) => (data?.some(isActive) ? 500 : 0),
+    revalidateOnFocus: true,
+    keepPreviousData: false,
+  });
 
   const { data: pluginCaps } = useSWR(
-    accessToken ? ['/api/plugins/caps', accessToken] : null,
+    accessToken ? ["/api/plugins/caps", accessToken] : null,
     ([, token]) => listPlugins(token),
   );
-  const hasAudio = pluginCaps?.capabilities.includes('audio') ?? false;
+  const hasAudio = pluginCaps?.capabilities.includes("audio") ?? false;
 
   const { data: providerData } = useSWR(
-    accessToken ? ['/api/providers', accessToken] : null,
+    accessToken ? ["/api/providers", accessToken] : null,
     ([, token]) => listProviders(token),
   );
   const providers = providerData?.providers ?? [];
   const { data: conversations } = useSWR<ConversationSummary[]>(
-    accessToken ? ['/api/conversations', accessToken] : null,
+    accessToken ? ["/api/conversations", accessToken] : null,
     ([, token]) => listConversations(token as string),
   );
 
   useEffect(() => {
     if (!providerData || (conversationId && !conversations)) return;
-    const key = conversationId ?? '__new__';
+    const key = conversationId ?? "__new__";
     const conversationProvider = conversationId
-      ? conversations?.find(conversation => conversation.id === conversationId)?.provider_id
+      ? conversations?.find((conversation) => conversation.id === conversationId)?.provider_id
       : null;
     const remembered = providerSelectionsRef.current[key] ?? conversationProvider;
-    const selection = providers.some(provider => provider.id === remembered)
+    const selection = providers.some((provider) => provider.id === remembered)
       ? remembered!
-      : (providers[0]?.id ?? '');
+      : (providers[0]?.id ?? "");
     providerSelectionsRef.current[key] = selection;
     setSelectedProviderId(selection);
   }, [conversationId, conversations, providerData, providers]);
 
-  const handleProviderChange = useCallback((providerId: string) => {
-    providerSelectionsRef.current[conversationId ?? '__new__'] = providerId;
-    setSelectedProviderId(providerId);
-  }, [conversationId]);
+  const handleProviderChange = useCallback(
+    (providerId: string) => {
+      providerSelectionsRef.current[conversationId ?? "__new__"] = providerId;
+      setSelectedProviderId(providerId);
+    },
+    [conversationId],
+  );
 
   // Track the actively-generating conversation separately so we never show
   // the stop button for stale data from a different conversation.
   const generationConvRef = useRef<string | null>(null);
-  const active = (conversationId !== null && generationConvRef.current === conversationId) || messages.some(isActive);
+  const active =
+    (conversationId !== null && generationConvRef.current === conversationId) ||
+    messages.some(isActive);
 
   // Reset generation tracking when switching conversations
   const prevConvRef = useRef(conversationId);
@@ -130,95 +131,104 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   }, [conversationId]);
 
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, queue]);
 
-  const refreshConversation = useCallback(async (id: string) => {
-    if (!accessToken) return;
-    await Promise.all([
-      mutateGlobal([`/conversations/${id}/messages`, accessToken]),
-      mutateGlobal(['/api/conversations', accessToken]),
-    ]);
-  }, [accessToken, mutateGlobal]);
+  const refreshConversation = useCallback(
+    async (id: string) => {
+      if (!accessToken) return;
+      await Promise.all([
+        mutateGlobal([`/conversations/${id}/messages`, accessToken]),
+        mutateGlobal(["/api/conversations", accessToken]),
+      ]);
+    },
+    [accessToken, mutateGlobal],
+  );
 
-  const streamHandlers = useCallback((
-    fallbackConversationId: string | undefined,
-    providerId: string,
-  ) => {
-    let activeConversationId = fallbackConversationId;
-    return {
-      onStarted: (started: SseStarted) => {
-        activeConversationId = started.conversation_id;
-        if (!fallbackConversationId) {
-          providerSelectionsRef.current[started.conversation_id] = providerId;
-          setSelectedProviderId(providerId);
-          onConversationCreated(started.conversation_id);
-          router.replace(`/chat/?id=${started.conversation_id}`, { scroll: false });
-        }
-        void refreshConversation(started.conversation_id);
-      },
-      onChunk: (_delta: string) => {
-        const id = activeConversationId;
-        if (id) void refreshConversation(id);
-      },
-      onDone: (done: SseDone) => {
-        void refreshConversation(done.conversation_id);
-      },
-    };
-  }, [onConversationCreated, refreshConversation, router]);
+  const streamHandlers = useCallback(
+    (fallbackConversationId: string | undefined, providerId: string) => {
+      let activeConversationId = fallbackConversationId;
+      return {
+        onStarted: (started: SseStarted) => {
+          activeConversationId = started.conversation_id;
+          if (!fallbackConversationId) {
+            providerSelectionsRef.current[started.conversation_id] = providerId;
+            setSelectedProviderId(providerId);
+            onConversationCreated(started.conversation_id);
+            router.replace(`/chat/?id=${started.conversation_id}`, { scroll: false });
+          }
+          void refreshConversation(started.conversation_id);
+        },
+        onChunk: (_delta: string) => {
+          const id = activeConversationId;
+          if (id) void refreshConversation(id);
+        },
+        onDone: (done: SseDone) => {
+          void refreshConversation(done.conversation_id);
+        },
+      };
+    },
+    [onConversationCreated, refreshConversation, router],
+  );
 
-  const runWithRefresh = useCallback(async (
-    operation: (token: string) => Promise<void>,
-  ) => {
-    if (!accessToken) {
-      router.replace('/login/');
-      return;
-    }
-    try {
-      await operation(accessToken);
-    } catch (caught) {
-      if (caught instanceof ApiError && caught.status === 401) {
-        const fresh = await refreshAccessToken();
-        if (fresh) {
-          await operation(fresh);
+  const runWithRefresh = useCallback(
+    async (operation: (token: string) => Promise<void>) => {
+      if (!accessToken) {
+        router.replace("/login/");
+        return;
+      }
+      try {
+        await operation(accessToken);
+      } catch (caught) {
+        if (caught instanceof ApiError && caught.status === 401) {
+          const fresh = await refreshAccessToken();
+          if (fresh) {
+            await operation(fresh);
+            return;
+          }
+          router.replace("/login/");
           return;
         }
-        router.replace('/login/');
-        return;
+        throw caught;
       }
-      throw caught;
-    }
-  }, [accessToken, refreshAccessToken, router]);
+    },
+    [accessToken, refreshAccessToken, router],
+  );
 
-  const sendMessage = useCallback(async (item: QueueItem) => {
-    setError('');
-    const controller = new AbortController();
-    abortRef.current = controller;
-    generationConvRef.current = conversationId;
-    try {
-      await runWithRefresh(token => chat({
-        message: item.text,
-        conversation_id: conversationId ?? undefined,
-        provider_id: item.providerId,
-        token,
-        ...streamHandlers(conversationId ?? undefined, item.providerId),
-        signal: controller.signal,
-      }));
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === 'AbortError') {
-        return;
+  const sendMessage = useCallback(
+    async (item: QueueItem) => {
+      setError("");
+      const controller = new AbortController();
+      abortRef.current = controller;
+      generationConvRef.current = conversationId;
+      try {
+        await runWithRefresh((token) =>
+          chat({
+            message: item.text,
+            conversation_id: conversationId ?? undefined,
+            provider_id: item.providerId,
+            token,
+            ...streamHandlers(conversationId ?? undefined, item.providerId),
+            signal: controller.signal,
+          }),
+        );
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError") {
+          return;
+        }
+        setError(caught instanceof ApiError ? caught.message : "Something went wrong.");
+        if (conversationId) await refreshMessages();
+      } finally {
+        if (generationConvRef.current === conversationId) {
+          generationConvRef.current = null;
+        }
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
       }
-      setError(caught instanceof ApiError ? caught.message : 'Something went wrong.');
-      if (conversationId) await refreshMessages();
-    } finally {
-      if (generationConvRef.current === conversationId) {
-        generationConvRef.current = null;
-      }
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-      }
-    }
-  }, [conversationId, refreshMessages, runWithRefresh, streamHandlers]);
+    },
+    [conversationId, refreshMessages, runWithRefresh, streamHandlers],
+  );
 
   // Auto-process queue: when no active generation, send the oldest queued item
   useEffect(() => {
@@ -232,14 +242,17 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     }
   }, [active, queue, sendMessage]);
 
-  const handleSend = useCallback((text: string) => {
-    if (!selectedProviderId) return;
-    const id = String(nextQueueId++);
-    setQueue(prev => [...prev, { id, text, providerId: selectedProviderId }]);
-  }, [selectedProviderId]);
+  const handleSend = useCallback(
+    (text: string) => {
+      if (!selectedProviderId) return;
+      const id = String(nextQueueId++);
+      setQueue((prev) => [...prev, { id, text, providerId: selectedProviderId }]);
+    },
+    [selectedProviderId],
+  );
 
   const handleStop = useCallback(async () => {
-    setError('');
+    setError("");
     generationConvRef.current = null;
     abortRef.current?.abort();
     abortRef.current = null;
@@ -259,55 +272,63 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     }
   }, [conversationId, accessToken, refreshMessages, refreshAccessToken]);
 
-  const handleEditQueueItem = useCallback((id: string) => {
-    const item = queue.find(q => q.id === id);
-    if (item) {
-      setInputValue(item.text);
-      handleProviderChange(item.providerId);
-      setQueue(prev => prev.filter(q => q.id !== id));
-    }
-  }, [handleProviderChange, queue]);
+  const handleEditQueueItem = useCallback(
+    (id: string) => {
+      const item = queue.find((q) => q.id === id);
+      if (item) {
+        setInputValue(item.text);
+        handleProviderChange(item.providerId);
+        setQueue((prev) => prev.filter((q) => q.id !== id));
+      }
+    },
+    [handleProviderChange, queue],
+  );
 
   const handleDeleteQueueItem = useCallback((id: string) => {
-    setQueue(prev => prev.filter(q => q.id !== id));
+    setQueue((prev) => prev.filter((q) => q.id !== id));
   }, []);
 
-  const retry = useCallback(async (messageId: string) => {
-    if (!conversationId) return;
-    setRetryingId(messageId);
-    setError('');
-    const controller = new AbortController();
-    abortRef.current = controller;
-    generationConvRef.current = conversationId;
-    try {
-      await runWithRefresh(token => retryMessage({
-        conversationId,
-        messageId,
-        token,
-        ...streamHandlers(conversationId, selectedProviderId),
-        signal: controller.signal,
-      }));
-    } catch (caught) {
-      if (caught instanceof DOMException && caught.name === 'AbortError') {
-        return;
+  const retry = useCallback(
+    async (messageId: string) => {
+      if (!conversationId) return;
+      setRetryingId(messageId);
+      setError("");
+      const controller = new AbortController();
+      abortRef.current = controller;
+      generationConvRef.current = conversationId;
+      try {
+        await runWithRefresh((token) =>
+          retryMessage({
+            conversationId,
+            messageId,
+            token,
+            ...streamHandlers(conversationId, selectedProviderId),
+            signal: controller.signal,
+          }),
+        );
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError") {
+          return;
+        }
+        setError(caught instanceof ApiError ? caught.message : "Could not retry the response.");
+        await refreshMessages();
+      } finally {
+        if (generationConvRef.current === conversationId) {
+          generationConvRef.current = null;
+        }
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
+        setRetryingId(null);
       }
-      setError(caught instanceof ApiError ? caught.message : 'Could not retry the response.');
-      await refreshMessages();
-    } finally {
-      if (generationConvRef.current === conversationId) {
-        generationConvRef.current = null;
-      }
-      if (abortRef.current === controller) {
-        abortRef.current = null;
-      }
-      setRetryingId(null);
-    }
-  }, [conversationId, refreshMessages, runWithRefresh, selectedProviderId, streamHandlers]);
+    },
+    [conversationId, refreshMessages, runWithRefresh, selectedProviderId, streamHandlers],
+  );
 
-  const toolCount = messages.filter(m => m.role === 'tool').length;
-  const visibleMessages = showToolLogs ? messages : messages.filter(m => m.role !== 'tool');
+  const toolCount = messages.filter((m) => m.role === "tool").length;
+  const visibleMessages = showToolLogs ? messages : messages.filter((m) => m.role !== "tool");
   const empty = !historyLoading && messages.length === 0 && queue.length === 0;
-  const visibleError = error || (historyError instanceof Error ? historyError.message : '');
+  const visibleError = error || (historyError instanceof Error ? historyError.message : "");
 
   return (
     <div className="flex h-full flex-col">
@@ -318,8 +339,8 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
             onClick={toggleToolLogs}
             className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
               showToolLogs
-                ? 'bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200'
-                : 'text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300'
+                ? "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
+                : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
             }`}
           >
             <Terminal size={12} />
@@ -342,13 +363,13 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           </div>
         ) : (
           <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
-            {visibleMessages.map(message => (
+            {visibleMessages.map((message) => (
               <MessageBubble
                 key={message.id}
                 message={message}
                 onRetry={retry}
                 retrying={retryingId === message.id}
-                accessToken={accessToken ?? ''}
+                accessToken={accessToken ?? ""}
                 hasAudio={hasAudio}
               />
             ))}
@@ -364,7 +385,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
 
       {queue.length > 0 && (
         <div className="mx-auto w-full max-w-3xl space-y-2 px-4 pb-2">
-          {queue.map(item => (
+          {queue.map((item) => (
             <div
               key={item.id}
               className="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400"
@@ -372,7 +393,8 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
               <div className="flex-1">
                 <div className="whitespace-pre-wrap leading-relaxed">{item.text}</div>
                 <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                  {providers.find(provider => provider.id === item.providerId)?.name ?? item.providerId}
+                  {providers.find((provider) => provider.id === item.providerId)?.name ??
+                    item.providerId}
                 </div>
               </div>
               <div className="flex shrink-0 gap-1">

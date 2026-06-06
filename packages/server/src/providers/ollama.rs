@@ -129,10 +129,18 @@ struct OllamaToolCallFunction {
 
 #[async_trait]
 impl ChatProvider for OllamaProvider {
-    fn id(&self) -> &str { &self.id }
-    fn name(&self) -> &str { &self.name }
-    fn default_model(&self) -> &str { &self.default_model }
-    fn context_limit(&self) -> u32 { self.num_ctx }
+    fn id(&self) -> &str {
+        &self.id
+    }
+    fn name(&self) -> &str {
+        &self.name
+    }
+    fn default_model(&self) -> &str {
+        &self.default_model
+    }
+    fn context_limit(&self) -> u32 {
+        self.num_ctx
+    }
 
     async fn complete(
         &self,
@@ -198,9 +206,7 @@ impl ChatProvider for OllamaProvider {
 
         // Convert the byte stream to a line-by-line reader, then spawn a task
         // that sends parsed chunks into a channel.
-        let byte_stream = response
-            .bytes_stream()
-            .map_err(std::io::Error::other);
+        let byte_stream = response.bytes_stream().map_err(std::io::Error::other);
         let reader = StreamReader::new(byte_stream);
         let mut lines = BufReader::new(reader).lines();
 
@@ -211,42 +217,40 @@ impl ChatProvider for OllamaProvider {
                 match lines.next_line().await {
                     Ok(None) => break,
                     Ok(Some(line)) if line.is_empty() => continue,
-                    Ok(Some(line)) => {
-                        match serde_json::from_str::<OllamaStreamLine>(&line) {
-                            Ok(parsed) => {
-                                if !parsed.message.content.is_empty() {
-                                    let _ = tx
-                                        .send(Ok(StreamChunk::delta(parsed.message.content)))
-                                        .await;
-                                }
-                                if !parsed.message.tool_calls.is_empty() {
-                                    let calls = parsed
-                                        .message
-                                        .tool_calls
-                                        .into_iter()
-                                        .map(|call| ToolCall {
-                                            id: uuid::Uuid::new_v4().to_string(),
-                                            name: call.function.name,
-                                            arguments: call.function.arguments,
-                                        })
-                                        .collect();
-                                    let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
-                                }
-                                if parsed.done {
-                                    let _ = tx.send(Ok(StreamChunk::done())).await;
-                                    break;
-                                }
-                            }
-                            Err(e) => {
+                    Ok(Some(line)) => match serde_json::from_str::<OllamaStreamLine>(&line) {
+                        Ok(parsed) => {
+                            if !parsed.message.content.is_empty() {
                                 let _ = tx
-                                    .send(Err(ProviderError::Request(format!(
-                                        "failed to parse Ollama response: {e} — line: {line}"
-                                    ))))
+                                    .send(Ok(StreamChunk::delta(parsed.message.content)))
                                     .await;
+                            }
+                            if !parsed.message.tool_calls.is_empty() {
+                                let calls = parsed
+                                    .message
+                                    .tool_calls
+                                    .into_iter()
+                                    .map(|call| ToolCall {
+                                        id: uuid::Uuid::new_v4().to_string(),
+                                        name: call.function.name,
+                                        arguments: call.function.arguments,
+                                    })
+                                    .collect();
+                                let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
+                            }
+                            if parsed.done {
+                                let _ = tx.send(Ok(StreamChunk::done())).await;
                                 break;
                             }
                         }
-                    }
+                        Err(e) => {
+                            let _ = tx
+                                .send(Err(ProviderError::Request(format!(
+                                    "failed to parse Ollama response: {e} — line: {line}"
+                                ))))
+                                .await;
+                            break;
+                        }
+                    },
                     Err(e) => {
                         let _ = tx
                             .send(Err(ProviderError::Request(format!(
@@ -315,10 +319,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let provider =
-            OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
+        let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
         let messages = vec![ChatMessage::user("hello")];
-        let mut stream = provider.complete(&messages, &[], Some("mistral")).await.unwrap();
+        let mut stream = provider
+            .complete(&messages, &[], Some("mistral"))
+            .await
+            .unwrap();
 
         // Just consume the stream — the key assertion is no error.
         while let Some(chunk) = stream.next().await {
@@ -341,7 +347,9 @@ mod tests {
             .await;
 
         let provider = OllamaProvider::new("ollama", "Ollama", &server.uri(), "llama3", None, None);
-        let result = provider.complete(&[ChatMessage::user("hi")], &[], None).await;
+        let result = provider
+            .complete(&[ChatMessage::user("hi")], &[], None)
+            .await;
         assert!(matches!(result, Err(ProviderError::Unavailable)));
     }
 

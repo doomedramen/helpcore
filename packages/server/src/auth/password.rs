@@ -1,7 +1,4 @@
-use argon2::{
-    Argon2, PasswordHash, PasswordHasher, PasswordVerifier,
-    password_hash::SaltString,
-};
+use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
     let mut salt_bytes = [0u8; 16];
@@ -15,8 +12,8 @@ pub fn hash_password(password: &str) -> anyhow::Result<String> {
 }
 
 pub fn verify_password(password: &str, hash: &str) -> anyhow::Result<bool> {
-    let parsed = PasswordHash::new(hash)
-        .map_err(|e| anyhow::anyhow!("invalid password hash: {e}"))?;
+    let parsed =
+        PasswordHash::new(hash).map_err(|e| anyhow::anyhow!("invalid password hash: {e}"))?;
     Ok(Argon2::default()
         .verify_password(password.as_bytes(), &parsed)
         .is_ok())
@@ -29,7 +26,10 @@ mod tests {
     #[test]
     fn hash_produces_phc_string() {
         let hash = hash_password("hunter2").unwrap();
-        assert!(hash.starts_with("$argon2"), "expected PHC string, got: {hash}");
+        assert!(
+            hash.starts_with("$argon2"),
+            "expected PHC string, got: {hash}"
+        );
     }
 
     #[test]

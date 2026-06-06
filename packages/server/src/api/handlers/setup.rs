@@ -8,12 +8,11 @@ use crate::{api::error::AppError, state::AppState};
 pub async fn status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SetupStatusResponse>, AppError> {
-    let needed = state
-        .db
-        .call(|conn| crate::auth::setup::needs_setup(conn))
-        .await?;
+    let needed = state.db.call(crate::auth::setup::needs_setup).await?;
 
-    Ok(Json(SetupStatusResponse { setup_required: needed }))
+    Ok(Json(SetupStatusResponse {
+        setup_required: needed,
+    }))
 }
 
 pub async fn create_admin(
@@ -51,12 +50,7 @@ pub async fn create_admin(
     let user_id = state
         .db
         .call(move |conn| {
-            crate::model::user::create_admin(
-                conn,
-                &email,
-                &password_hash,
-                display_name.as_deref(),
-            )
+            crate::model::user::create_admin(conn, &email, &password_hash, display_name.as_deref())
         })
         .await?;
 

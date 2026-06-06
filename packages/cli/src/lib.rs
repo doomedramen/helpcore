@@ -60,7 +60,6 @@ enum Commands {
     Status,
 
     // ── Compact ───────────────────────────────────────────────────────────────
-
     /// Compact a conversation by summarising its oldest messages
     Compact {
         /// Conversation to compact (required — use the ID shown after `hc ask`)
@@ -72,7 +71,6 @@ enum Commands {
     },
 
     // ── Personality ───────────────────────────────────────────────────────────
-
     /// Show or update the assistant's soul (tone, values, communication style)
     Soul {
         /// Write this text directly (instead of printing or editing)
@@ -113,19 +111,16 @@ enum Commands {
     },
 
     // ── Memory ────────────────────────────────────────────────────────────────
-
     /// Manage memory files
     #[command(subcommand)]
     Memory(MemoryCommands),
 
     // ── Plugins ───────────────────────────────────────────────────────────────
-
     /// Manage plugins
     #[command(subcommand)]
     Plugin(PluginCommands),
 
     // ── API keys ──────────────────────────────────────────────────────────────
-
     /// Manage API keys
     #[command(subcommand)]
     ApiKeys(ApiKeyCommands),
@@ -228,7 +223,13 @@ enum PluginCommands {
 pub async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {
-        Commands::Ask { query, conversation_id, provider, model, server } => {
+        Commands::Ask {
+            query,
+            conversation_id,
+            provider,
+            model,
+            server,
+        } => {
             commands::ask::run(
                 &query,
                 conversation_id.as_deref(),
@@ -253,7 +254,11 @@ pub async fn run() -> anyhow::Result<()> {
             let creds = config::Credentials::load()?;
             match creds.server_url.as_deref() {
                 Some(url) => {
-                    let status = if creds.is_logged_in() { "logged in" } else { "not logged in" };
+                    let status = if creds.is_logged_in() {
+                        "logged in"
+                    } else {
+                        "not logged in"
+                    };
                     println!("Server: {url}");
                     println!("Status: {status}");
                 }
@@ -274,7 +279,10 @@ pub async fn run() -> anyhow::Result<()> {
             commands::memory::personality("user", set.as_deref(), edit, server.as_deref()).await
         }
 
-        Commands::Compact { conversation_id, server } => {
+        Commands::Compact {
+            conversation_id,
+            server,
+        } => {
             let creds = config::Credentials::load()?;
             let srv = creds
                 .resolve_server(server.as_deref())
@@ -298,12 +306,12 @@ pub async fn run() -> anyhow::Result<()> {
         }
 
         Commands::Plugin(sub) => match sub {
-            PluginCommands::Ls { server } => {
-                commands::plugin::list(server.as_deref()).await
-            }
-            PluginCommands::Token { plugin_id, permissions, server } => {
-                commands::plugin::token(&plugin_id, permissions, server.as_deref()).await
-            }
+            PluginCommands::Ls { server } => commands::plugin::list(server.as_deref()).await,
+            PluginCommands::Token {
+                plugin_id,
+                permissions,
+                server,
+            } => commands::plugin::token(&plugin_id, permissions, server.as_deref()).await,
             PluginCommands::Enable { plugin_id, server } => {
                 commands::plugin::enable(&plugin_id, true, server.as_deref()).await
             }
@@ -313,13 +321,16 @@ pub async fn run() -> anyhow::Result<()> {
         },
 
         Commands::Memory(sub) => match sub {
-            MemoryCommands::Ls { server } => {
-                commands::memory::memory_ls(server.as_deref()).await
-            }
+            MemoryCommands::Ls { server } => commands::memory::memory_ls(server.as_deref()).await,
             MemoryCommands::Get { path, server } => {
                 commands::memory::memory_get(&path, server.as_deref()).await
             }
-            MemoryCommands::Set { path, content, edit, server } => {
+            MemoryCommands::Set {
+                path,
+                content,
+                edit,
+                server,
+            } => {
                 commands::memory::memory_set(&path, content.as_deref(), edit, server.as_deref())
                     .await
             }
@@ -329,9 +340,7 @@ pub async fn run() -> anyhow::Result<()> {
         },
 
         Commands::ApiKeys(sub) => match sub {
-            ApiKeyCommands::Ls { server } => {
-                commands::api_key::list(server.as_deref()).await
-            }
+            ApiKeyCommands::Ls { server } => commands::api_key::list(server.as_deref()).await,
             ApiKeyCommands::Create { name, server } => {
                 commands::api_key::create(&name, server.as_deref()).await
             }

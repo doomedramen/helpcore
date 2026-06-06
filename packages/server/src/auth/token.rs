@@ -52,7 +52,12 @@ pub fn create_session(conn: &Connection, user_id: &str) -> anyhow::Result<Create
     )
     .context("failed to insert session")?;
 
-    Ok(CreatedSession { access_token, refresh_token, access_expires_at: access_expires, refresh_expires_at: refresh_expires })
+    Ok(CreatedSession {
+        access_token,
+        refresh_token,
+        access_expires_at: access_expires,
+        refresh_expires_at: refresh_expires,
+    })
 }
 
 /// Validates an access token. Returns the `user_id` if the session is live.
@@ -159,7 +164,7 @@ mod tests {
     #[test]
     fn create_and_validate_session() {
         let pool = open_test_db();
-        let user_id = pool.call_sync(|conn| insert_test_user(conn)).unwrap();
+        let user_id = pool.call_sync(insert_test_user).unwrap();
 
         pool.call_sync(|conn| {
             let session = create_session(conn, &user_id)?;
@@ -184,7 +189,7 @@ mod tests {
     #[test]
     fn rotate_refresh_token_issues_new_session() {
         let pool = open_test_db();
-        let user_id = pool.call_sync(|conn| insert_test_user(conn)).unwrap();
+        let user_id = pool.call_sync(insert_test_user).unwrap();
 
         pool.call_sync(|conn| {
             let session = create_session(conn, &user_id)?;
@@ -209,7 +214,7 @@ mod tests {
     #[test]
     fn refresh_token_cannot_be_reused() {
         let pool = open_test_db();
-        let user_id = pool.call_sync(|conn| insert_test_user(conn)).unwrap();
+        let user_id = pool.call_sync(insert_test_user).unwrap();
 
         pool.call_sync(|conn| {
             let session = create_session(conn, &user_id)?;
@@ -217,7 +222,10 @@ mod tests {
 
             // Second rotation with same token must fail
             let second = rotate_refresh_token(conn, &session.refresh_token)?;
-            assert!(second.is_none(), "already-used refresh token must be rejected");
+            assert!(
+                second.is_none(),
+                "already-used refresh token must be rejected"
+            );
             Ok(())
         })
         .unwrap();
@@ -226,7 +234,7 @@ mod tests {
     #[test]
     fn revoke_session() {
         let pool = open_test_db();
-        let user_id = pool.call_sync(|conn| insert_test_user(conn)).unwrap();
+        let user_id = pool.call_sync(insert_test_user).unwrap();
 
         pool.call_sync(|conn| {
             let session = create_session(conn, &user_id)?;

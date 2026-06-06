@@ -1,12 +1,12 @@
-'use client';
+"use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import useSWR from 'swr';
-import ConfigForm from '@/app/components/admin/config-form';
-import Sidebar from '@/app/components/sidebar';
-import { useAuth } from '@/context/auth';
-import { getAdminConfig } from '@/lib/api';
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import useSWR from "swr";
+import ConfigForm from "@/app/components/admin/config-form";
+import Sidebar from "@/app/components/sidebar";
+import { useAuth } from "@/context/auth";
+import { getAdminConfig } from "@/lib/api";
 
 export default function AdminPage() {
   const { accessToken, currentUser, isLoading } = useAuth();
@@ -16,7 +16,7 @@ export default function AdminPage() {
     error,
     mutate,
   } = useSWR(
-    accessToken && currentUser?.role === 'admin' ? ['/api/admin/config', accessToken] : null,
+    accessToken && currentUser?.role === "admin" ? ["/api/admin/config", accessToken] : null,
     ([, token]) => getAdminConfig(token),
     {
       revalidateOnFocus: false,
@@ -26,11 +26,11 @@ export default function AdminPage() {
 
   useEffect(() => {
     if (isLoading) return;
-    if (!accessToken) router.replace('/login/');
-    else if (currentUser?.role !== 'admin') router.replace('/chat/');
+    if (!accessToken) router.replace("/login/");
+    else if (currentUser?.role !== "admin") router.replace("/chat/");
   }, [accessToken, currentUser, isLoading, router]);
 
-  if (isLoading || !accessToken || currentUser?.role !== 'admin') {
+  if (isLoading || !accessToken || currentUser?.role !== "admin") {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 text-sm text-slate-400 dark:bg-slate-950 dark:text-slate-500">
         Loading…
@@ -42,7 +42,7 @@ export default function AdminPage() {
     <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
       <Sidebar
         conversationId={null}
-        onSelect={id => router.push(id ? `/chat/?id=${id}` : '/chat/')}
+        onSelect={(id) => router.push(id ? `/chat/?id=${id}` : "/chat/")}
       />
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl px-6 py-8">
@@ -68,7 +68,7 @@ export default function AdminPage() {
             <ConfigForm
               accessToken={accessToken}
               config={config}
-              onSaved={updated => mutate(updated, false)}
+              onSaved={(updated) => mutate(updated, false)}
             />
           )}
         </div>

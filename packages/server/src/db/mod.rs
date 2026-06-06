@@ -29,9 +29,8 @@ pub struct DbPool {
 impl DbPool {
     pub fn open(path: &Path) -> anyhow::Result<Self> {
         if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).with_context(|| {
-                format!("failed to create DB directory {}", parent.display())
-            })?;
+            std::fs::create_dir_all(parent)
+                .with_context(|| format!("failed to create DB directory {}", parent.display()))?;
         }
 
         let conn = Connection::open(path)
@@ -113,7 +112,9 @@ pub fn open_in_memory() -> DbPool {
     let conn = Connection::open_in_memory().unwrap();
     conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
     run_migrations(&conn).unwrap();
-    DbPool { conn: Arc::new(Mutex::new(conn)) }
+    DbPool {
+        conn: Arc::new(Mutex::new(conn)),
+    }
 }
 
 #[cfg(test)]
@@ -128,9 +129,7 @@ pub mod tests {
     fn migrations_advance_schema_version() {
         let pool = open_test_db();
         let version: u32 = pool
-            .call_sync(|conn| {
-                Ok(conn.query_row("PRAGMA user_version", [], |r| r.get(0))?)
-            })
+            .call_sync(|conn| Ok(conn.query_row("PRAGMA user_version", [], |r| r.get(0))?))
             .unwrap();
         assert_eq!(version, MIGRATIONS.len() as u32);
     }
@@ -139,17 +138,25 @@ pub mod tests {
     fn all_tables_exist_after_migrations() {
         let pool = open_test_db();
         pool.call_sync(|conn| {
-            let mut stmt = conn.prepare(
-                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
-            )?;
+            let mut stmt =
+                conn.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")?;
             let tables: Vec<String> = stmt
                 .query_map([], |row| row.get(0))?
                 .collect::<Result<_, _>>()?;
 
             for expected in &[
-                "users", "sessions", "api_keys", "conversations", "messages",
-                "audit_log", "setup_tokens", "user_personality", "memory_files",
-                "plugins", "plugin_installs", "plugin_tokens",
+                "users",
+                "sessions",
+                "api_keys",
+                "conversations",
+                "messages",
+                "audit_log",
+                "setup_tokens",
+                "user_personality",
+                "memory_files",
+                "plugins",
+                "plugin_installs",
+                "plugin_tokens",
             ] {
                 assert!(
                     tables.contains(&expected.to_string()),
@@ -165,11 +172,9 @@ pub mod tests {
     fn migrations_are_idempotent() {
         let pool = open_test_db();
         // Run again — must not error, version must stay the same
-        pool.call_sync(|conn| run_migrations(conn)).unwrap();
+        pool.call_sync(run_migrations).unwrap();
         let version: u32 = pool
-            .call_sync(|conn| {
-                Ok(conn.query_row("PRAGMA user_version", [], |r| r.get(0))?)
-            })
+            .call_sync(|conn| Ok(conn.query_row("PRAGMA user_version", [], |r| r.get(0))?))
             .unwrap();
         assert_eq!(version, MIGRATIONS.len() as u32);
     }

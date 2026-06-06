@@ -2,7 +2,6 @@
 /// fits in the model's context window.
 ///
 /// Design: `docs/conversation.md` §Context overflow handling.
-
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -21,10 +20,7 @@ const COMPACT_INSTRUCTIONS: &str = include_str!("../../../../prompts/compact.md"
 /// Uses ~4 chars/token + 4 tokens of role-framing overhead per message,
 /// matching the design doc's estimation heuristic.
 pub fn estimate_tokens(messages: &[ChatMessage]) -> usize {
-    messages
-        .iter()
-        .map(|m| m.content.len() / 4 + 4)
-        .sum()
+    messages.iter().map(|m| m.content.len() / 4 + 4).sum()
 }
 
 /// Returns true when the assembled context exceeds 90 % of the provider's limit
@@ -67,7 +63,10 @@ pub async fn compact_conversation(
 
     // Need at least anchor + 3 more to produce a meaningful compaction.
     if messages.len() < 4 {
-        return Ok(CompactResult { messages_compacted: 0, summary_length: 0 });
+        return Ok(CompactResult {
+            messages_compacted: 0,
+            summary_length: 0,
+        });
     }
 
     // 2. Skip the anchor (first message). The rest are candidates.
@@ -143,10 +142,18 @@ mod tests {
 
     #[async_trait]
     impl ChatProvider for SummaryProvider {
-        fn id(&self) -> &str { "summary" }
-        fn name(&self) -> &str { "Summary" }
-        fn default_model(&self) -> &str { "test" }
-        fn context_limit(&self) -> u32 { 4096 }
+        fn id(&self) -> &str {
+            "summary"
+        }
+        fn name(&self) -> &str {
+            "Summary"
+        }
+        fn default_model(&self) -> &str {
+            "test"
+        }
+        fn context_limit(&self) -> u32 {
+            4096
+        }
         async fn complete(
             &self,
             _: &[ChatMessage],
@@ -154,7 +161,9 @@ mod tests {
             _: Option<&str>,
         ) -> Result<crate::providers::traits::ProviderStream, ProviderError> {
             Ok(Box::pin(stream::iter(vec![
-                Ok(StreamChunk::delta("This was a discussion about Rust async patterns.")),
+                Ok(StreamChunk::delta(
+                    "This was a discussion about Rust async patterns.",
+                )),
                 Ok(StreamChunk::done()),
             ])))
         }
@@ -163,8 +172,8 @@ mod tests {
     #[test]
     fn estimate_tokens_scales_with_content() {
         let msgs = vec![
-            ChatMessage::system("You are helpful."),  // 17 chars → ~8 tokens
-            ChatMessage::user("Hello world"),          // 11 chars → ~7 tokens
+            ChatMessage::system("You are helpful."), // 17 chars → ~8 tokens
+            ChatMessage::user("Hello world"),        // 11 chars → ~7 tokens
         ];
         let est = estimate_tokens(&msgs);
         assert!(est > 10 && est < 50);
@@ -174,7 +183,7 @@ mod tests {
     fn needs_compaction_threshold() {
         // 1000 messages × 400 chars each = 400 000 chars → ~100 000 tokens
         let msgs: Vec<ChatMessage> = (0..1000)
-            .map(|_| ChatMessage::user(&"x".repeat(400)))
+            .map(|_| ChatMessage::user("x".repeat(400)))
             .collect();
         assert!(needs_compaction(&msgs, 4096));
 
@@ -185,8 +194,8 @@ mod tests {
 
     #[tokio::test]
     async fn compact_replaces_oldest_third() {
-        use crate::db::open_in_memory;
         use crate::conversation::history::*;
+        use crate::db::open_in_memory;
         use chrono::Utc;
         use uuid::Uuid;
 
@@ -225,7 +234,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(result.messages_compacted > 0, "should have compacted some messages");
+        assert!(
+            result.messages_compacted > 0,
+            "should have compacted some messages"
+        );
 
         // After compaction, load_messages should include the summary.
         let msgs = pool

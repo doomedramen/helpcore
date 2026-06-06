@@ -8,7 +8,7 @@ use crate::{client::Client, config::Credentials};
 
 /// `hc soul`, `hc identity`, `hc me` — show or set a personality file.
 pub async fn personality(
-    name: &str,               // "soul" | "identity" | "user"
+    name: &str, // "soul" | "identity" | "user"
     set_content: Option<&str>,
     edit: bool,
     server_flag: Option<&str>,
@@ -105,7 +105,9 @@ pub async fn memory_set(
     } else {
         // Read from stdin.
         let mut buf = String::new();
-        std::io::stdin().read_to_string(&mut buf).context("failed to read stdin")?;
+        std::io::stdin()
+            .read_to_string(&mut buf)
+            .context("failed to read stdin")?;
         buf
     };
 
@@ -156,8 +158,7 @@ fn open_in_editor(hint: &str, initial: &str) -> anyhow::Result<String> {
         .tempfile()
         .context("failed to create temp file for editor")?;
 
-    std::fs::write(tmp.path(), initial)
-        .context("failed to write to temp file")?;
+    std::fs::write(tmp.path(), initial).context("failed to write to temp file")?;
 
     let status = std::process::Command::new(&editor)
         .arg(tmp.path())
@@ -168,7 +169,7 @@ fn open_in_editor(hint: &str, initial: &str) -> anyhow::Result<String> {
         bail!("editor exited with non-zero status");
     }
 
-    let content = std::fs::read_to_string(tmp.path())
-        .context("failed to read temp file after editing")?;
+    let content =
+        std::fs::read_to_string(tmp.path()).context("failed to read temp file after editing")?;
     Ok(content)
 }

@@ -5,11 +5,11 @@ use tokio_util::io::StreamReader;
 
 use helpcore_api::{
     ApiKeyInfo, ChatRequest, CompactResponse, CreateApiKeyRequest, CreateApiKeyResponse,
-    ListApiKeysResponse, LoginRequest, LoginResponse, LogoutRequest,
-    MemoryEntry, MemoryListResponse, MemoryReadResponse, MemoryWriteRequest,
-    PersonalityResponse, PersonalityWriteRequest,
-    PluginInfo, PluginListResponse, PluginTokenRequest, PluginTokenResponse,
-    RefreshRequest, RefreshResponse, SetupRequest, SetupStatusResponse, SseChunk, SseDone,
+    ListApiKeysResponse, LoginRequest, LoginResponse, LogoutRequest, MemoryEntry,
+    MemoryListResponse, MemoryReadResponse, MemoryWriteRequest, PersonalityResponse,
+    PersonalityWriteRequest, PluginInfo, PluginListResponse, PluginTokenRequest,
+    PluginTokenResponse, RefreshRequest, RefreshResponse, SetupRequest, SetupStatusResponse,
+    SseChunk, SseDone,
 };
 
 /// Sentinel string returned by `chat()` on a 401 so callers can detect an
@@ -37,19 +37,28 @@ impl Client {
         let resp = self
             .inner
             .post(format!("{}/api/auth/login", self.server_url))
-            .json(&LoginRequest { email: email.to_string(), password: password.to_string() })
+            .json(&LoginRequest {
+                email: email.to_string(),
+                password: password.to_string(),
+            })
             .send()
             .await
             .context("failed to reach server")?;
 
-        require_success(resp).await?.json().await.context("invalid login response")
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid login response")
     }
 
     pub async fn logout(&self, refresh_token: &str) -> anyhow::Result<()> {
         let resp = self
             .inner
             .post(format!("{}/api/auth/logout", self.server_url))
-            .json(&LogoutRequest { refresh_token: refresh_token.to_string() })
+            .json(&LogoutRequest {
+                refresh_token: refresh_token.to_string(),
+            })
             .send()
             .await
             .context("failed to reach server")?;
@@ -61,11 +70,17 @@ impl Client {
         let resp = self
             .inner
             .post(format!("{}/api/auth/refresh", self.server_url))
-            .json(&RefreshRequest { refresh_token: refresh_token.to_string() })
+            .json(&RefreshRequest {
+                refresh_token: refresh_token.to_string(),
+            })
             .send()
             .await
             .context("failed to reach server")?;
-        require_success(resp).await?.json().await.context("invalid refresh response")
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid refresh response")
     }
 
     // ── Setup ─────────────────────────────────────────────────────────────────
@@ -77,7 +92,11 @@ impl Client {
             .send()
             .await
             .context("failed to reach server")?;
-        require_success(resp).await?.json().await.context("invalid setup response")
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid setup response")
     }
 
     pub async fn setup(
@@ -99,7 +118,11 @@ impl Client {
             .send()
             .await
             .context("failed to reach server")?;
-        require_success(resp).await?.json().await.context("invalid setup response")
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid setup response")
     }
 
     // ── Chat ──────────────────────────────────────────────────────────────────
@@ -145,8 +168,11 @@ impl Client {
             .send()
             .await
             .context("failed to reach server")?;
-        let body: MemoryListResponse =
-            require_success(resp).await?.json().await.context("invalid memory list response")?;
+        let body: MemoryListResponse = require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid memory list response")?;
         Ok(body.files)
     }
 
@@ -165,8 +191,11 @@ impl Client {
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        let body: MemoryReadResponse =
-            require_success(resp).await?.json().await.context("invalid memory response")?;
+        let body: MemoryReadResponse = require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid memory response")?;
         Ok(Some(body.content))
     }
 
@@ -180,7 +209,9 @@ impl Client {
             .inner
             .put(format!("{}/api/memory/{path}", self.server_url))
             .bearer_auth(access_token)
-            .json(&MemoryWriteRequest { content: content.to_string() })
+            .json(&MemoryWriteRequest {
+                content: content.to_string(),
+            })
             .send()
             .await
             .context("failed to reach server")?;
@@ -220,8 +251,11 @@ impl Client {
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        let body: PersonalityResponse =
-            require_success(resp).await?.json().await.context("invalid personality response")?;
+        let body: PersonalityResponse = require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid personality response")?;
         Ok(Some(body.content))
     }
 
@@ -242,7 +276,11 @@ impl Client {
             .send()
             .await
             .context("failed to reach server")?;
-        require_success(resp).await?.json().await.context("invalid compact response")
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid compact response")
     }
 
     // ── Plugins ───────────────────────────────────────────────────────────────
@@ -255,8 +293,11 @@ impl Client {
             .send()
             .await
             .context("failed to reach server")?;
-        let body: PluginListResponse =
-            require_success(resp).await?.json().await.context("invalid plugin list response")?;
+        let body: PluginListResponse = require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid plugin list response")?;
         Ok(body.plugins)
     }
 
@@ -268,13 +309,20 @@ impl Client {
     ) -> anyhow::Result<PluginTokenResponse> {
         let resp = self
             .inner
-            .post(format!("{}/api/plugins/{plugin_id}/tokens", self.server_url))
+            .post(format!(
+                "{}/api/plugins/{plugin_id}/tokens",
+                self.server_url
+            ))
             .bearer_auth(access_token)
             .json(&PluginTokenRequest { permissions })
             .send()
             .await
             .context("failed to reach server")?;
-        require_success(resp).await?.json().await.context("invalid token response")
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid token response")
     }
 
     pub async fn set_plugin_enabled(
@@ -285,7 +333,10 @@ impl Client {
     ) -> anyhow::Result<()> {
         let resp = self
             .inner
-            .put(format!("{}/api/plugins/{plugin_id}/enable", self.server_url))
+            .put(format!(
+                "{}/api/plugins/{plugin_id}/enable",
+                self.server_url
+            ))
             .bearer_auth(access_token)
             .json(&serde_json::json!({ "enabled": enabled }))
             .send()
@@ -305,8 +356,11 @@ impl Client {
             .send()
             .await
             .context("failed to reach server")?;
-        let body: ListApiKeysResponse =
-            require_success(resp).await?.json().await.context("invalid api-keys response")?;
+        let body: ListApiKeysResponse = require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid api-keys response")?;
         Ok(body.keys)
     }
 
@@ -319,18 +373,21 @@ impl Client {
             .inner
             .post(format!("{}/api/auth/api-keys", self.server_url))
             .bearer_auth(access_token)
-            .json(&CreateApiKeyRequest { name: name.to_string(), expires_at: None })
+            .json(&CreateApiKeyRequest {
+                name: name.to_string(),
+                expires_at: None,
+            })
             .send()
             .await
             .context("failed to reach server")?;
-        require_success(resp).await?.json().await.context("invalid create-key response")
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid create-key response")
     }
 
-    pub async fn revoke_api_key(
-        &self,
-        access_token: &str,
-        key_id: &str,
-    ) -> anyhow::Result<()> {
+    pub async fn revoke_api_key(&self, access_token: &str, key_id: &str) -> anyhow::Result<()> {
         let resp = self
             .inner
             .delete(format!("{}/api/auth/api-keys/{key_id}", self.server_url))
@@ -352,7 +409,9 @@ impl Client {
             .inner
             .put(format!("{}/api/personality/{name}", self.server_url))
             .bearer_auth(access_token)
-            .json(&PersonalityWriteRequest { content: content.to_string() })
+            .json(&PersonalityWriteRequest {
+                content: content.to_string(),
+            })
             .send()
             .await
             .context("failed to reach server")?;
@@ -367,9 +426,7 @@ async fn parse_sse(
     response: reqwest::Response,
     on_chunk: &mut impl FnMut(&str),
 ) -> anyhow::Result<SseDone> {
-    let byte_stream = response
-        .bytes_stream()
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e));
+    let byte_stream = response.bytes_stream().map_err(std::io::Error::other);
     let reader = StreamReader::new(byte_stream);
     let mut lines = BufReader::new(reader).lines();
 
@@ -437,11 +494,13 @@ mod tests {
     #[tokio::test]
     async fn login_returns_tokens() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/api/auth/login"))
+        Mock::given(method("POST"))
+            .and(path("/api/auth/login"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "acc", "refresh_token": "ref", "token_type": "Bearer"
             })))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let client = Client::new(server.uri());
         let resp = client.login("a@b.com", "pass").await.unwrap();
@@ -463,12 +522,19 @@ mod tests {
 
         let client = Client::new(server.uri());
         let mut collected = String::new();
-        let done = client.chat("token", &ChatRequest {
-            conversation_id: None,
-            message: "hi".to_string(),
-            provider_id: None,
-            model: None,
-        }, |delta| collected.push_str(delta)).await.unwrap();
+        let done = client
+            .chat(
+                "token",
+                &ChatRequest {
+                    conversation_id: None,
+                    message: "hi".to_string(),
+                    provider_id: None,
+                    model: None,
+                },
+                |delta| collected.push_str(delta),
+            )
+            .await
+            .unwrap();
 
         assert_eq!(collected, "Hello world");
         assert_eq!(done.conversation_id, "conv1");
@@ -477,10 +543,15 @@ mod tests {
     #[tokio::test]
     async fn server_error_returns_err() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/api/auth/login"))
-            .respond_with(ResponseTemplate::new(401)
-                .set_body_json(serde_json::json!({"code":"unauthorized","message":"bad creds"})))
-            .mount(&server).await;
+        Mock::given(method("POST"))
+            .and(path("/api/auth/login"))
+            .respond_with(
+                ResponseTemplate::new(401).set_body_json(
+                    serde_json::json!({"code":"unauthorized","message":"bad creds"}),
+                ),
+            )
+            .mount(&server)
+            .await;
 
         let client = Client::new(server.uri());
         let err = client.login("a@b.com", "wrong").await.unwrap_err();
@@ -490,44 +561,64 @@ mod tests {
     #[tokio::test]
     async fn chat_401_produces_token_expired_sentinel() {
         let server = MockServer::start().await;
-        Mock::given(method("POST")).and(path("/api/chat"))
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
             .respond_with(ResponseTemplate::new(401))
-            .mount(&server).await;
+            .mount(&server)
+            .await;
 
         let client = Client::new(server.uri());
-        let err = client.chat("expired", &ChatRequest {
-            conversation_id: None,
-            message: "hi".to_string(),
-            provider_id: None,
-            model: None,
-        }, |_| {}).await.unwrap_err();
+        let err = client
+            .chat(
+                "expired",
+                &ChatRequest {
+                    conversation_id: None,
+                    message: "hi".to_string(),
+                    provider_id: None,
+                    model: None,
+                },
+                |_| {},
+            )
+            .await
+            .unwrap_err();
 
-        assert!(Client::is_token_expired(&err), "expected token-expired sentinel, got: {err}");
+        assert!(
+            Client::is_token_expired(&err),
+            "expected token-expired sentinel, got: {err}"
+        );
     }
 
     #[tokio::test]
     async fn refresh_returns_new_tokens() {
         let server = MockServer::start().await;
         // Simulate first chat → 401, then refresh → new tokens, then chat → 200.
-        Mock::given(method("POST")).and(path("/api/chat"))
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
             .and(header("authorization", "Bearer old-token"))
             .respond_with(ResponseTemplate::new(401))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/api/auth/refresh"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/auth/refresh"))
             .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({
                 "access_token": "new-token",
                 "refresh_token": "new-refresh",
                 "token_type": "Bearer",
             })))
-            .mount(&server).await;
-        Mock::given(method("POST")).and(path("/api/chat"))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/api/chat"))
             .and(header("authorization", "Bearer new-token"))
-            .respond_with(ResponseTemplate::new(200)
-                .insert_header("content-type", "text/event-stream")
-                .set_body_string(
-                    "event: done\ndata: {\"conversation_id\":\"c1\",\"message_id\":\"m1\"}\n\n"
-                ))
-            .mount(&server).await;
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .insert_header("content-type", "text/event-stream")
+                    .set_body_string(
+                        "event: done\ndata: {\"conversation_id\":\"c1\",\"message_id\":\"m1\"}\n\n",
+                    ),
+            )
+            .mount(&server)
+            .await;
 
         let client = Client::new(server.uri());
         let request = ChatRequest {
@@ -538,7 +629,10 @@ mod tests {
         };
 
         // Caller detects 401, refreshes, retries.
-        let first_err = client.chat("old-token", &request, |_| {}).await.unwrap_err();
+        let first_err = client
+            .chat("old-token", &request, |_| {})
+            .await
+            .unwrap_err();
         assert!(Client::is_token_expired(&first_err));
 
         let tokens = client.refresh("old-refresh").await.unwrap();

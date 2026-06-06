@@ -6,8 +6,8 @@ use axum::{
 use std::sync::Arc;
 
 use helpcore_api::{
-    MemoryEntry, MemoryListResponse, MemoryReadResponse, MemoryWriteRequest,
-    PersonalityResponse, PersonalityWriteRequest,
+    MemoryEntry, MemoryListResponse, MemoryReadResponse, MemoryWriteRequest, PersonalityResponse,
+    PersonalityWriteRequest,
 };
 
 use crate::{
@@ -68,7 +68,10 @@ pub async fn list_memory(
         .await?;
     let files = entries
         .into_iter()
-        .map(|e| MemoryEntry { path: e.path, updated_at: e.updated_at })
+        .map(|e| MemoryEntry {
+            path: e.path,
+            updated_at: e.updated_at,
+        })
         .collect();
     Ok(Json(MemoryListResponse { files }))
 }
@@ -80,15 +83,18 @@ pub async fn get_memory(
     auth_user: AuthUser,
     Path(file_path): Path<String>,
 ) -> Result<Json<MemoryReadResponse>, AppError> {
-    let path = memory::sanitize_path(&file_path)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let path =
+        memory::sanitize_path(&file_path).map_err(|e| AppError::BadRequest(e.to_string()))?;
     let uid = auth_user.id.clone();
     let content = state
         .db
         .call(move |conn| memory::read_memory(conn, &uid, &path))
         .await?
         .ok_or(AppError::NotFound)?;
-    Ok(Json(MemoryReadResponse { path: file_path, content }))
+    Ok(Json(MemoryReadResponse {
+        path: file_path,
+        content,
+    }))
 }
 
 pub async fn put_memory(
@@ -97,8 +103,8 @@ pub async fn put_memory(
     Path(file_path): Path<String>,
     Json(req): Json<MemoryWriteRequest>,
 ) -> Result<StatusCode, AppError> {
-    let path = memory::sanitize_path(&file_path)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let path =
+        memory::sanitize_path(&file_path).map_err(|e| AppError::BadRequest(e.to_string()))?;
     let uid = auth_user.id.clone();
     state
         .db
@@ -112,12 +118,16 @@ pub async fn delete_memory(
     auth_user: AuthUser,
     Path(file_path): Path<String>,
 ) -> Result<StatusCode, AppError> {
-    let path = memory::sanitize_path(&file_path)
-        .map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let path =
+        memory::sanitize_path(&file_path).map_err(|e| AppError::BadRequest(e.to_string()))?;
     let uid = auth_user.id.clone();
     let deleted = state
         .db
         .call(move |conn| memory::delete_memory(conn, &uid, &path))
         .await?;
-    if deleted { Ok(StatusCode::NO_CONTENT) } else { Err(AppError::NotFound) }
+    if deleted {
+        Ok(StatusCode::NO_CONTENT)
+    } else {
+        Err(AppError::NotFound)
+    }
 }

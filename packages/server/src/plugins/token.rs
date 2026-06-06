@@ -3,7 +3,6 @@
 /// Bridge plugins (like the voice plugin) need a long-lived credential to call
 /// the helpcore API on behalf of a user. These are separate from user session
 /// tokens and can be independently revoked.
-
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::{Connection, params};
@@ -62,7 +61,11 @@ pub fn validate_plugin_token(
 }
 
 /// Revoke a plugin token by its ID.
-pub fn revoke_plugin_token(conn: &Connection, token_id: &str, user_id: &str) -> anyhow::Result<bool> {
+pub fn revoke_plugin_token(
+    conn: &Connection,
+    token_id: &str,
+    user_id: &str,
+) -> anyhow::Result<bool> {
     let now = Utc::now().to_rfc3339();
     let n = conn.execute(
         "UPDATE plugin_tokens SET revoked_at = ?1
@@ -92,8 +95,8 @@ pub fn list_plugin_tokens(
     let rows = stmt
         .query_map(params![user_id, plugin_id], |row| {
             Ok(TokenInfo {
-                id:         row.get(0)?,
-                plugin_id:  row.get(1)?,
+                id: row.get(0)?,
+                plugin_id: row.get(1)?,
                 created_at: row.get(2)?,
             })
         })?
@@ -104,7 +107,10 @@ pub fn list_plugin_tokens(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{db::open_in_memory, plugins::registry::{Manifest, upsert_plugin, ensure_installed}};
+    use crate::{
+        db::open_in_memory,
+        plugins::registry::{Manifest, ensure_installed, upsert_plugin},
+    };
 
     fn make_manifest(id: &str) -> Manifest {
         Manifest {
@@ -127,7 +133,8 @@ mod tests {
             "INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
              VALUES ('u1', 'tok@test.com', 'hash', 'admin', '2024-01-01', '2024-01-01')",
             [],
-        ).unwrap();
+        )
+        .unwrap();
         let m = make_manifest("bridge-plugin");
         upsert_plugin(conn, &m).unwrap();
         ensure_installed(conn, "u1", &m, None, true).unwrap();

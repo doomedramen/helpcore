@@ -15,7 +15,7 @@ export interface CurrentUser {
   id: string;
   email: string;
   display_name: string | null;
-  role: 'admin' | 'member';
+  role: "admin" | "member";
   timezone: string;
 }
 
@@ -65,8 +65,8 @@ export interface AdminUserSummary {
   id: string;
   email: string;
   display_name: string | null;
-  role: 'admin' | 'member';
-  status: 'active' | 'deactivated';
+  role: "admin" | "member";
+  status: "active" | "deactivated";
   created_at: string;
 }
 
@@ -102,13 +102,13 @@ export interface ConversationSummary {
 
 export interface Message {
   id: string;
-  role: 'user' | 'assistant' | 'summary' | 'tool';
+  role: "user" | "assistant" | "summary" | "tool";
   content: string;
   tool_call_id: string | null;
   tool_calls: unknown[] | null;
   sequence: number;
   created_at: string;
-  status: 'pending' | 'streaming' | 'complete' | 'failed' | 'interrupted';
+  status: "pending" | "streaming" | "complete" | "failed" | "interrupted";
   error: string | null;
   updated_at: string;
 }
@@ -137,7 +137,7 @@ export interface ProviderListResponse {
 export interface ConfigField {
   key: string;
   label: string;
-  type: 'text' | 'url' | 'number' | 'select' | 'boolean' | 'secret';
+  type: "text" | "url" | "number" | "select" | "boolean" | "secret";
   required: boolean;
   hint?: string;
   default?: string;
@@ -150,7 +150,9 @@ export interface ConfigField {
 /** Value for a non-secret config field. */
 export type ConfigScalar = string | number | boolean | null;
 /** Value returned for a secret field — never the raw value. */
-export interface SecretStatus { configured: boolean; }
+export interface SecretStatus {
+  configured: boolean;
+}
 export type ConfigValue = ConfigScalar | SecretStatus;
 export type ConfigValues = Record<string, ConfigValue>;
 
@@ -166,7 +168,7 @@ export interface PluginInfo {
   active_version: string;
   previous_version: string | null;
   available_version: string | null;
-  tier: 'wasm' | 'bridge';
+  tier: "wasm" | "bridge";
   permissions: string[];
   provides: string[];
   enabled: boolean;
@@ -183,7 +185,7 @@ export interface PluginStoreItem {
   name: string;
   description: string;
   version: string;
-  tier: 'wasm' | 'bridge';
+  tier: "wasm" | "bridge";
   author: string;
   homepage: string;
   setup_guide: string | null;
@@ -204,13 +206,8 @@ export interface PluginStoreResponse {
   plugins: PluginStoreItem[];
 }
 
-export type ProviderType =
-  | 'anthropic'
-  | 'deepseek'
-  | 'openai'
-  | 'ollama'
-  | 'openai_compatible';
-export type ProviderRole = 'chat' | 'code' | 'image_gen' | 'video_gen' | 'embeddings';
+export type ProviderType = "anthropic" | "deepseek" | "openai" | "ollama" | "openai_compatible";
+export type ProviderRole = "chat" | "code" | "image_gen" | "video_gen" | "embeddings";
 
 export interface AdminProviderConfig {
   id: string;
@@ -240,13 +237,13 @@ export interface AdminConfig {
   restart_required: boolean;
 }
 
-export interface AdminProviderUpdate extends Omit<AdminProviderConfig, 'api_key_configured'> {
+export interface AdminProviderUpdate extends Omit<AdminProviderConfig, "api_key_configured"> {
   api_key?: string | null;
   clear_api_key?: boolean;
 }
 
 export interface AdminConfigUpdate {
-  server: AdminConfig['server'];
+  server: AdminConfig["server"];
   logging_level: string;
   registry_url: string;
   plugin_blacklist: string[];

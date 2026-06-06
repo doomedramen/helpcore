@@ -1,6 +1,5 @@
 /// Plugin registry: loading manifests from disk, registering plugins in the DB,
 /// and querying installed plugins for a user.
-
 use anyhow::Context;
 use chrono::Utc;
 use helpcore_api::ConfigField;
@@ -20,7 +19,7 @@ pub struct Manifest {
     pub name: String,
     pub version: String,
     pub description: String,
-    pub tier: String,           // "wasm" | "bridge"
+    pub tier: String, // "wasm" | "bridge"
     #[serde(default)]
     pub permissions: Vec<String>,
     pub min_core_version: Option<String>,
@@ -130,7 +129,10 @@ pub struct PluginTool {
 
 /// Returns the value of the field with `role = "bridge_endpoint"` from the stored config,
 /// or falls back to the legacy `"endpoint"` key for plugins without a schema.
-pub fn bridge_endpoint<'a>(schema: &[ConfigField], config: &'a serde_json::Value) -> Option<&'a str> {
+pub fn bridge_endpoint<'a>(
+    schema: &[ConfigField],
+    config: &'a serde_json::Value,
+) -> Option<&'a str> {
     let key = schema
         .iter()
         .find(|f| f.role.as_deref() == Some("bridge_endpoint"))
@@ -227,7 +229,14 @@ pub fn upsert_plugin(conn: &Connection, manifest: &Manifest) -> anyhow::Result<(
            manifest  = excluded.manifest,
            tier      = excluded.tier,
            cached_at = excluded.cached_at",
-        params![manifest.id, manifest.name, manifest.version, manifest_json, manifest.tier, now],
+        params![
+            manifest.id,
+            manifest.name,
+            manifest.version,
+            manifest_json,
+            manifest.tier,
+            now
+        ],
     )
     .context("failed to upsert plugin")?;
     Ok(())
@@ -328,14 +337,14 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
             let config_json: String = row.get(11)?;
             Ok(InstalledPlugin {
                 install_id: row.get(0)?,
-                plugin_id:  row.get(1)?,
-                name:       row.get(2)?,
+                plugin_id: row.get(1)?,
+                name: row.get(2)?,
                 description: manifest.description.clone(),
-                version:    row.get(4)?,
+                version: row.get(4)?,
                 previous_version: row.get(9)?,
-                tier:       row.get(5)?,
-                enabled:    row.get::<_, i32>(6)? != 0,
-                skill_md:   row.get(7)?,
+                tier: row.get(5)?,
+                enabled: row.get::<_, i32>(6)? != 0,
+                skill_md: row.get(7)?,
                 permissions: serde_json::from_str(&permissions_json).unwrap_or_default(),
                 manifest,
                 tools: serde_json::from_str(&tools_json).unwrap_or_default(),
@@ -425,7 +434,11 @@ pub fn load_local_plugins(
     for lp in local_plugins {
         let path = std::path::PathBuf::from(&lp.path);
         if !path.exists() {
-            tracing::warn!(id = lp.id, path = lp.path, "local plugin path not found — skipping");
+            tracing::warn!(
+                id = lp.id,
+                path = lp.path,
+                "local plugin path not found — skipping"
+            );
             continue;
         }
 
@@ -459,7 +472,12 @@ pub fn load_local_plugins(
             ensure_installed(conn, user_id, &manifest, skill.as_deref(), lp.enabled)?;
         }
 
-        tracing::info!(id = lp.id, version = manifest.version, enabled = lp.enabled, "loaded local plugin");
+        tracing::info!(
+            id = lp.id,
+            version = manifest.version,
+            enabled = lp.enabled,
+            "loaded local plugin"
+        );
     }
     Ok(())
 }
@@ -513,7 +531,10 @@ mod tests {
             assert_eq!(plugins[0].plugin_id, "test-plugin");
             assert_eq!(plugins[0].description, "A test plugin");
             assert!(plugins[0].enabled);
-            assert_eq!(plugins[0].skill_md.as_deref(), Some("You have test plugin enabled."));
+            assert_eq!(
+                plugins[0].skill_md.as_deref(),
+                Some("You have test plugin enabled.")
+            );
             Ok(())
         })
         .unwrap();

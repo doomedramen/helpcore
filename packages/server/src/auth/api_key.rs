@@ -63,7 +63,11 @@ pub fn create_api_key(
     )
     .context("failed to insert API key")?;
 
-    Ok(CreatedApiKey { id, full_key: key, key_prefix: prefix })
+    Ok(CreatedApiKey {
+        id,
+        full_key: key,
+        key_prefix: prefix,
+    })
 }
 
 /// Validates an API key and returns the `user_id` if it is active.
@@ -103,12 +107,13 @@ pub fn validate_api_key(conn: &Connection, key: &str) -> anyhow::Result<Option<S
 /// Returns `true` if a key was actually revoked.
 pub fn revoke_api_key(conn: &Connection, key_id: &str, user_id: &str) -> anyhow::Result<bool> {
     let now = Utc::now().to_rfc3339();
-    let n = conn.execute(
-        "UPDATE api_keys SET revoked_at = ?1
+    let n = conn
+        .execute(
+            "UPDATE api_keys SET revoked_at = ?1
          WHERE id = ?2 AND user_id = ?3 AND revoked_at IS NULL",
-        rusqlite::params![now, key_id, user_id],
-    )
-    .context("failed to revoke API key")?;
+            rusqlite::params![now, key_id, user_id],
+        )
+        .context("failed to revoke API key")?;
     Ok(n > 0)
 }
 
@@ -154,7 +159,7 @@ mod tests {
     #[test]
     fn create_and_validate_key() {
         let pool = open_test_db();
-        let user_id = pool.call_sync(|conn| insert_test_user(conn)).unwrap();
+        let user_id = pool.call_sync(insert_test_user).unwrap();
 
         pool.call_sync(|conn| {
             let created = create_api_key(conn, &user_id, "test-key", None, None)?;
@@ -190,7 +195,7 @@ mod tests {
     #[test]
     fn revoked_key_is_rejected() {
         let pool = open_test_db();
-        let user_id = pool.call_sync(|conn| insert_test_user(conn)).unwrap();
+        let user_id = pool.call_sync(insert_test_user).unwrap();
 
         pool.call_sync(|conn| {
             let created = create_api_key(conn, &user_id, "test-key", None, None)?;
@@ -207,7 +212,7 @@ mod tests {
     #[test]
     fn revoke_returns_false_for_wrong_user() {
         let pool = open_test_db();
-        let user_id = pool.call_sync(|conn| insert_test_user(conn)).unwrap();
+        let user_id = pool.call_sync(insert_test_user).unwrap();
 
         pool.call_sync(|conn| {
             let created = create_api_key(conn, &user_id, "test-key", None, None)?;

@@ -212,7 +212,7 @@ impl MessageStatus {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PersonalityResponse {
-    pub name:    String,
+    pub name: String,
     pub content: String,
 }
 
@@ -225,7 +225,7 @@ pub struct PersonalityWriteRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MemoryEntry {
-    pub path:       String,
+    pub path: String,
     pub updated_at: String,
 }
 
@@ -236,7 +236,7 @@ pub struct MemoryListResponse {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct MemoryReadResponse {
-    pub path:    String,
+    pub path: String,
     pub content: String,
 }
 
@@ -249,9 +249,9 @@ pub struct MemoryWriteRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct CompactResponse {
-    pub conversation_id:    String,
+    pub conversation_id: String,
     pub messages_compacted: usize,
-    pub summary_length:     usize,
+    pub summary_length: usize,
 }
 
 // ── Plugins ───────────────────────────────────────────────────────────────────
@@ -281,20 +281,20 @@ pub struct ConfigField {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PluginInfo {
-    pub id:          String,
-    pub name:        String,
+    pub id: String,
+    pub name: String,
     pub description: String,
     pub active_version: String,
     pub previous_version: Option<String>,
     pub available_version: Option<String>,
-    pub tier:        String,
+    pub tier: String,
     pub permissions: Vec<String>,
     #[serde(default)]
     pub provides: Vec<String>,
-    pub enabled:     bool,
-    pub configured:  bool,
+    pub enabled: bool,
+    pub configured: bool,
     pub update_available: bool,
-    pub blocked:     bool,
+    pub blocked: bool,
     pub user_managed: bool,
     pub config_schema: Vec<ConfigField>,
     /// Current config values. Non-secret fields contain their stored value.
@@ -319,26 +319,26 @@ pub struct PluginTokenRequest {
 pub struct PluginTokenResponse {
     pub token_id: String,
     /// The raw token value — shown only once; store it securely.
-    pub token:    String,
+    pub token: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct PluginStoreItem {
-    pub id:          String,
-    pub name:        String,
+    pub id: String,
+    pub name: String,
     pub description: String,
-    pub version:     String,
-    pub tier:        String,
-    pub author:      String,
-    pub homepage:    String,
+    pub version: String,
+    pub tier: String,
+    pub author: String,
+    pub homepage: String,
     pub setup_guide: Option<String>,
     pub permissions: Vec<String>,
     #[serde(default)]
     pub provides: Vec<String>,
     pub installable: bool,
-    pub installed:   bool,
-    pub enabled:     bool,
-    pub blocked:     bool,
+    pub installed: bool,
+    pub enabled: bool,
+    pub blocked: bool,
     pub active_version: Option<String>,
     pub previous_version: Option<String>,
     pub configured: bool,

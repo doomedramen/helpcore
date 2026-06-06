@@ -157,6 +157,7 @@ fn verify_checksum(bytes: &[u8], expected: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+#[allow(clippy::too_many_arguments)]
 fn extract_and_validate(
     data_dir: &Path,
     user_id: &str,

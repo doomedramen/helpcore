@@ -7,22 +7,22 @@ use rusqlite::{Connection, params};
 /// Soul, identity, and user-profile personality files for a user.
 #[derive(Debug, Default)]
 pub struct PersonalityFiles {
-    pub soul:         Option<String>,
-    pub identity:     Option<String>,
+    pub soul: Option<String>,
+    pub identity: Option<String>,
     pub user_profile: Option<String>,
 }
 
 /// A memory file returned from a search or direct read.
 #[derive(Debug, Clone)]
 pub struct MemoryResult {
-    pub path:    String,
+    pub path: String,
     pub content: String,
 }
 
 /// Metadata returned when listing memory files.
 #[derive(Debug, Clone)]
 pub struct MemoryEntry {
-    pub path:       String,
+    pub path: String,
     pub updated_at: String,
 }
 
@@ -58,9 +58,8 @@ pub fn sanitize_path(path: &str) -> anyhow::Result<String> {
 
 /// Load all three personality files for a user in one query.
 pub fn load_personality(conn: &Connection, user_id: &str) -> anyhow::Result<PersonalityFiles> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT name, content FROM user_personality WHERE user_id = ?1",
-    )?;
+    let mut stmt =
+        conn.prepare_cached("SELECT name, content FROM user_personality WHERE user_id = ?1")?;
     let rows = stmt.query_map(params![user_id], |row| {
         Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     })?;
@@ -69,10 +68,10 @@ pub fn load_personality(conn: &Connection, user_id: &str) -> anyhow::Result<Pers
     for row in rows {
         let (name, content) = row?;
         match name.as_str() {
-            "soul"     => files.soul         = Some(content),
-            "identity" => files.identity     = Some(content),
-            "user"     => files.user_profile = Some(content),
-            _          => {}
+            "soul" => files.soul = Some(content),
+            "identity" => files.identity = Some(content),
+            "user" => files.user_profile = Some(content),
+            _ => {}
         }
     }
     Ok(files)
@@ -84,9 +83,8 @@ pub fn get_personality(
     user_id: &str,
     name: &str,
 ) -> anyhow::Result<Option<String>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT content FROM user_personality WHERE user_id = ?1 AND name = ?2",
-    )?;
+    let mut stmt = conn
+        .prepare_cached("SELECT content FROM user_personality WHERE user_id = ?1 AND name = ?2")?;
     let result = stmt.query_row(params![user_id, name], |row| row.get(0));
     match result {
         Ok(content) => Ok(Some(content)),
@@ -115,9 +113,9 @@ and suggest they complete this file at /personality.";
 pub fn seed_default_personality(conn: &Connection, user_id: &str) -> anyhow::Result<()> {
     let now = Utc::now().to_rfc3339();
     for (name, content) in [
-        ("soul",     DEFAULT_SOUL),
+        ("soul", DEFAULT_SOUL),
         ("identity", DEFAULT_IDENTITY),
-        ("user",     DEFAULT_USER_PROFILE),
+        ("user", DEFAULT_USER_PROFILE),
     ] {
         conn.execute(
             "INSERT OR IGNORE INTO user_personality (user_id, name, content, updated_at)
@@ -158,7 +156,7 @@ pub fn list_memory(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Memor
     let entries = stmt
         .query_map(params![user_id], |row| {
             Ok(MemoryEntry {
-                path:       row.get(0)?,
+                path: row.get(0)?,
                 updated_at: row.get(1)?,
             })
         })?
@@ -167,14 +165,9 @@ pub fn list_memory(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Memor
 }
 
 /// Read one memory file by path. Returns `None` if the file does not exist.
-pub fn read_memory(
-    conn: &Connection,
-    user_id: &str,
-    path: &str,
-) -> anyhow::Result<Option<String>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT content FROM memory_files WHERE user_id = ?1 AND path = ?2",
-    )?;
+pub fn read_memory(conn: &Connection, user_id: &str, path: &str) -> anyhow::Result<Option<String>> {
+    let mut stmt =
+        conn.prepare_cached("SELECT content FROM memory_files WHERE user_id = ?1 AND path = ?2")?;
     match stmt.query_row(params![user_id, path], |row| row.get(0)) {
         Ok(content) => Ok(Some(content)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -265,7 +258,10 @@ pub fn search_memory(
         )?;
         let results = stmt
             .query_map(params![user_id, limit as i64], |row| {
-                Ok(MemoryResult { path: row.get(0)?, content: row.get(1)? })
+                Ok(MemoryResult {
+                    path: row.get(0)?,
+                    content: row.get(1)?,
+                })
             })?
             .collect::<Result<Vec<_>, _>>()?;
         return Ok(results);
@@ -285,7 +281,10 @@ pub fn search_memory(
     )?;
     let results = stmt
         .query_map(params![query, user_id, limit as i64], |row| {
-            Ok(MemoryResult { path: row.get(0)?, content: row.get(1)? })
+            Ok(MemoryResult {
+                path: row.get(0)?,
+                content: row.get(1)?,
+            })
         })?
         .collect::<Result<Vec<_>, _>>()?;
     Ok(results)
@@ -408,8 +407,18 @@ mod tests {
         let pool = open_in_memory();
         pool.call_sync(|conn| {
             let uid = setup_user(conn);
-            write_memory(conn, &uid, "rust.md", "Rust is a systems programming language.")?;
-            write_memory(conn, &uid, "cooking.md", "My favourite recipe is carbonara.")?;
+            write_memory(
+                conn,
+                &uid,
+                "rust.md",
+                "Rust is a systems programming language.",
+            )?;
+            write_memory(
+                conn,
+                &uid,
+                "cooking.md",
+                "My favourite recipe is carbonara.",
+            )?;
 
             let results = search_memory(conn, &uid, "rust programming", 10)?;
             assert_eq!(results.len(), 1);

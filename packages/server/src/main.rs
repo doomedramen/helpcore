@@ -61,13 +61,18 @@ async fn main() -> anyhow::Result<()> {
             })?;
             // Reload config as provider IDs have changed.
             config = config::Config::load(&config_path)?;
-            config.validate().context("invalid server configuration after provider ID migration")?;
+            config
+                .validate()
+                .context("invalid server configuration after provider ID migration")?;
         }
     }
 
     let interrupted = db.call_sync(conversation::history::interrupt_active_messages)?;
     if interrupted > 0 {
-        tracing::warn!(count = interrupted, "marked unfinished responses as interrupted");
+        tracing::warn!(
+            count = interrupted,
+            "marked unfinished responses as interrupted"
+        );
     }
 
     // First-run check.
@@ -84,9 +89,7 @@ async fn main() -> anyhow::Result<()> {
     })?;
 
     // Load local plugins (registers them in DB for all users).
-    db.call_sync(|conn| {
-        plugins::registry::load_local_plugins(conn, &config.plugins.local)
-    })?;
+    db.call_sync(|conn| plugins::registry::load_local_plugins(conn, &config.plugins.local))?;
 
     let provider_registry = providers::registry::ProviderRegistry::new(
         providers::registry::ProviderRegistry::prepare(&config.providers)
@@ -114,7 +117,11 @@ async fn main() -> anyhow::Result<()> {
         .await
         .with_context(|| format!("failed to bind to {addr}"))?;
 
-    tracing::info!(addr, version = env!("CARGO_PKG_VERSION"), "helpcore listening");
+    tracing::info!(
+        addr,
+        version = env!("CARGO_PKG_VERSION"),
+        "helpcore listening"
+    );
 
     axum::serve(listener, api::router::create(state))
         .with_graceful_shutdown(shutdown_signal())
@@ -127,10 +134,9 @@ async fn main() -> anyhow::Result<()> {
 async fn shutdown_signal() {
     #[cfg(unix)]
     {
-        let mut terminate = tokio::signal::unix::signal(
-            tokio::signal::unix::SignalKind::terminate(),
-        )
-        .expect("failed to install SIGTERM handler");
+        let mut terminate =
+            tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+                .expect("failed to install SIGTERM handler");
         tokio::select! {
             _ = tokio::signal::ctrl_c() => {}
             _ = terminate.recv() => {}

@@ -37,19 +37,18 @@ fn test_state_with_provider_roles(
         Vec<helpcore_server::config::ProviderRole>,
     )>,
 ) -> Arc<helpcore_server::state::AppState> {
-    use helpcore_server::{config, db, state};
     use helpcore_server::providers::registry::ProviderRegistry;
+    use helpcore_server::{config, db, state};
 
     let db_pool = Arc::new(db::open_in_memory());
-    let cfg: config::Config =
-        toml::from_str(r#"[server]
+    let cfg: config::Config = toml::from_str(
+        r#"[server]
 name = "test"
-url  = "http://localhost:3000""#)
-            .unwrap();
-    let data_dir = std::env::temp_dir().join(format!(
-        "helpcore-test-data-{}",
-        uuid::Uuid::new_v4()
-    ));
+url  = "http://localhost:3000""#,
+    )
+    .unwrap();
+    let data_dir =
+        std::env::temp_dir().join(format!("helpcore-test-data-{}", uuid::Uuid::new_v4()));
     std::fs::create_dir_all(&data_dir).unwrap();
     Arc::new(state::AppState {
         config: Arc::new(cfg),
@@ -138,7 +137,7 @@ async fn authed_put_json(
 
 async fn do_setup(state: Arc<helpcore_server::state::AppState>) -> LoginResponse {
     use helpcore_server::auth::setup;
-    let token = state.db.call_sync(|conn| setup::generate_setup_token(conn)).unwrap();
+    let token = state.db.call_sync(setup::generate_setup_token).unwrap();
     let resp = post_json(
         app(Arc::clone(&state)),
         "/api/setup",
@@ -155,7 +154,12 @@ async fn do_setup(state: Arc<helpcore_server::state::AppState>) -> LoginResponse
 async fn health_returns_200() {
     let state = test_state();
     let resp = app(state)
-        .oneshot(Request::builder().uri("/api/health").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -165,7 +169,12 @@ async fn health_returns_200() {
 async fn setup_status_true_on_fresh_db() {
     let state = test_state();
     let resp = app(Arc::clone(&state))
-        .oneshot(Request::builder().uri("/api/setup").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/setup")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     assert_eq!(resp.status(), StatusCode::OK);
@@ -186,7 +195,12 @@ async fn setup_status_false_after_setup() {
     let state = test_state();
     do_setup(Arc::clone(&state)).await;
     let resp = app(Arc::clone(&state))
-        .oneshot(Request::builder().uri("/api/setup").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/setup")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .unwrap();
     let body: SetupStatusResponse = json_body(resp.into_body()).await;
@@ -447,7 +461,10 @@ async fn admin_provider_changes_hot_reload_and_report_restart_state() {
     )
     .await;
     let providers: ProviderListResponse = json_body(resp.into_body()).await;
-    assert!(providers.providers.is_empty(), "non-chat provider must be hidden");
+    assert!(
+        providers.providers.is_empty(),
+        "non-chat provider must be hidden"
+    );
 
     let resp = authed_get(app(state), "/api/admin/config", &tokens.access_token).await;
     let saved: AdminConfigResponse = json_body(resp.into_body()).await;
@@ -467,10 +484,18 @@ async fn invalid_provider_save_preserves_file_and_live_registry() {
     struct ExistingProvider;
     #[async_trait]
     impl ChatProvider for ExistingProvider {
-        fn id(&self) -> &str { "existing" }
-        fn name(&self) -> &str { "Existing" }
-        fn default_model(&self) -> &str { "existing-model" }
-        fn context_limit(&self) -> u32 { 8192 }
+        fn id(&self) -> &str {
+            "existing"
+        }
+        fn name(&self) -> &str {
+            "Existing"
+        }
+        fn default_model(&self) -> &str {
+            "existing-model"
+        }
+        fn context_limit(&self) -> u32 {
+            8192
+        }
         async fn complete(
             &self,
             _: &[ChatMessage],
@@ -511,14 +536,19 @@ async fn invalid_provider_save_preserves_file_and_live_registry() {
     )
     .await;
     assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
-    assert_eq!(std::fs::read_to_string(&state.config_path).unwrap(), original);
-    assert!(state
-        .providers
-        .find_for_role(
-            Some("existing"),
-            helpcore_server::config::ProviderRole::Chat,
-        )
-        .is_some());
+    assert_eq!(
+        std::fs::read_to_string(&state.config_path).unwrap(),
+        original
+    );
+    assert!(
+        state
+            .providers
+            .find_for_role(
+                Some("existing"),
+                helpcore_server::config::ProviderRole::Chat,
+            )
+            .is_some()
+    );
 }
 
 #[tokio::test]
@@ -591,7 +621,12 @@ async fn admin_accepts_hosted_and_compatible_provider_types() {
     assert_eq!(resp.status(), StatusCode::OK);
     let body: AdminConfigResponse = json_body(resp.into_body()).await;
     assert_eq!(body.providers.len(), 4);
-    assert!(body.providers.iter().take(3).all(|provider| provider.api_key_configured));
+    assert!(
+        body.providers
+            .iter()
+            .take(3)
+            .all(|provider| provider.api_key_configured)
+    );
 
     let saved = helpcore_server::config::Config::load(&state.config_path).unwrap();
     assert_eq!(saved.providers[2].provider_type.as_str(), "deepseek");
@@ -666,12 +701,7 @@ url = "file://{}"
     .unwrap();
 
     let tokens = do_setup(Arc::clone(&state)).await;
-    let resp = authed_get(
-        app(state),
-        "/api/plugins/store",
-        &tokens.access_token,
-    )
-    .await;
+    let resp = authed_get(app(state), "/api/plugins/store", &tokens.access_token).await;
     assert_eq!(resp.status(), StatusCode::OK);
     let body: helpcore_api::PluginStoreResponse = json_body(resp.into_body()).await;
     assert_eq!(body.plugins.len(), 1);
@@ -685,7 +715,12 @@ url = "file://{}"
 async fn list_conversations_empty_initially() {
     let state = test_state();
     let tokens = do_setup(Arc::clone(&state)).await;
-    let resp = authed_get(app(Arc::clone(&state)), "/api/conversations", &tokens.access_token).await;
+    let resp = authed_get(
+        app(Arc::clone(&state)),
+        "/api/conversations",
+        &tokens.access_token,
+    )
+    .await;
     assert_eq!(resp.status(), StatusCode::OK);
     let convs: Vec<ConversationSummary> = json_body(resp.into_body()).await;
     assert!(convs.is_empty());
@@ -707,12 +742,7 @@ async fn get_messages_returns_404_for_unknown() {
 #[tokio::test]
 async fn chat_requires_authentication() {
     let state = test_state();
-    let resp = post_json(
-        app(state),
-        "/api/chat",
-        json!({ "message": "hello" }),
-    )
-    .await;
+    let resp = post_json(app(state), "/api/chat", json!({ "message": "hello" })).await;
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
 
@@ -732,23 +762,36 @@ async fn chat_returns_error_when_no_providers() {
 
 #[tokio::test]
 async fn chat_streams_and_persists_conversation() {
+    use async_trait::async_trait;
+    use futures_util::stream;
     use helpcore_server::providers::{
         error::ProviderError,
         traits::{ChatProvider, ProviderStream},
         types::{ChatMessage, StreamChunk},
     };
-    use async_trait::async_trait;
-    use futures_util::stream;
 
     struct MockProvider;
 
     #[async_trait]
     impl ChatProvider for MockProvider {
-        fn id(&self) -> &str { "mock" }
-        fn name(&self) -> &str { "Mock" }
-        fn default_model(&self) -> &str { "mock-model" }
-        fn context_limit(&self) -> u32 { 8192 }
-        async fn complete(&self, _: &[ChatMessage], _: &[helpcore_server::providers::types::ToolDefinition], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
+        fn id(&self) -> &str {
+            "mock"
+        }
+        fn name(&self) -> &str {
+            "Mock"
+        }
+        fn default_model(&self) -> &str {
+            "mock-model"
+        }
+        fn context_limit(&self) -> u32 {
+            8192
+        }
+        async fn complete(
+            &self,
+            _: &[ChatMessage],
+            _: &[helpcore_server::providers::types::ToolDefinition],
+            _: Option<&str>,
+        ) -> Result<ProviderStream, ProviderError> {
             Ok(Box::pin(stream::iter(vec![
                 Ok(StreamChunk::delta("Hello")),
                 Ok(StreamChunk::delta(" world")),
@@ -778,10 +821,18 @@ async fn chat_streams_and_persists_conversation() {
     assert!(body.contains("Hello"), "expected token content");
 
     // Conversation must now appear in the list.
-    let resp = authed_get(app(Arc::clone(&state)), "/api/conversations", &tokens.access_token).await;
+    let resp = authed_get(
+        app(Arc::clone(&state)),
+        "/api/conversations",
+        &tokens.access_token,
+    )
+    .await;
     let convs: Vec<ConversationSummary> = json_body(resp.into_body()).await;
     assert_eq!(convs.len(), 1, "expected one conversation");
-    assert_eq!(convs[0].message_count, 2, "expected user + assistant messages");
+    assert_eq!(
+        convs[0].message_count, 2,
+        "expected user + assistant messages"
+    );
 
     // Messages endpoint should return both messages.
     let conv_id = &convs[0].id;
@@ -814,10 +865,18 @@ async fn chat_uses_selected_provider_and_defaults_to_first_chat_provider() {
 
     #[async_trait]
     impl ChatProvider for NamedProvider {
-        fn id(&self) -> &str { self.id }
-        fn name(&self) -> &str { self.id }
-        fn default_model(&self) -> &str { "test-model" }
-        fn context_limit(&self) -> u32 { 8192 }
+        fn id(&self) -> &str {
+            self.id
+        }
+        fn name(&self) -> &str {
+            self.id
+        }
+        fn default_model(&self) -> &str {
+            "test-model"
+        }
+        fn context_limit(&self) -> u32 {
+            8192
+        }
         async fn complete(
             &self,
             _: &[ChatMessage],
@@ -869,22 +928,39 @@ async fn chat_uses_selected_provider_and_defaults_to_first_chat_provider() {
 
 #[tokio::test]
 async fn conversation_continues_with_existing_id() {
-    use helpcore_server::providers::{
-        error::ProviderError, traits::{ChatProvider, ProviderStream},
-        types::{ChatMessage, StreamChunk},
-    };
     use async_trait::async_trait;
     use futures_util::stream;
+    use helpcore_server::providers::{
+        error::ProviderError,
+        traits::{ChatProvider, ProviderStream},
+        types::{ChatMessage, StreamChunk},
+    };
 
     struct MockProvider;
     #[async_trait]
     impl ChatProvider for MockProvider {
-        fn id(&self) -> &str { "mock" }
-        fn name(&self) -> &str { "Mock" }
-        fn default_model(&self) -> &str { "mock-model" }
-        fn context_limit(&self) -> u32 { 8192 }
-        async fn complete(&self, _: &[ChatMessage], _: &[helpcore_server::providers::types::ToolDefinition], _: Option<&str>) -> Result<ProviderStream, ProviderError> {
-            Ok(Box::pin(stream::iter(vec![Ok(StreamChunk::delta("reply")), Ok(StreamChunk::done())])))
+        fn id(&self) -> &str {
+            "mock"
+        }
+        fn name(&self) -> &str {
+            "Mock"
+        }
+        fn default_model(&self) -> &str {
+            "mock-model"
+        }
+        fn context_limit(&self) -> u32 {
+            8192
+        }
+        async fn complete(
+            &self,
+            _: &[ChatMessage],
+            _: &[helpcore_server::providers::types::ToolDefinition],
+            _: Option<&str>,
+        ) -> Result<ProviderStream, ProviderError> {
+            Ok(Box::pin(stream::iter(vec![
+                Ok(StreamChunk::delta("reply")),
+                Ok(StreamChunk::done()),
+            ])))
         }
     }
 
@@ -892,25 +968,40 @@ async fn conversation_continues_with_existing_id() {
     let tokens = do_setup(Arc::clone(&state)).await;
 
     // First message — creates conversation.
-    let resp = authed_post_json(app(Arc::clone(&state)), "/api/chat", &tokens.access_token, json!({ "message": "first" })).await;
+    let resp = authed_post_json(
+        app(Arc::clone(&state)),
+        "/api/chat",
+        &tokens.access_token,
+        json!({ "message": "first" }),
+    )
+    .await;
     to_bytes(resp.into_body(), usize::MAX).await.unwrap(); // drain
 
-    let resp = authed_get(app(Arc::clone(&state)), "/api/conversations", &tokens.access_token).await;
+    let resp = authed_get(
+        app(Arc::clone(&state)),
+        "/api/conversations",
+        &tokens.access_token,
+    )
+    .await;
     let convs: Vec<ConversationSummary> = json_body(resp.into_body()).await;
     let conv_id = convs[0].id.clone();
 
     // Second message — continues same conversation.
     let resp = authed_post_json(
-        app(Arc::clone(&state)), "/api/chat", &tokens.access_token,
+        app(Arc::clone(&state)),
+        "/api/chat",
+        &tokens.access_token,
         json!({ "message": "second", "conversation_id": conv_id }),
-    ).await;
+    )
+    .await;
     to_bytes(resp.into_body(), usize::MAX).await.unwrap(); // drain
 
     let resp = authed_get(
         app(Arc::clone(&state)),
         &format!("/api/conversations/{conv_id}/messages"),
         &tokens.access_token,
-    ).await;
+    )
+    .await;
     let msgs: Vec<MessageSummary> = json_body(resp.into_body()).await;
     assert_eq!(msgs.len(), 4, "should have 2 user + 2 assistant messages");
     assert_eq!(msgs[0].content, "first");

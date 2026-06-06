@@ -22,8 +22,7 @@ impl Credentials {
         }
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read {}", path.display()))?;
-        toml::from_str(&content)
-            .with_context(|| format!("failed to parse {}", path.display()))
+        toml::from_str(&content).with_context(|| format!("failed to parse {}", path.display()))
     }
 
     pub fn save(&self) -> anyhow::Result<()> {
