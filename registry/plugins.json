@@ -1,3 +1,19 @@
 {
-  "plugins": []
+  "plugins": [
+    {
+      "id": "voice-kittentts",
+      "name": "Voice Conversations",
+      "description": "Voice input/output using Whisper (STT) and KittenTTS (TTS)",
+      "version": "0.1.0",
+      "tier": "bridge",
+      "repository": "https://github.com/doomedramen/helpcore",
+      "path": "plugins/voice-kittentts",
+      "permissions": ["outbound_http"],
+      "min_core_version": "0.1.0",
+      "bridge": {
+        "default_port": 8080,
+        "health_path": "/api/health"
+      }
+    }
+  ]
 }
