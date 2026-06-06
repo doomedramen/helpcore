@@ -6,7 +6,8 @@ helpcore is configured via `config.toml`. Create it from the example:
 cp config.toml.example config.toml
 ```
 
-The server looks for `config.toml` in the current working directory, or at the path set by the `HELPCORE_CONFIG` environment variable.
+The server reads the path set by `HELPCORE_CONFIG`, falling back to
+`~/.helpcore/config.toml`.
 
 > **Docker users:** see the note at the bottom about bind mounts.
 
@@ -84,6 +85,22 @@ enabled = true
 | `enabled` | Whether to activate it for all users at startup |
 
 The plugin is registered for every existing user when helpcore starts. The `skill.md` (if present) is injected into every chat context when the plugin is enabled.
+
+---
+
+## `[registry]`
+
+```toml
+[registry]
+url = "https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.json"
+```
+
+| Key | Default | Description |
+|---|---|---|
+| `url` | Public helpcore registry | Direct URL to a registry JSON file. It may also be a `file://` URL for local development. |
+
+The admin web UI reads this catalog to show available, installed, and
+server-blocked plugins.
 
 ---
 
@@ -180,6 +197,24 @@ url           = "http://localhost:1234/v1"
 default_model = "local-model"
 roles         = ["chat"]
 ```
+
+---
+
+## Web administration
+
+Admin users can open **Server settings** in the web sidebar to manage the
+server identity, logging level, registry URL, plugin blacklist, and providers.
+The server validates the submitted configuration and atomically replaces the
+configured TOML file.
+
+Provider API keys are never returned by the API. Leaving a key field blank
+preserves the saved value; the UI provides an explicit option to remove it.
+New keys are sent only in the authenticated admin update request and remain in
+the config file rather than the database.
+
+Configuration changes are persisted immediately but server, logging, registry,
+blacklist, and provider changes take effect after restarting helpcore. Per-user
+plugin enable/disable changes from the Plugins tab take effect immediately.
 
 ---
 

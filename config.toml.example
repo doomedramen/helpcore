@@ -31,6 +31,10 @@ level = "info"
 # Plugin IDs that can never be installed on this server, regardless of who asks.
 blacklist = []
 
+[registry]
+# Direct URL to a plugin registry JSON file. This can be self-hosted.
+url = "https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.json"
+
 # ── Providers ──────────────────────────────────────────────────────────────────
 # At least one provider with role "chat" is required for /chat to work.
 # Multiple providers can be listed; the first matching role is used unless

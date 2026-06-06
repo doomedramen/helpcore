@@ -1,10 +1,13 @@
 'use client';
 
+import { useState } from 'react';
 import { ExternalLink, Package, RefreshCw } from 'lucide-react';
 import useSWR from 'swr';
 import { listPlugins, listPluginStore, setPluginEnabled } from '@/lib/api';
 
 export default function PluginManager({ accessToken }: { accessToken: string }) {
+  const [updatingPlugin, setUpdatingPlugin] = useState<string | null>(null);
+  const [actionError, setActionError] = useState('');
   const {
     data: installed = [],
     error: installedError,
@@ -24,8 +27,16 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
   );
 
   async function togglePlugin(id: string, enabled: boolean) {
-    await setPluginEnabled(id, enabled, accessToken);
-    await Promise.all([refreshInstalled(), refreshStore()]);
+    setUpdatingPlugin(id);
+    setActionError('');
+    try {
+      await setPluginEnabled(id, enabled, accessToken);
+      await Promise.all([refreshInstalled(), refreshStore()]);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : 'Could not update the plugin.');
+    } finally {
+      setUpdatingPlugin(null);
+    }
   }
 
   return (
@@ -39,6 +50,7 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
         </div>
 
         {installedError && <ErrorMessage message={installedError.message} />}
+        {actionError && <ErrorMessage message={actionError} />}
         {!installedError && installed.length === 0 && (
           <EmptyState message="No plugins are installed." />
         )}
@@ -64,11 +76,12 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
                   <input
                     type="checkbox"
                     checked={plugin.enabled}
+                    disabled={updatingPlugin === plugin.id}
                     onChange={event => togglePlugin(plugin.id, event.target.checked)}
                     className="peer sr-only"
                     aria-label={`${plugin.enabled ? 'Disable' : 'Enable'} ${plugin.name}`}
                   />
-                  <span className="h-6 w-11 rounded-full bg-slate-200 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-blue-600 peer-checked:after:translate-x-5 dark:bg-slate-700" />
+                  <span className="h-6 w-11 rounded-full bg-slate-200 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-5 after:w-5 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-blue-600 peer-checked:after:translate-x-5 peer-disabled:cursor-wait peer-disabled:opacity-50 dark:bg-slate-700" />
                 </label>
               </div>
               <PluginMeta

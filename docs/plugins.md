@@ -64,9 +64,11 @@ User: "install home-assistant"
   → Plugin skill fragment is added to this user's AI context
 ```
 
-Users install and manage plugins entirely through natural language. No
-separate store UI is required (though the web app may add one as a progressive
-enhancement).
+The web admin UI currently lists installed plugins and the configured store
+catalog. Installed plugins can be enabled or disabled immediately. Registry
+installation remains future work: the core does not yet download, verify, or
+activate store entries, so the UI deliberately does not present a misleading
+Install action.
 
 ---
 
@@ -130,24 +132,26 @@ url  = "https://helpcore.example.com"
 blacklist = ["untrusted-plugin-id"]  # plugins that cannot be installed on this server
 
 [registry]
-url = "https://registry.helpcore.dev"  # can point to a self-hosted registry
+url = "https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.json"
 ```
 
 The blacklist is enforced before any install attempt. Blacklisted plugins are
 never downloaded, regardless of which user requests them.
 
-There are no default or auto-installed plugins. Every plugin is opt-in per user.
+Registry plugins are opt-in per user. Local plugins declared with
+`[[plugins.local]]` are registered for users at startup and for the first admin
+when setup completes.
 
 ---
 
 ## Store registry
 
-Lives in `registry/` in this monorepo. Consists of:
+Lives in `registry/` in this monorepo. It consists of:
 
 - `plugins.json` — the curated list of available plugins
-- A small HTTP service that serves and searches it
 
-The core's built-in store skill queries `GET {registry_url}/plugins`.
+The core fetches the configured registry URL directly. Operators can point it
+at another compatible JSON file to run a private catalog.
 
 ### `plugins.json` entry format
 

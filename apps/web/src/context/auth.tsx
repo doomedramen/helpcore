@@ -56,7 +56,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { access_token, refresh_token } = await api.login(email, password);
     localStorage.setItem(REFRESH_KEY, refresh_token);
     setAccessToken(access_token);
-    await loadCurrentUser(access_token);
+    try {
+      await loadCurrentUser(access_token);
+    } catch (error) {
+      localStorage.removeItem(REFRESH_KEY);
+      setAccessToken(null);
+      setCurrentUser(null);
+      throw error;
+    }
   }, [loadCurrentUser]);
 
   const logout = useCallback(async () => {

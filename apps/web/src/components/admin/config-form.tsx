@@ -38,11 +38,14 @@ function draftFromConfig(config: AdminConfig): AdminConfigUpdate {
     logging_level: config.logging_level,
     registry_url: config.registry_url,
     plugin_blacklist: [...config.plugin_blacklist],
-    providers: config.providers.map(provider => ({
-      ...provider,
-      api_key: null,
-      clear_api_key: false,
-    })),
+    providers: config.providers.map(({
+      api_key_configured: _apiKeyConfigured,
+      ...provider
+    }) => ({
+        ...provider,
+        api_key: null,
+        clear_api_key: false,
+      })),
   };
 }
 

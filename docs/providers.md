@@ -8,8 +8,11 @@ Personality templates: `references/zeroclaw/crates/zeroclaw-runtime/src/agent/pe
 ## What a provider is
 
 A provider is a raw LLM connection. It has a type (which API it speaks), one or
-more roles (what it is used for), and credentials. Providers are configured by
-the admin in the server config file — credentials never touch the API or the DB.
+more roles (what it is used for), and credentials. Providers are persisted in
+the server config file and can be managed there or through the admin-only web
+interface. Credentials are never returned by the API and are never stored in
+the database; a new credential crosses the authenticated admin API only when it
+is submitted.
 
 Admin controls which providers each user can access. Users are granted access
 per-provider by the admin.
@@ -36,7 +39,8 @@ A provider can hold multiple roles (e.g. OpenAI covers `chat` + `image_gen`).
 
 ## Server config
 
-Providers are declared in `~/.helpcore/config.toml`. Credentials live here only.
+Providers are declared in `~/.helpcore/config.toml` (or the path selected by
+`HELPCORE_CONFIG`). Credentials are stored here only.
 
 ```toml
 [[providers]]

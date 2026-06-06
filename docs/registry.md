@@ -22,6 +22,11 @@ https://raw.githubusercontent.com/martinsmith/helpcore/main/registry/plugins.jso
 Operators can point `[registry] url` at their own JSON file to run a private
 registry (self-hosted plugins, corporate use, etc.).
 
+The admin web UI fetches this file through the core and shows available,
+installed, enabled, and server-blocked entries. Downloading, checksum
+verification, permission approval, and activation of registry entries are not
+implemented yet; the install flows below describe the intended design.
+
 ---
 
 ## Plugin entry format
