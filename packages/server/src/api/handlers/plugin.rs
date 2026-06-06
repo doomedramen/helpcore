@@ -150,7 +150,7 @@ pub async fn list_store(
             }
         })
         .collect::<Vec<_>>();
-    plugins.sort_by(|left, right| left.name.to_lowercase().cmp(&right.name.to_lowercase()));
+    plugins.sort_by_key(|left| left.name.to_lowercase());
 
     Ok(Json(PluginStoreResponse {
         registry_url,
