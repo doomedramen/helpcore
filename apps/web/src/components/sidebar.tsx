@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Brain, FileText, KeyRound, LogOut, MessageSquarePlus, Plug, Settings, Trash2, Users } from 'lucide-react';
+import { LogOut, MessageSquarePlus, Settings, Shield, Trash2 } from 'lucide-react';
 import useSWR, { useSWRConfig } from 'swr';
 import { deleteConversation, listConversations } from '@/lib/api';
 import { useAuth } from '@/context/auth';
@@ -20,6 +20,10 @@ import {
 interface Props {
   conversationId: string | null;
   onSelect: (id: string | null) => void;
+}
+
+function isSettingsPath(p: string) {
+  return p.startsWith('/settings') || p.startsWith('/personality') || p.startsWith('/memory') || p.startsWith('/plugins');
 }
 
 export default function Sidebar({ conversationId, onSelect }: Props) {
@@ -103,78 +107,32 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
       {/* Footer */}
       <div className="mx-3 border-t border-slate-800 mt-2 pt-2 pb-3">
         <button
-          onClick={() => router.push('/personality/')}
+          onClick={() => router.push('/settings/')}
           className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-            pathname.startsWith('/personality')
+            isSettingsPath(pathname)
               ? 'bg-slate-800 text-white'
               : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
           }`}
         >
-          <Brain size={15} className="shrink-0" />
-          Personality
-        </button>
-        <button
-          onClick={() => router.push('/memory/')}
-          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-            pathname.startsWith('/memory')
-              ? 'bg-slate-800 text-white'
-              : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-          }`}
-        >
-          <FileText size={15} className="shrink-0" />
-          Memory
-        </button>
-        <button
-          onClick={() => router.push('/plugins/')}
-          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-            pathname.startsWith('/plugins')
-              ? 'bg-slate-800 text-white'
-              : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-          }`}
-        >
-          <Plug size={15} className="shrink-0" />
-          Plugins
-        </button>
-        <button
-          onClick={() => router.push('/settings/api-keys/')}
-          className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-            pathname.startsWith('/settings')
-              ? 'bg-slate-800 text-white'
-              : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-          }`}
-        >
-          <KeyRound size={15} className="shrink-0" />
-          API keys
+          <Settings size={15} className="shrink-0" />
+          Settings
         </button>
         {currentUser?.role === 'admin' && (
-          <>
-            <button
-              onClick={() => router.push('/admin/users/')}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-                pathname.startsWith('/admin/users')
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-              }`}
-            >
-              <Users size={15} className="shrink-0" />
-              Users
-            </button>
-            <button
-              onClick={() => router.push('/admin/')}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-                pathname === '/admin/' || pathname === '/admin'
-                  ? 'bg-slate-800 text-white'
-                  : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
-              }`}
-            >
-              <Settings size={15} className="shrink-0" />
-              Server settings
-            </button>
-          </>
+          <button
+            onClick={() => router.push('/admin/')}
+            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
+              pathname.startsWith('/admin')
+                ? 'bg-slate-800 text-white'
+                : 'text-slate-400 hover:bg-slate-900 hover:text-slate-200'
+            }`}
+          >
+            <Shield size={15} className="shrink-0" />
+            Admin
+          </button>
         )}
         <ThemeToggle
-          showLabel
-          className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"
+          variant="segmented"
+          className="px-3 py-2"
         />
         <button
           onClick={handleLogout}

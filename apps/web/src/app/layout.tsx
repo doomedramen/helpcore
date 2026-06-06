@@ -11,22 +11,6 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <head>
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-              try {
-                const savedTheme = localStorage.getItem('helpcore-theme');
-                const dark = savedTheme
-                  ? savedTheme === 'dark'
-                  : window.matchMedia('(prefers-color-scheme: dark)').matches;
-                document.documentElement.classList.toggle('dark', dark);
-                document.documentElement.style.colorScheme = dark ? 'dark' : 'light';
-              } catch {}
-            `,
-          }}
-        />
-      </head>
       <body>
         <ThemeProvider>
           <AuthProvider>{children}</AuthProvider>
