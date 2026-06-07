@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
     fs,
+    net::IpAddr,
     path::{Component as PathComponent, Path, PathBuf},
     time::Duration,
 };
@@ -351,10 +352,12 @@ impl WasmState {
             serde_json::from_str(request_json).map_err(|error| error.to_string())?;
         let url = reqwest::Url::parse(&request.url).map_err(|error| error.to_string())?;
         ensure_host_allowed(&self.allowed_hosts, &url).map_err(|error| error.to_string())?;
-        let client = reqwest::blocking::Client::builder()
-            .timeout(BRIDGE_TIMEOUT)
-            .build()
-            .map_err(|error| error.to_string())?;
+        let mut client_builder = reqwest::blocking::Client::builder().timeout(BRIDGE_TIMEOUT);
+        // Allow self-signed certs for private IPs, .local hostnames, and localhost
+        if is_private_or_local(&url) {
+            client_builder = client_builder.danger_accept_invalid_certs(true);
+        }
+        let client = client_builder.build().map_err(|error| error.to_string())?;
         let method = reqwest::Method::from_bytes(request.method.as_bytes())
             .map_err(|error| error.to_string())?;
         let mut builder = client.request(method, url);
@@ -470,6 +473,21 @@ fn require_permission(plugin: &InstalledPlugin, permission: &str) -> anyhow::Res
 
 fn ensure_allowed_host(manifest: &Manifest, url: &reqwest::Url) -> anyhow::Result<()> {
     ensure_host_allowed(&manifest.allowed_hosts, url)
+}
+
+/// Whether a URL points to a private address where self-signed certs are expected.
+fn is_private_or_local(url: &reqwest::Url) -> bool {
+    url.host_str().map_or(false, |host| {
+        host == "localhost"
+            || host.ends_with(".local")
+            || host
+                .parse::<IpAddr>()
+                .map(|addr| match addr {
+                    IpAddr::V4(v4) => v4.is_private() || v4.is_loopback(),
+                    IpAddr::V6(v6) => v6.is_loopback(),
+                })
+                .unwrap_or(false)
+    })
 }
 
 fn ensure_host_allowed(allowed_hosts: &[String], url: &reqwest::Url) -> anyhow::Result<()> {
