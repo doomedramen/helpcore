@@ -72,7 +72,9 @@ export default function ChatInput({
           disabled={providers.length === 0}
         >
           <SelectTrigger size="sm" className="max-w-full text-xs">
-            <SelectValue placeholder="No chat providers available" />
+            <SelectValue placeholder="No chat providers available">
+              {providers.find((p) => p.id === selectedProviderId)?.name ?? selectedProviderId}
+            </SelectValue>
           </SelectTrigger>
           <SelectContent side="top">
             {providers.map((provider) => (

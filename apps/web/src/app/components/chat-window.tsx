@@ -394,7 +394,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                 <div className="whitespace-pre-wrap leading-relaxed">{item.text}</div>
                 <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">
                   {providers.find((provider) => provider.id === item.providerId)?.name ??
-                    item.providerId}
+                    `Provider ${item.providerId.slice(0, 8)}…`}
                 </div>
               </div>
               <div className="flex shrink-0 gap-1">
