@@ -603,4 +603,55 @@ mod tests {
         })
         .unwrap();
     }
+
+    /// Locks in that NO memory or personality operation can read, search,
+    /// modify, or delete another user's data — regardless of which path the
+    /// caller knows about. This is the guarantee the built-in AI tools and
+    /// HTTP handlers both rely on (every call site threads the authenticated
+    /// `user_id` straight into these functions; the isolation must hold here,
+    /// at the data layer, since that's the last line of defence).
+    #[test]
+    fn cross_user_access_is_blocked_for_every_operation() {
+        let pool = open_in_memory();
+        pool.call_sync(|conn| {
+            let owner = setup_user(conn);
+            conn.execute(
+                "INSERT INTO users (id, email, password_hash, role, created_at, updated_at)
+                 VALUES ('user-intruder', 'intruder@test.com', 'hash', 'user', '2024-01-01', '2024-01-01')",
+                [],
+            )?;
+            let intruder = "user-intruder";
+
+            write_memory(conn, &owner, "secret.md", "owner's secret pasta recipe")?;
+            set_personality(conn, &owner, "soul", "owner's private soul")?;
+
+            // Reads: nothing comes back, and nothing about the file's
+            // existence leaks (search returns no hits either).
+            assert!(read_memory(conn, intruder, "secret.md")?.is_none());
+            assert!(list_memory(conn, intruder)?.is_empty());
+            assert!(
+                search_memory(conn, intruder, "owner secret pasta recipe", 10)?.is_empty(),
+                "FTS5 search must not surface another user's content"
+            );
+            assert!(get_personality(conn, intruder, "soul")?.is_none());
+
+            // Mutations: report "not found" / no-op rather than touching the
+            // owner's row.
+            assert!(!delete_memory(conn, intruder, "secret.md")?);
+            assert!(!move_memory(conn, intruder, "secret.md", "stolen.md")?);
+
+            // The owner's data must be completely untouched by the above.
+            assert_eq!(
+                read_memory(conn, &owner, "secret.md")?.unwrap(),
+                "owner's secret pasta recipe"
+            );
+            assert_eq!(
+                get_personality(conn, &owner, "soul")?.unwrap(),
+                "owner's private soul"
+            );
+            assert_eq!(list_memory(conn, &owner)?.len(), 1);
+            Ok(())
+        })
+        .unwrap();
+    }
 }
