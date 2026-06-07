@@ -252,17 +252,30 @@ See [docs/getting-started.md#building-from-source](docs/getting-started.md#build
 ### Native macOS core
 
 The Rust server and CLI can run directly on macOS without Docker. The web app
-is separate and is not part of this build:
+is not required for a core-only build:
 
 ```bash
-make native-build
-make native-run
+make build-headless
+make run
+```
+
+Build a single server executable containing the static web UI:
+
+```bash
+make build
+./target/release/helpcore-server
+```
+
+The bundled server serves the UI by default. Run only the API with:
+
+```bash
+./target/release/helpcore-server --headless
 ```
 
 To install the server as a per-user `launchd` service:
 
 ```bash
-make macos-install
+make install
 ```
 
 See [docs/macos.md](docs/macos.md) for paths, logs, configuration, and service

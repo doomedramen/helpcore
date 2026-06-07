@@ -279,8 +279,8 @@ The repository development stack and production stack both use a writable
 directory mount at `./config`:
 
 ```bash
-make config
-# creates config/config.toml
+mkdir -p config
+cp config.toml.example config/config.toml
 ```
 
 `docker-compose.prod.yml` is intended for Dockge and other source-less servers.

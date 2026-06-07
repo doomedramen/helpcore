@@ -30,6 +30,7 @@ RUN case "$TARGETARCH" in \
 WORKDIR /build
 
 COPY . .
+COPY --from=web-builder /web/out /build/apps/web/out
 
 # Use musl-gcc for bundled C dependencies such as SQLite, but do not set it as
 # rustc's linker. musl-gcc cannot link Rust's default static PIE correctly and
@@ -41,10 +42,12 @@ RUN --mount=type=cache,target=/usr/local/cargo/registry \
     case "$TARGETARCH" in \
     amd64) \
         CC_x86_64_unknown_linux_musl=musl-gcc \
+        HELPCORE_EMBED_WEB_DIR=/build/apps/web/out \
         cargo build --release --target x86_64-unknown-linux-musl -p helpcore-server \
      && cp target/x86_64-unknown-linux-musl/release/helpcore-server /helpcore-server ;; \
     arm64) \
         CC_aarch64_unknown_linux_musl=musl-gcc \
+        HELPCORE_EMBED_WEB_DIR=/build/apps/web/out \
         cargo build --release --target aarch64-unknown-linux-musl -p helpcore-server \
      && cp target/aarch64-unknown-linux-musl/release/helpcore-server /helpcore-server ;; \
     esac
@@ -65,7 +68,6 @@ RUN apk add --no-cache ca-certificates su-exec tzdata wget
 RUN addgroup -S helpcore && adduser -S helpcore -G helpcore
 
 COPY --from=builder /helpcore-server /usr/local/bin/helpcore-server
-COPY --from=web-builder /web/out /usr/local/share/helpcore/web
 COPY docker/default-config.toml /usr/local/share/helpcore/default-config.toml
 COPY docker/entrypoint.sh /usr/local/bin/helpcore-entrypoint
 

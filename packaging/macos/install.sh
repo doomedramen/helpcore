@@ -29,8 +29,13 @@ else
     exit 1
 fi
 
+command -v npm >/dev/null 2>&1 || {
+    echo "Error: Node.js and npm are required to build the bundled web UI." >&2
+    exit 1
+}
+
 echo "Building helpcore server and CLI..."
-(cd "$repo_dir" && "$cargo_bin" build --release -p helpcore-server -p helpcore-cli)
+(cd "$repo_dir" && make CARGO="$cargo_bin" build)
 
 mkdir -p "$bin_dir" "$state_dir" "$data_dir" "$log_dir" "$agents_dir"
 install -m 0755 "$repo_dir/target/release/helpcore-server" "$bin_dir/helpcore-server"

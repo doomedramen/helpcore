@@ -171,6 +171,18 @@ cargo build --release --workspace
 # Optionally symlink: ln -s $(pwd)/target/release/helpcore /usr/local/bin/hc
 ```
 
+To embed the static web UI into the server executable:
+
+```bash
+make build
+```
+
+The bundled UI is served by default. Pass `--headless` to expose only `/api/*`:
+
+```bash
+./target/release/helpcore-server --headless
+```
+
 ### Cross-compiling for Linux (musl, from macOS)
 
 The Docker image is built as a static musl binary. To build the same locally:

@@ -7,3 +7,4 @@ pub mod model;
 pub mod plugins;
 pub mod providers;
 pub mod state;
+pub mod web;

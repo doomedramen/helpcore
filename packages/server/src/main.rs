@@ -1,10 +1,21 @@
 use helpcore_server::{api, auth, config, conversation, db, plugins, providers, state};
 
 use anyhow::Context;
+use clap::Parser;
 use std::sync::Arc;
+
+#[derive(Debug, Parser)]
+#[command(name = "helpcore-server", version, about)]
+struct Args {
+    /// Run only the API server without serving the web UI.
+    #[arg(long)]
+    headless: bool,
+}
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    let args = Args::parse();
+
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
@@ -123,7 +134,7 @@ async fn main() -> anyhow::Result<()> {
         "helpcore listening"
     );
 
-    axum::serve(listener, api::router::create(state))
+    axum::serve(listener, api::router::create(state, !args.headless))
         .with_graceful_shutdown(shutdown_signal())
         .await
         .context("server error")?;

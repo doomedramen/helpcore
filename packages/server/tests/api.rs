@@ -64,12 +64,22 @@ url  = "http://localhost:3000""#,
 }
 
 fn app(state: Arc<helpcore_server::state::AppState>) -> axum::Router {
-    helpcore_server::api::router::create(state)
+    helpcore_server::api::router::create(state, false)
 }
 
 async fn json_body<T: DeserializeOwned>(body: Body) -> T {
     let bytes = to_bytes(body, usize::MAX).await.unwrap();
     serde_json::from_slice(&bytes).unwrap()
+}
+
+#[tokio::test]
+async fn headless_router_does_not_serve_web_routes() {
+    let response = app(test_state())
+        .oneshot(Request::builder().uri("/").body(Body::empty()).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), StatusCode::NOT_FOUND);
 }
 
 async fn post_json(app: axum::Router, uri: &str, body: Value) -> axum::response::Response {
