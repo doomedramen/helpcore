@@ -3,6 +3,16 @@
 import { useEffect, useRef, useState } from "react";
 import { useForm, useFieldArray } from "react-hook-form";
 import { ChevronDown, ChevronRight, Plus, Save, Trash2 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/app/components/ui/alert-dialog";
 import { updateAdminConfig } from "@/lib/api";
 import type {
   AdminConfig,
@@ -125,6 +135,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
   const [error, setError] = useState("");
   const [savedConfig, setSavedConfig] = useState<AdminConfig | null>(null);
   const [expandedProviders, setExpandedProviders] = useState<Set<string>>(new Set());
+  const [deleteIndex, setDeleteIndex] = useState<number | null>(null);
   const prevFieldsLength = useRef(fields.length);
 
   useEffect(() => {
@@ -361,7 +372,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      remove(index);
+                      setDeleteIndex(index);
                     }}
                     className="shrink-0 rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600 dark:hover:bg-red-950/50 dark:hover:text-red-400"
                     aria-label={`Remove ${providerValues?.name || "provider"}`}
@@ -566,6 +577,40 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
           {saving ? "Saving…" : "Save configuration"}
         </button>
       </div>
+
+      <AlertDialog
+        open={deleteIndex !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteIndex(null);
+        }}
+      >
+        <AlertDialogContent size="sm">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove provider</AlertDialogTitle>
+            <AlertDialogDescription>
+              Remove "
+              {deleteIndex !== null
+                ? watch(`providers.${deleteIndex}.name`) || "Unnamed provider"
+                : ""}
+              "? You can undo this by discarding unsaved changes.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={() => {
+                if (deleteIndex !== null) {
+                  remove(deleteIndex);
+                  setDeleteIndex(null);
+                }
+              }}
+            >
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

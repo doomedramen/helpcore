@@ -152,6 +152,12 @@ pub struct SseDone {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct RetryRequest {
+    #[serde(default)]
+    pub provider_id: Option<String>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct SseToolCall {
     pub id: String,
     pub name: String,

@@ -301,6 +301,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           retryMessage({
             conversationId,
             messageId,
+            providerId: selectedProviderId,
             token,
             ...streamHandlers(conversationId, selectedProviderId),
             signal: controller.signal,

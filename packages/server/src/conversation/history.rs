@@ -128,6 +128,7 @@ pub fn retry_turn(
     user_id: &str,
     conversation_id: &str,
     assistant_message_id: &str,
+    override_provider: Option<(&str, &str)>,
 ) -> anyhow::Result<(
     ConversationSummary,
     Vec<MessageSummary>,
@@ -172,20 +173,35 @@ pub fn retry_turn(
         .context("original user message not found")?;
     let history = load_messages_before(&tx, conversation_id, user_message.sequence)?;
     let now = Utc::now().to_rfc3339();
-    tx.execute(
-        "UPDATE messages
-         SET content = '', status = 'pending', error = NULL, updated_at = ?1
-         WHERE id = ?2",
-        rusqlite::params![now, assistant_message_id],
-    )?;
+    if let Some((new_provider_id, new_model)) = override_provider {
+        tx.execute(
+            "UPDATE messages
+             SET content = '', status = 'pending', error = NULL,
+                 provider_id = ?2, model = ?3, updated_at = ?1
+             WHERE id = ?4",
+            rusqlite::params![now, new_provider_id, new_model, assistant_message_id],
+        )?;
+    } else {
+        tx.execute(
+            "UPDATE messages
+             SET content = '', status = 'pending', error = NULL, updated_at = ?1
+             WHERE id = ?2",
+            rusqlite::params![now, assistant_message_id],
+        )?;
+    }
     tx.commit()?;
+
+    let final_provider = override_provider
+        .map(|(pid, _)| pid.to_string())
+        .or(provider_id);
+    let final_model = override_provider.map(|(_, m)| m.to_string()).or(model);
 
     Ok((
         conversation,
         history,
         user_message,
-        provider_id.context("retry response has no provider")?,
-        model.context("retry response has no model")?,
+        final_provider.context("retry response has no provider")?,
+        final_model.context("retry response has no model")?,
     ))
 }
 

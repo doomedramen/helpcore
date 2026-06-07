@@ -127,6 +127,7 @@ export function listProviders(token: string): Promise<ProviderListResponse> {
 export function retryMessage(args: {
   conversationId: string;
   messageId: string;
+  providerId?: string;
   token: string;
   onStarted: (started: SseStarted) => void;
   onChunk: (delta: string) => void;
@@ -137,6 +138,7 @@ export function retryMessage(args: {
     url: `/api/conversations/${args.conversationId}/messages/${args.messageId}/retry`,
     token: args.token,
     method: "POST",
+    body: JSON.stringify({ provider_id: args.providerId ?? null }),
     onStarted: args.onStarted,
     onChunk: args.onChunk,
     onDone: args.onDone,

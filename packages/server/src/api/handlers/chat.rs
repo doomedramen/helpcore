@@ -10,8 +10,8 @@ use futures_util::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use helpcore_api::{
-    ChatRequest, ConversationSummary, MessageSummary, SseChunk, SseDone, SseStarted, SseToolCall,
-    SseToolResult,
+    ChatRequest, ConversationSummary, MessageSummary, RetryRequest, SseChunk, SseDone, SseStarted,
+    SseToolCall, SseToolResult,
 };
 
 use helpcore_api::CompactResponse;
@@ -147,13 +147,35 @@ pub async fn retry_message(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
     Path((conversation_id, message_id)): Path<(String, String)>,
+    Json(body): Json<RetryRequest>,
 ) -> Result<Sse<impl futures_util::Stream<Item = Result<Event, Infallible>>>, AppError> {
     let uid = auth_user.id.clone();
     let cid = conversation_id.clone();
     let mid = message_id.clone();
+
+    let override_provider = if let Some(ref pid) = body.provider_id {
+        let provider = state
+            .providers
+            .find_for_role(Some(pid), ProviderRole::Chat)
+            .ok_or_else(|| AppError::BadRequest(format!("provider {pid} is not available")))?;
+        Some((pid.clone(), provider.default_model().to_string()))
+    } else {
+        None
+    };
+
     let (conversation, history, user_message, provider_id, model_used) = state
         .db
-        .call(move |conn| history::retry_turn(conn, &uid, &cid, &mid))
+        .call(move |conn| {
+            history::retry_turn(
+                conn,
+                &uid,
+                &cid,
+                &mid,
+                override_provider
+                    .as_ref()
+                    .map(|(pid, m)| (pid.as_str(), m.as_str())),
+            )
+        })
         .await
         .map_err(turn_error)?;
     let provider = state
