@@ -1,4 +1,5 @@
-.PHONY: help dev check test build docker-build docker-smoke-amd64 docker-up docker-up-ollama \
+.PHONY: help dev check test build native-build native-run macos-install macos-uninstall \
+        docker-build docker-smoke-amd64 docker-up docker-up-ollama \
         docker-down docker-logs docker-shell ollama-pull config \
         prod-pull prod-up prod-up-ollama prod-down prod-logs prod-update
 
@@ -22,6 +23,18 @@ build: ## Build all packages (debug)
 
 build-release: ## Build release binaries for all packages
 	cargo build --release --workspace
+
+native-build: ## Build only the native server and CLI
+	cargo build --release -p helpcore-server -p helpcore-cli
+
+native-run: ## Run the core server natively using ./config.toml
+	HELPCORE_CONFIG="$(CURDIR)/config.toml" cargo run -p helpcore-server
+
+macos-install: ## Build and install the core as a macOS LaunchAgent
+	./packaging/macos/install.sh
+
+macos-uninstall: ## Stop and remove the macOS LaunchAgent
+	./packaging/macos/uninstall.sh
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 

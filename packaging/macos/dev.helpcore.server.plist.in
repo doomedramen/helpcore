@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.helpcore.server</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>@BINARY@</string>
+    </array>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HELPCORE_CONFIG</key>
+        <string>@CONFIG@</string>
+        <key>HELPCORE_DATA</key>
+        <string>@DATA@</string>
+        <key>RUST_LOG</key>
+        <string>info</string>
+    </dict>
+
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <dict>
+        <key>SuccessfulExit</key>
+        <false/>
+    </dict>
+
+    <key>StandardOutPath</key>
+    <string>@STDOUT@</string>
+    <key>StandardErrorPath</key>
+    <string>@STDERR@</string>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

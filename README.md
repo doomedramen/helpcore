@@ -240,7 +240,7 @@ hc plugin disable my-plugin
 ## Building from source
 
 ```bash
-# Requirements: Rust 1.87+, musl-tools (for Linux cross-compile)
+# Requirements: Rust 1.87+
 
 cargo build --workspace                # debug
 cargo build --release --workspace      # release
@@ -248,6 +248,25 @@ cargo test --workspace                 # run tests
 ```
 
 See [docs/getting-started.md#building-from-source](docs/getting-started.md#building-from-source) for cross-compilation notes.
+
+### Native macOS core
+
+The Rust server and CLI can run directly on macOS without Docker. The web app
+is separate and is not part of this build:
+
+```bash
+make native-build
+make native-run
+```
+
+To install the server as a per-user `launchd` service:
+
+```bash
+make macos-install
+```
+
+See [docs/macos.md](docs/macos.md) for paths, logs, configuration, and service
+management.
 
 ---
 
