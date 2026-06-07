@@ -2,6 +2,7 @@
 
 import { Monitor, Moon, Sun } from "lucide-react";
 import { useTheme } from "next-themes";
+import { useEffect, useState } from "react";
 
 interface Props {
   className?: string;
@@ -16,6 +17,9 @@ const OPTIONS = [
 
 export default function ThemeToggle({ className = "", variant = "icon" }: Props) {
   const { theme, resolvedTheme, setTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   if (variant === "segmented") {
     return (
@@ -30,7 +34,7 @@ export default function ThemeToggle({ className = "", variant = "icon" }: Props)
               aria-label={opt.label}
               title={opt.label}
               className={`rounded-md p-1.5 transition-colors ${
-                theme === opt.value
+                mounted && theme === opt.value
                   ? "bg-white/15 text-white shadow-sm"
                   : "text-slate-600 hover:text-slate-200"
               }`}
@@ -43,7 +47,7 @@ export default function ThemeToggle({ className = "", variant = "icon" }: Props)
     );
   }
 
-  const isDark = resolvedTheme === "dark";
+  const isDark = mounted && resolvedTheme === "dark";
   const label = isDark ? "Use light mode" : "Use dark mode";
 
   return (
