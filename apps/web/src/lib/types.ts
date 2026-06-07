@@ -24,6 +24,7 @@ export interface CurrentUser {
 export interface PersonalityFile {
   name: string;
   content: string;
+  updated_at: string;
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────

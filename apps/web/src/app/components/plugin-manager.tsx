@@ -11,6 +11,7 @@ import {
   Undo2,
 } from "lucide-react";
 import useSWR from "swr";
+import StatusMessage from "@/app/components/status-message";
 import {
   configurePlugin,
   installPlugin,
@@ -41,6 +42,7 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
   const {
     data: installed = [],
     error: installedError,
+    isValidating: installedValidating,
     mutate: refreshInstalled,
   } = useSWR(["/api/plugins", accessToken], ([, token]) =>
     listPlugins(token).then((r) => r.plugins),
@@ -53,6 +55,12 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
     isValidating: storeValidating,
     mutate: refreshStore,
   } = useSWR(["/api/plugins/store", accessToken], ([, token]) => listPluginStore(token));
+
+  const refreshing = installedValidating || storeValidating;
+
+  async function refresh() {
+    await Promise.all([refreshInstalled(), refreshStore()]);
+  }
 
   async function act(key: string, operation: () => Promise<void>) {
     setWorking(key);
@@ -79,7 +87,7 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
 
   return (
     <div className="space-y-4">
-      <div className="flex border-b border-slate-200 dark:border-slate-800">
+      <div className="flex rounded-xl border border-slate-200/80 bg-white/60 p-1 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/60">
         <TabButton active={tab === "installed"} onClick={() => setTab("installed")}>
           Installed
           {installed.length > 0 && (
@@ -97,26 +105,36 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
         <TabButton active={tab === "browse"} onClick={() => setTab("browse")}>
           Browse
         </TabButton>
+        <div className="ml-auto flex items-center">
+          <button
+            type="button"
+            onClick={refresh}
+            className="rounded-lg p-2 text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
+            aria-label="Refresh plugins"
+          >
+            <RefreshCw size={15} className={refreshing ? "animate-spin" : ""} />
+          </button>
+        </div>
       </div>
 
       {(installedError || actionError) && (
-        <ErrorMessage message={actionError || installedError.message} />
+        <StatusMessage type="error" message={actionError || installedError.message} />
       )}
 
       {tab === "installed" &&
         (installed.length === 0 ? (
-          <div className="rounded-xl border border-dashed border-slate-300 px-4 py-10 text-center dark:border-slate-700">
+          <div className="surface-card border-dashed px-4 py-12 text-center">
             <p className="text-sm text-slate-500 dark:text-slate-400">No plugins installed.</p>
             <button
               type="button"
               onClick={() => setTab("browse")}
-              className="mt-3 text-sm font-medium text-blue-600 hover:underline dark:text-blue-400"
+              className="mt-3 text-sm font-medium text-indigo-600 hover:underline dark:text-indigo-400"
             >
               Browse the plugin store →
             </button>
           </div>
         ) : (
-          <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+          <div className="surface-card overflow-hidden">
             {installed.map((plugin, i) => (
               <div key={plugin.id}>
                 {i > 0 && <div className="border-t border-slate-200 dark:border-slate-800" />}
@@ -173,21 +191,16 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
                 value={storeSearch}
                 onChange={(e) => setStoreSearch(e.target.value)}
                 placeholder="Search plugins…"
-                className="w-full rounded-lg border border-slate-300 bg-white py-2 pl-9 pr-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100"
+                className="field-input pl-9"
               />
             </div>
-            <button
-              type="button"
-              onClick={() => refreshStore()}
-              className="rounded-lg border border-slate-300 p-2 text-slate-500 transition-colors hover:bg-slate-50 hover:text-slate-900 dark:border-slate-700 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
-              aria-label="Refresh plugin store"
-            >
-              <RefreshCw size={15} className={storeValidating ? "animate-spin" : ""} />
-            </button>
           </div>
 
           {storeError && (
-            <ErrorMessage message={`Could not load the plugin registry: ${storeError.message}`} />
+            <StatusMessage
+              type="error"
+              message={`Could not load the plugin registry: ${storeError.message}`}
+            />
           )}
           {!storeError && storeLoading && (
             <p className="py-8 text-center text-sm text-slate-400 dark:text-slate-500">Loading…</p>
@@ -199,7 +212,7 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
           )}
 
           {filteredStore && filteredStore.length > 0 && (
-            <div className="overflow-hidden rounded-xl border border-slate-200 dark:border-slate-800">
+            <div className="surface-card overflow-hidden">
               {filteredStore.map((plugin, i) => (
                 <div key={plugin.id}>
                   {i > 0 && <div className="border-t border-slate-200 dark:border-slate-800" />}
@@ -254,7 +267,7 @@ function InstalledRow({
   const needsConfig = !plugin.configured && plugin.config_schema.length > 0;
 
   return (
-    <div className="bg-white dark:bg-slate-900">
+    <div className="bg-white/65 dark:bg-slate-900/55">
       <div className="flex items-center gap-3 px-4 py-3">
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
@@ -350,7 +363,7 @@ function InstalledRow({
               className="peer sr-only"
               aria-label={`${plugin.enabled ? "Disable" : "Enable"} ${plugin.name}`}
             />
-            <span className="h-5 w-9 rounded-full bg-slate-200 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-blue-600 peer-checked:after:translate-x-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 dark:bg-slate-700" />
+            <span className="h-5 w-9 rounded-full bg-slate-200 transition-colors after:absolute after:left-0.5 after:top-0.5 after:h-4 after:w-4 after:rounded-full after:bg-white after:shadow after:transition-transform peer-checked:bg-indigo-600 peer-checked:after:translate-x-4 peer-disabled:cursor-not-allowed peer-disabled:opacity-50 dark:bg-slate-700" />
           </label>
         </div>
       </div>
@@ -382,7 +395,7 @@ function StoreRow({
   onUpdate: () => void;
 }) {
   return (
-    <div className="flex items-center gap-4 bg-white px-4 py-3 dark:bg-slate-900">
+    <div className="flex items-center gap-4 bg-white/65 px-4 py-3 dark:bg-slate-900/55">
       <div className="min-w-0 flex-1">
         <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
           <span className="font-medium text-slate-900 dark:text-slate-100">{plugin.name}</span>
@@ -414,7 +427,7 @@ function StoreRow({
             type="button"
             disabled={working !== null || !plugin.installable}
             onClick={onInstall}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500"
           >
             {plugin.blocked
               ? "Blocked"
@@ -432,7 +445,7 @@ function StoreRow({
             type="button"
             disabled={working !== null || plugin.blocked}
             onClick={onUpdate}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500"
           >
             {working === `update:${plugin.id}` ? "Updating…" : `Update to ${plugin.version}`}
           </button>
@@ -565,7 +578,7 @@ function PluginConfigForm({
           type="button"
           onClick={() => onSave(draft)}
           disabled={saving}
-          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500"
         >
           {saving ? "Saving…" : "Save"}
         </button>
@@ -595,10 +608,10 @@ function TabButton({
     <button
       type="button"
       onClick={onClick}
-      className={`flex items-center gap-1 border-b-2 px-4 pb-2.5 pt-1 text-sm font-medium transition-colors ${
+      className={`flex items-center gap-1 rounded-lg px-3 py-2 text-sm font-medium transition ${
         active
-          ? "border-blue-600 text-blue-600 dark:border-blue-400 dark:text-blue-400"
-          : "border-transparent text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white"
+          ? "bg-slate-950 text-white shadow-sm dark:bg-white dark:text-slate-950"
+          : "text-slate-500 hover:bg-white hover:text-slate-900 dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"
       }`}
     >
       {children}
@@ -626,13 +639,4 @@ function StatusBadge({
   );
 }
 
-function ErrorMessage({ message }: { message: string }) {
-  return (
-    <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
-      {message}
-    </div>
-  );
-}
-
-const inputClass =
-  "mt-1.5 block min-h-10 w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100";
+const inputClass = "field-input mt-1.5";

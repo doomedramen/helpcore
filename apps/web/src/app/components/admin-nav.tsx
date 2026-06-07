@@ -4,13 +4,11 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 
 const LINKS = [
-  { href: "/plugins/", label: "Plugins" },
-  { href: "/personality/", label: "Personality" },
-  { href: "/memory/", label: "Memory" },
-  { href: "/settings/api-keys/", label: "API keys" },
+  { href: "/admin/", label: "Server" },
+  { href: "/admin/users/", label: "Users" },
 ];
 
-export default function SettingsNav() {
+export default function AdminNav() {
   const pathname = usePathname();
   return (
     <nav className="flex w-full gap-1 overflow-x-auto rounded-xl border border-slate-200/80 bg-white/60 p-1 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/60 sm:w-fit">

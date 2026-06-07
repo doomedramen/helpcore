@@ -3,8 +3,8 @@
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/auth";
-import Sidebar from "@/app/components/sidebar";
 import ChatWindow from "@/app/components/chat-window";
+import AppShell from "@/app/components/app-shell";
 
 function ChatApp() {
   const { accessToken, isLoading } = useAuth();
@@ -25,7 +25,7 @@ function ChatApp() {
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="app-canvas flex h-dvh items-center justify-center">
         <div className="text-sm text-slate-400 dark:text-slate-500">Loading…</div>
       </div>
     );
@@ -34,22 +34,20 @@ function ChatApp() {
   if (!accessToken) return null;
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
-      <Sidebar
+    <AppShell
+      conversationId={conversationId}
+      onSelectConversation={(id) => {
+        setConversationId(id);
+        const url = id ? `/chat/?id=${id}` : "/chat/";
+        router.replace(url, { scroll: false });
+      }}
+      mainClassName="flex flex-col"
+    >
+      <ChatWindow
         conversationId={conversationId}
-        onSelect={(id) => {
-          setConversationId(id);
-          const url = id ? `/chat/?id=${id}` : "/chat/";
-          router.replace(url, { scroll: false });
-        }}
+        onConversationCreated={(id) => setConversationId(id)}
       />
-      <main className="flex-1 flex flex-col overflow-hidden">
-        <ChatWindow
-          conversationId={conversationId}
-          onConversationCreated={(id) => setConversationId(id)}
-        />
-      </main>
-    </div>
+    </AppShell>
   );
 }
 

@@ -30,12 +30,16 @@ pub async fn get_personality(
     }
     let uid = auth_user.id.clone();
     let n = name.clone();
-    let content = state
+    let (content, updated_at) = state
         .db
         .call(move |conn| memory::get_personality(conn, &uid, &n))
         .await?
         .ok_or(AppError::NotFound)?;
-    Ok(Json(PersonalityResponse { name, content }))
+    Ok(Json(PersonalityResponse {
+        name,
+        content,
+        updated_at,
+    }))
 }
 
 pub async fn put_personality(

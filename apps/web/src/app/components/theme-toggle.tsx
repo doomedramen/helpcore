@@ -20,8 +20,8 @@ export default function ThemeToggle({ className = "", variant = "icon" }: Props)
   if (variant === "segmented") {
     return (
       <div className={`flex items-center justify-between ${className}`}>
-        <span className="text-sm text-slate-400">Theme</span>
-        <div className="flex rounded-lg bg-slate-800 p-0.5 gap-0.5">
+        <span className="text-sm text-slate-500">Theme</span>
+        <div className="flex gap-0.5 rounded-lg bg-white/[0.06] p-0.5 ring-1 ring-white/[0.06]">
           {OPTIONS.map((opt) => (
             <button
               key={opt.value}
@@ -31,8 +31,8 @@ export default function ThemeToggle({ className = "", variant = "icon" }: Props)
               title={opt.label}
               className={`rounded-md p-1.5 transition-colors ${
                 theme === opt.value
-                  ? "bg-slate-600 text-white"
-                  : "text-slate-400 hover:text-slate-200"
+                  ? "bg-white/15 text-white shadow-sm"
+                  : "text-slate-600 hover:text-slate-200"
               }`}
             >
               {opt.icon}

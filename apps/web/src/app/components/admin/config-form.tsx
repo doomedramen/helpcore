@@ -315,11 +315,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
         title="Providers"
         description="Provider changes are validated and applied immediately when saved."
         action={
-          <button
-            type="button"
-            onClick={addProvider}
-            className="inline-flex items-center gap-2 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 transition-colors hover:bg-slate-50 dark:border-slate-700 dark:text-slate-200 dark:hover:bg-slate-800"
-          >
+          <button type="button" onClick={addProvider} className="secondary-action gap-2">
             <Plus size={15} />
             Add provider
           </button>
@@ -571,7 +567,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
           type="button"
           onClick={save}
           disabled={saving || !config.config_writable}
-          className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-50"
+          className="primary-action gap-2"
         >
           <Save size={16} />
           {saving ? "Saving…" : "Save configuration"}
@@ -627,7 +623,7 @@ function Section({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900">
+    <section className="surface-card p-4 sm:p-5">
       <div className="mb-5 flex items-start justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-slate-900 dark:text-white">{title}</h2>
@@ -658,5 +654,4 @@ function Field({
   );
 }
 
-const inputClass =
-  "block w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 placeholder-slate-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:placeholder-slate-500";
+const inputClass = "field-input";

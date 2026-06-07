@@ -1,7 +1,7 @@
 "use client";
 
 import { FormEvent, KeyboardEvent, useRef, useEffect } from "react";
-import { SendHorizontal, Square } from "lucide-react";
+import { SendHorizontal, Sparkles, Square } from "lucide-react";
 import {
   Select,
   SelectContent,
@@ -63,32 +63,11 @@ export default function ChatInput({
   }
 
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2 px-1">
-        <label className="text-xs font-medium text-slate-500 dark:text-slate-400">Provider</label>
-        <Select
-          value={selectedProviderId}
-          onValueChange={(value) => onProviderChange(value ?? "")}
-          disabled={providers.length === 0}
-        >
-          <SelectTrigger size="sm" className="max-w-full text-xs">
-            <SelectValue placeholder="No chat providers available">
-              {providers.find((p) => p.id === selectedProviderId)?.name ?? selectedProviderId}
-            </SelectValue>
-          </SelectTrigger>
-          <SelectContent side="top">
-            {providers.map((provider) => (
-              <SelectItem key={provider.id} value={provider.id}>
-                {provider.name} · {provider.default_model}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      </div>
-      <form
-        onSubmit={handleSubmit}
-        className="flex items-end gap-2 rounded-2xl border border-slate-200 bg-white/90 p-2 shadow-lg shadow-slate-900/5 backdrop-blur transition-colors focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-500/15 dark:border-slate-700 dark:bg-slate-900/90 dark:shadow-black/20"
-      >
+    <form
+      onSubmit={handleSubmit}
+      className="surface-card overflow-hidden transition focus-within:border-indigo-300 focus-within:shadow-[0_20px_50px_-28px_rgba(79,70,229,0.45)] dark:focus-within:border-indigo-800"
+    >
+      <div className="flex items-end gap-2 px-2.5 pt-2.5">
         <textarea
           ref={textareaRef}
           value={value}
@@ -100,29 +79,58 @@ export default function ChatInput({
             providers.length === 0 ? "Configure a chat provider to begin." : "Message helpcore…"
           }
           autoFocus
-          className="min-h-9 flex-1 resize-none overflow-hidden bg-transparent px-2.5 py-2 text-sm leading-relaxed text-slate-900 placeholder-slate-400 focus:outline-none disabled:opacity-50 dark:text-slate-100 dark:placeholder-slate-500"
+          className="min-h-12 flex-1 resize-none overflow-hidden bg-transparent px-2 py-2.5 text-[15px] leading-relaxed text-slate-950 placeholder-slate-400 focus:outline-none disabled:opacity-50 dark:text-slate-100 dark:placeholder-slate-600"
         />
-        <div className="flex shrink-0 gap-1.5">
+        <div className="flex shrink-0 gap-1.5 pb-1.5">
           {active && (
             <button
               type="button"
               onClick={onStop}
-              className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-700 text-white transition-colors hover:bg-red-600 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 dark:focus:ring-offset-slate-900"
+              className="flex size-10 items-center justify-center rounded-xl bg-slate-800 text-white transition hover:bg-red-600 focus:outline-none focus:ring-4 focus:ring-red-500/20"
               aria-label="Stop generation"
             >
-              <Square size={16} fill="currentColor" />
+              <Square size={15} fill="currentColor" />
             </button>
           )}
           <button
             type="submit"
             disabled={disabled || !value.trim()}
-            className="flex h-9 w-9 items-center justify-center rounded-xl bg-blue-600 text-white transition-colors hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 dark:focus:ring-offset-slate-900 dark:disabled:bg-slate-800 dark:disabled:text-slate-600"
+            className="flex size-10 items-center justify-center rounded-xl bg-indigo-600 text-white shadow-sm shadow-indigo-950/20 transition hover:bg-indigo-500 focus:outline-none focus:ring-4 focus:ring-indigo-500/20 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400 disabled:shadow-none dark:bg-indigo-500 dark:hover:bg-indigo-400 dark:disabled:bg-slate-800 dark:disabled:text-slate-600"
             aria-label="Send message"
           >
             <SendHorizontal size={16} />
           </button>
         </div>
-      </form>
-    </div>
+      </div>
+
+      <div className="flex items-center gap-2 border-t border-slate-100 px-3 py-2 dark:border-slate-800">
+        <Sparkles size={13} className="shrink-0 text-indigo-500 dark:text-indigo-400" />
+        <Select
+          value={selectedProviderId}
+          onValueChange={(nextValue) => onProviderChange(nextValue ?? "")}
+          disabled={providers.length === 0}
+        >
+          <SelectTrigger
+            size="sm"
+            className="h-7 max-w-[13rem] border-0 bg-transparent px-1.5 text-xs shadow-none focus-visible:ring-0"
+          >
+            <SelectValue placeholder="No chat provider">
+              {providers.find((provider) => provider.id === selectedProviderId)?.name ??
+                selectedProviderId}
+            </SelectValue>
+          </SelectTrigger>
+          <SelectContent side="top">
+            {providers.map((provider) => (
+              <SelectItem key={provider.id} value={provider.id}>
+                {provider.name} · {provider.default_model}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="ml-auto hidden text-[11px] text-slate-400 sm:block dark:text-slate-600">
+          Enter to send · Shift + Enter for a new line
+        </span>
+      </div>
+    </form>
   );
 }

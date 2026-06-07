@@ -220,6 +220,7 @@ impl MessageStatus {
 pub struct PersonalityResponse {
     pub name: String,
     pub content: String,
+    pub updated_at: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

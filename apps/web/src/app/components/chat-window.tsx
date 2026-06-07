@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
 import {
@@ -17,7 +17,8 @@ import { useAuth } from "@/context/auth";
 import type { ConversationSummary, Message, SseDone, SseStarted } from "@/lib/types";
 import MessageBubble from "./message-bubble";
 import ChatInput from "./chat-input";
-import { Pencil, Terminal, Trash2 } from "lucide-react";
+import BrandMark from "./brand-mark";
+import { ArrowUpRight, Pencil, Terminal, Trash2 } from "lucide-react";
 
 interface QueueItem {
   id: string;
@@ -36,7 +37,7 @@ const isActive = (message: Message) =>
 let nextQueueId = 1;
 
 export default function ChatWindow({ conversationId, onConversationCreated }: Props) {
-  const { accessToken, refreshAccessToken } = useAuth();
+  const { accessToken, currentUser, refreshAccessToken } = useAuth();
   const router = useRouter();
   const { mutate: mutateGlobal } = useSWRConfig();
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -44,7 +45,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [showToolLogs, setShowToolLogs] = useState(false);
+  const [showToolLogs, setShowToolLogs] = useState(true);
   useEffect(() => {
     const stored = localStorage.getItem("showToolLogs");
     if (stored !== null) setShowToolLogs(stored === "true");
@@ -85,7 +86,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     accessToken ? ["/api/providers", accessToken] : null,
     ([, token]) => listProviders(token),
   );
-  const providers = providerData?.providers ?? [];
+  const providers = useMemo(() => providerData?.providers ?? [], [providerData]);
   const { data: conversations } = useSWR<ConversationSummary[]>(
     accessToken ? ["/api/conversations", accessToken] : null,
     ([, token]) => listConversations(token as string),
@@ -330,40 +331,105 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   const visibleMessages = showToolLogs ? messages : messages.filter((m) => m.role !== "tool");
   const empty = !historyLoading && messages.length === 0 && queue.length === 0;
   const visibleError = error || (historyError instanceof Error ? historyError.message : "");
+  const currentConversation = conversations?.find(
+    (conversation) => conversation.id === conversationId,
+  );
+  const firstName = currentUser?.display_name?.split(/\s+/)[0];
+  const suggestions = [
+    {
+      label: "Make a clear plan",
+      prompt: "Help me turn an idea into a clear, practical plan.",
+    },
+    {
+      label: "Think through a decision",
+      prompt: "Help me think through an important decision and the tradeoffs.",
+    },
+    {
+      label: "Draft and refine",
+      prompt: "Help me draft something concise, thoughtful, and clear.",
+    },
+  ];
+
+  // Build a map of all tool calls from assistant messages for pairing with tool results.
+  const allToolCalls = useMemo(() => {
+    const result: { id: string; name: string; arguments: Record<string, unknown> }[] = [];
+    for (const msg of messages) {
+      if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
+        for (const item of msg.tool_calls as Record<string, unknown>[]) {
+          if (typeof item.id === "string" && typeof item.name === "string") {
+            result.push({
+              id: item.id,
+              name: item.name,
+              arguments: (item.arguments as Record<string, unknown>) ?? {},
+            });
+          }
+        }
+      }
+    }
+    return result;
+  }, [messages]);
 
   return (
     <div className="flex h-full flex-col">
-      {toolCount > 0 && (
-        <div className="flex items-center justify-end border-b border-slate-200 px-4 py-1.5 dark:border-slate-700">
+      <div className="flex h-14 shrink-0 items-center justify-between border-b border-slate-200/70 bg-white/55 px-4 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/35">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold text-slate-900 dark:text-slate-100">
+            {currentConversation?.title || "New conversation"}
+          </p>
+          <p className="text-[11px] text-slate-400 dark:text-slate-600">
+            {providers.find((provider) => provider.id === selectedProviderId)?.name ||
+              "Choose a provider below"}
+          </p>
+        </div>
+        {toolCount > 0 && (
           <button
             type="button"
             onClick={toggleToolLogs}
-            className={`flex items-center gap-1.5 rounded-md px-2 py-1 text-xs transition-colors ${
+            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition ${
               showToolLogs
-                ? "bg-slate-200 text-slate-700 dark:bg-slate-700 dark:text-slate-200"
-                : "text-slate-400 hover:bg-slate-100 hover:text-slate-600 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+                ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+                : "text-slate-400 hover:bg-white hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
             }`}
           >
             <Terminal size={12} />
             <span>Tool logs</span>
             {!showToolLogs && <span className="ml-0.5 tabular-nums">({toolCount})</span>}
           </button>
-        </div>
-      )}
+        )}
+      </div>
+
       <div className="flex-1 overflow-y-auto">
         {empty ? (
-          <div className="flex h-full items-center justify-center">
-            <div className="space-y-2 text-center">
-              <p className="text-xl font-medium text-slate-400 dark:text-slate-500">
-                What can I help you with?
+          <div className="flex min-h-full items-center justify-center px-4 py-10">
+            <div className="w-full max-w-2xl text-center">
+              <BrandMark className="mb-7 justify-center" />
+              <p className="text-3xl font-semibold tracking-[-0.045em] text-slate-950 sm:text-4xl dark:text-white">
+                {firstName ? `What are we working on, ${firstName}?` : "What are we working on?"}
               </p>
-              <p className="text-sm text-slate-400 dark:text-slate-500">
-                Start typing below to begin a conversation.
+              <p className="mx-auto mt-3 max-w-md text-sm leading-6 text-slate-500 dark:text-slate-400">
+                Start with a rough thought. HelpCore can help you shape it, plan it, or move it
+                forward.
               </p>
+              <div className="mt-8 grid gap-2 sm:grid-cols-3">
+                {suggestions.map((suggestion) => (
+                  <button
+                    key={suggestion.label}
+                    type="button"
+                    onClick={() => setInputValue(suggestion.prompt)}
+                    className="group flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/65 px-4 py-3 text-left text-sm font-medium text-slate-700 shadow-sm backdrop-blur transition hover:-translate-y-0.5 hover:border-indigo-200 hover:bg-white hover:shadow-md dark:border-slate-800 dark:bg-slate-900/55 dark:text-slate-300 dark:hover:border-indigo-900 dark:hover:bg-slate-900"
+                  >
+                    {suggestion.label}
+                    <ArrowUpRight
+                      size={14}
+                      className="text-slate-300 transition group-hover:text-indigo-500 dark:text-slate-700"
+                    />
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         ) : (
-          <div className="mx-auto max-w-3xl space-y-4 px-4 py-6">
+          <div className="mx-auto max-w-4xl space-y-5 px-3 py-5 sm:px-5 md:py-7">
             {visibleMessages.map((message) => (
               <MessageBubble
                 key={message.id}
@@ -372,6 +438,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                 retrying={retryingId === message.id}
                 accessToken={accessToken ?? ""}
                 hasAudio={hasAudio}
+                toolCalls={allToolCalls}
               />
             ))}
             {visibleError && (
@@ -385,11 +452,11 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       </div>
 
       {queue.length > 0 && (
-        <div className="mx-auto w-full max-w-3xl space-y-2 px-4 pb-2">
+        <div className="mx-auto w-full max-w-4xl space-y-2 px-3 pb-2 sm:px-5">
           {queue.map((item) => (
             <div
               key={item.id}
-              className="flex items-start gap-2 rounded-xl border border-dashed border-slate-300 bg-slate-50/50 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-800/30 dark:text-slate-400"
+              className="flex items-start gap-2 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/45 px-4 py-3 text-sm text-slate-600 dark:border-indigo-900 dark:bg-indigo-950/20 dark:text-slate-400"
             >
               <div className="flex-1">
                 <div className="whitespace-pre-wrap leading-relaxed">{item.text}</div>
@@ -420,7 +487,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           ))}
         </div>
       )}
-      <div className="mx-auto w-full max-w-3xl px-4 pb-4 pt-2">
+      <div className="mx-auto w-full max-w-4xl px-3 pb-3 pt-2 sm:px-5 sm:pb-5">
         <ChatInput
           value={inputValue}
           onChange={setInputValue}

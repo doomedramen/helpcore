@@ -3,7 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
-import Sidebar from "@/app/components/sidebar";
+import AdminNav from "@/app/components/admin-nav";
+import AppShell from "@/app/components/app-shell";
+import PageHeader from "@/app/components/page-header";
+import StatusMessage from "@/app/components/status-message";
 import { useAuth } from "@/context/auth";
 import {
   createAdminUser,
@@ -113,40 +116,100 @@ export default function AdminUsersPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
-      <Sidebar
-        conversationId={null}
-        onSelect={(id) => router.push(id ? `/chat/?id=${id}` : "/chat/")}
-      />
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-4xl px-6 py-8">
-          <div className="mb-7 flex items-start justify-between">
-            <div>
-              <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Administration</p>
-              <h1 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">Users</h1>
-              <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-                Manage member accounts and reset passwords.
-              </p>
-            </div>
-            <button
-              onClick={() => {
-                setError(null);
-                setShowCreate(true);
-              }}
-              className="rounded-lg px-4 py-2 text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 transition-colors"
-            >
-              + New user
-            </button>
-          </div>
+    <AppShell
+      conversationId={null}
+      onSelectConversation={(id) => router.push(id ? `/chat/?id=${id}` : "/chat/")}
+      mainClassName="overflow-y-auto"
+    >
+      <div className="mx-auto max-w-5xl px-4 py-7 sm:px-6 sm:py-10">
+        <div className="mb-5 flex flex-col items-start justify-between gap-4 sm:flex-row">
+          <PageHeader
+            breadcrumb="Administration"
+            title="Users"
+            description="Manage member accounts and reset passwords."
+            accent
+            className="mb-0"
+          />
+          <button
+            onClick={() => {
+              setError(null);
+              setShowCreate(true);
+            }}
+            className="primary-action"
+          >
+            + New user
+          </button>
+        </div>
 
+        <AdminNav />
+
+        <div className="mt-6">
           {error && (
-            <div className="mb-4 rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
-              {error}
+            <div className="mb-4">
+              <StatusMessage type="error" message={error} />
             </div>
           )}
 
-          {/* User table */}
-          <div className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 overflow-hidden">
+          <div className="space-y-3 md:hidden">
+            {users.map((user) => (
+              <article key={user.id} className="surface-card p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="truncate font-medium text-slate-950 dark:text-white">
+                      {user.display_name ?? user.email}
+                    </p>
+                    {user.display_name && (
+                      <p className="mt-0.5 truncate text-xs text-slate-400">{user.email}</p>
+                    )}
+                  </div>
+                  <span
+                    className={`inline-flex shrink-0 items-center rounded-full px-2.5 py-1 text-xs font-medium ${
+                      user.status === "active"
+                        ? "bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-400"
+                        : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
+                    }`}
+                  >
+                    {user.status}
+                  </span>
+                </div>
+                <div className="mt-4 flex items-center justify-between border-t border-slate-100 pt-3 text-xs dark:border-slate-800">
+                  <span className="capitalize text-slate-400">
+                    {user.role} · Joined {new Date(user.created_at).toLocaleDateString()}
+                  </span>
+                  <div className="flex items-center gap-3">
+                    <button
+                      onClick={() => {
+                        setResetTarget(user);
+                        setError(null);
+                      }}
+                      className="font-medium text-indigo-600 dark:text-indigo-400"
+                    >
+                      Reset
+                    </button>
+                    {user.id !== currentUser?.id && (
+                      <button
+                        onClick={() => handleToggleStatus(user)}
+                        className={
+                          user.status === "active"
+                            ? "font-medium text-amber-600 dark:text-amber-400"
+                            : "font-medium text-teal-600 dark:text-teal-400"
+                        }
+                      >
+                        {user.status === "active" ? "Deactivate" : "Activate"}
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </article>
+            ))}
+            {users.length === 0 && (
+              <div className="surface-card px-5 py-10 text-center text-sm text-slate-400">
+                No users yet.
+              </div>
+            )}
+          </div>
+
+          <div className="surface-card hidden overflow-x-auto md:block">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-100 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50">
@@ -181,7 +244,7 @@ export default function AdminUsersPage() {
                       <span
                         className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
                           user.status === "active"
-                            ? "bg-green-50 text-green-700 dark:bg-green-950/50 dark:text-green-400"
+                            ? "bg-teal-50 text-teal-700 dark:bg-teal-950/50 dark:text-teal-400"
                             : "bg-slate-100 text-slate-500 dark:bg-slate-800 dark:text-slate-400"
                         }`}
                       >
@@ -229,8 +292,7 @@ export default function AdminUsersPage() {
             </table>
           </div>
         </div>
-      </main>
-
+      </div>
       {/* Create user dialog */}
       <Dialog
         open={showCreate}
@@ -252,7 +314,9 @@ export default function AdminUsersPage() {
           </DialogHeader>
           <div className="space-y-3">
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">Email</label>
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
+                Email
+              </label>
               <input
                 type="email"
                 value={newEmail}
@@ -262,7 +326,7 @@ export default function AdminUsersPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                 Temporary password
               </label>
               <input
@@ -273,7 +337,7 @@ export default function AdminUsersPage() {
               />
             </div>
             <div>
-              <label className="block text-xs font-medium text-slate-300 mb-1">
+              <label className="mb-1 block text-xs font-medium text-slate-600 dark:text-slate-300">
                 Display name <span className="font-normal text-slate-500">(optional)</span>
               </label>
               <input
@@ -290,14 +354,14 @@ export default function AdminUsersPage() {
           <DialogFooter>
             <button
               onClick={() => setShowCreate(false)}
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+              className="secondary-action min-h-9 px-3 py-1.5"
             >
               Cancel
             </button>
             <button
               onClick={handleCreate}
               disabled={creating || !newEmail.trim() || newPassword.length < 8}
-              className="rounded-lg px-4 py-1.5 text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+              className="primary-action min-h-9 px-4 py-1.5"
             >
               {creating ? "Creating…" : "Create"}
             </button>
@@ -320,8 +384,8 @@ export default function AdminUsersPage() {
             <DialogTitle>Reset password</DialogTitle>
             <DialogDescription>
               Set a new temporary password for{" "}
-              <strong className="text-slate-200">{resetTarget?.email}</strong>. They will be asked
-              to change it on next login.
+              <strong className="text-slate-800 dark:text-slate-200">{resetTarget?.email}</strong>.
+              They will be asked to change it on next login.
             </DialogDescription>
           </DialogHeader>
           <input
@@ -341,23 +405,22 @@ export default function AdminUsersPage() {
                 setResetTarget(null);
                 setNewPass("");
               }}
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+              className="secondary-action min-h-9 px-3 py-1.5"
             >
               Cancel
             </button>
             <button
               onClick={handleResetPassword}
               disabled={resetting || newPass.length < 8}
-              className="rounded-lg px-4 py-1.5 text-sm font-medium bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+              className="primary-action min-h-9 px-4 py-1.5"
             >
               {resetting ? "Saving…" : "Set password"}
             </button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </AppShell>
   );
 }
 
-const inputClass =
-  "w-full rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-100 placeholder-slate-500 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500";
+const inputClass = "field-input";

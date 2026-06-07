@@ -3,8 +3,11 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
+import AdminNav from "@/app/components/admin-nav";
+import AppShell from "@/app/components/app-shell";
 import ConfigForm from "@/app/components/admin/config-form";
-import Sidebar from "@/app/components/sidebar";
+import PageHeader from "@/app/components/page-header";
+import StatusMessage from "@/app/components/status-message";
 import { useAuth } from "@/context/auth";
 import { getAdminConfig } from "@/lib/api";
 
@@ -39,28 +42,23 @@ export default function AdminPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
-      <Sidebar
-        conversationId={null}
-        onSelect={(id) => router.push(id ? `/chat/?id=${id}` : "/chat/")}
-      />
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-6 py-8">
-          <div className="mb-7">
-            <p className="text-sm font-medium text-blue-600 dark:text-blue-400">Administration</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">
-              Server settings
-            </h1>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Configure server-wide settings, providers, registry policy, and plugin blacklist.
-            </p>
-          </div>
+    <AppShell
+      conversationId={null}
+      onSelectConversation={(id) => router.push(id ? `/chat/?id=${id}` : "/chat/")}
+      mainClassName="overflow-y-auto"
+    >
+      <div className="mx-auto max-w-5xl px-4 py-7 sm:px-6 sm:py-10">
+        <PageHeader
+          breadcrumb="Administration"
+          title="Server settings"
+          description="Configure server-wide settings, providers, registry policy, and plugin blacklist."
+          accent
+        />
 
-          {error && (
-            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700 dark:border-red-900 dark:bg-red-950/50 dark:text-red-300">
-              {error.message}
-            </div>
-          )}
+        <AdminNav />
+
+        <div className="mt-6">
+          {error && <StatusMessage type="error" message={error.message} />}
           {!error && !config && (
             <div className="py-16 text-center text-sm text-slate-400">Loading configuration…</div>
           )}
@@ -72,7 +70,7 @@ export default function AdminPage() {
             />
           )}
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

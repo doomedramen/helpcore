@@ -3,7 +3,8 @@
 import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import PluginManager from "@/app/components/plugin-manager";
-import Sidebar from "@/app/components/sidebar";
+import PageHeader from "@/app/components/page-header";
+import AppShell from "@/app/components/app-shell";
 import SettingsNav from "@/app/components/settings-nav";
 import { useAuth } from "@/context/auth";
 
@@ -24,26 +25,22 @@ export default function PluginsPage() {
   }
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-50 dark:bg-slate-950">
-      <Sidebar
-        conversationId={null}
-        onSelect={(id) => router.push(id ? `/chat/?id=${id}` : "/chat/")}
-      />
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl px-6 py-8">
-          <div className="mb-6">
-            <p className="text-sm font-medium text-slate-500 dark:text-slate-400">Settings</p>
-            <h1 className="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">Plugins</h1>
-            <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
-              Install and manage isolated plugin versions for your account.
-            </p>
-          </div>
-          <SettingsNav />
-          <div className="mt-6">
-            <PluginManager accessToken={accessToken} />
-          </div>
+    <AppShell
+      conversationId={null}
+      onSelectConversation={(id) => router.push(id ? `/chat/?id=${id}` : "/chat/")}
+      mainClassName="overflow-y-auto"
+    >
+      <div className="mx-auto max-w-5xl px-4 py-7 sm:px-6 sm:py-10">
+        <PageHeader
+          breadcrumb="Settings"
+          title="Plugins"
+          description="Install and manage isolated plugin versions for your account."
+        />
+        <SettingsNav />
+        <div className="mt-6">
+          <PluginManager accessToken={accessToken} />
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

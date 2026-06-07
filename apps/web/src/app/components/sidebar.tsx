@@ -1,13 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut, MessageSquarePlus, Settings, Shield, Trash2 } from "lucide-react";
+import { LogOut, Menu, MessageSquarePlus, Settings, Shield, Trash2, X } from "lucide-react";
 import useSWR, { useSWRConfig } from "swr";
 import { deleteConversation, listConversations } from "@/lib/api";
 import { useAuth } from "@/context/auth";
 import type { ConversationSummary } from "@/lib/types";
 import { usePathname, useRouter } from "next/navigation";
 import ThemeToggle from "./theme-toggle";
+import BrandMark from "./brand-mark";
 import {
   Dialog,
   DialogContent,
@@ -37,6 +38,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
   const pathname = usePathname();
   const { mutate } = useSWRConfig();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   const { data: conversations = [] } = useSWR<ConversationSummary[]>(
     accessToken ? ["/api/conversations", accessToken] : null,
@@ -54,99 +56,164 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
   }
 
   async function handleLogout() {
+    setMobileOpen(false);
     await logout();
     router.replace("/login/");
   }
 
   function handleNew() {
+    setMobileOpen(false);
     onSelect(null);
     router.replace("/chat/", { scroll: false });
   }
 
-  return (
+  function handleNavigate(href: string) {
+    setMobileOpen(false);
+    router.push(href);
+  }
+
+  const sidebarContent = (
     <>
-      <aside className="flex flex-col w-64 shrink-0 bg-slate-950 text-slate-300 h-full">
-        {/* Logo */}
-        <div className="px-4 pt-5 pb-3">
-          <span className="text-base font-semibold text-white tracking-tight">helpcore</span>
-        </div>
+      <div className="flex items-center justify-between px-4 pb-5 pt-5">
+        <BrandMark compact inverse />
+        <button
+          onClick={() => setMobileOpen(false)}
+          className="rounded-xl p-2 text-slate-500 transition hover:bg-white/5 hover:text-white md:hidden"
+          aria-label="Close menu"
+        >
+          <X size={18} />
+        </button>
+      </div>
 
-        {/* New chat */}
-        <div className="px-3 pb-3">
-          <button
-            onClick={handleNew}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-300 hover:bg-slate-800 hover:text-white transition-colors"
-          >
-            <MessageSquarePlus size={16} className="shrink-0" />
-            New chat
-          </button>
-        </div>
+      <div className="px-3 pb-4">
+        <button
+          onClick={handleNew}
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-black/10 transition hover:bg-indigo-50"
+        >
+          <MessageSquarePlus size={16} className="shrink-0" />
+          New chat
+        </button>
+      </div>
 
-        {/* Divider */}
-        <div className="mx-3 border-t border-slate-800 mb-2" />
+      <div className="px-5 pb-2 pt-1">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+          Recent
+        </p>
+      </div>
 
-        {/* Conversation list */}
-        <nav className="flex-1 overflow-y-auto px-3 space-y-0.5 pb-2">
-          {conversations.map((conv) => (
-            <button
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-3">
+        {conversations.length === 0 && (
+          <p className="px-3 py-3 text-xs leading-5 text-slate-600">
+            Your recent conversations will appear here.
+          </p>
+        )}
+        {conversations.map((conv) => {
+          const active = conv.id === conversationId;
+          return (
+            <div
               key={conv.id}
-              onClick={() => onSelect(conv.id)}
-              className={`group flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-sm transition-colors ${
-                conv.id === conversationId
-                  ? "bg-slate-800 text-white"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+              className={`group flex items-center rounded-xl transition ${
+                active
+                  ? "bg-white/10 text-white"
+                  : "text-slate-400 hover:bg-white/[0.055] hover:text-slate-200"
               }`}
             >
-              <span className="truncate flex-1 leading-snug">{conv.title || "Untitled"}</span>
               <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setDeleteTarget(conv.id);
+                onClick={() => {
+                  setMobileOpen(false);
+                  onSelect(conv.id);
                 }}
-                className="shrink-0 opacity-0 group-hover:opacity-100 p-0.5 rounded hover:text-red-400 transition-opacity"
+                className="min-w-0 flex-1 px-3 py-2.5 text-left text-sm"
+              >
+                <span className="block truncate leading-snug">{conv.title || "Untitled"}</span>
+              </button>
+              <button
+                onClick={() => setDeleteTarget(conv.id)}
+                className="mr-1.5 shrink-0 rounded-lg p-1.5 text-slate-600 opacity-70 transition hover:bg-red-500/10 hover:text-red-300 md:opacity-0 md:group-hover:opacity-100"
                 aria-label="Delete conversation"
               >
                 <Trash2 size={13} />
               </button>
-            </button>
-          ))}
-        </nav>
+            </div>
+          );
+        })}
+      </nav>
 
-        {/* Footer */}
-        <div className="mx-3 border-t border-slate-800 mt-2 pt-2 pb-3">
+      <div className="mx-3 border-t border-white/[0.08] px-1 pb-3 pt-3">
+        <div className="mb-2 flex items-center gap-2.5 px-2">
+          <div className="grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-400/30 to-teal-400/20 text-xs font-semibold text-indigo-100 ring-1 ring-white/10">
+            {(currentUser?.display_name ?? currentUser?.email ?? "H").charAt(0).toUpperCase()}
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-xs font-medium text-slate-200">
+              {currentUser?.display_name ?? "Your workspace"}
+            </p>
+            <p className="truncate text-[11px] text-slate-600">{currentUser?.email}</p>
+          </div>
+        </div>
+
+        <button
+          onClick={() => handleNavigate("/settings/")}
+          className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${
+            isSettingsPath(pathname)
+              ? "bg-white/10 text-white"
+              : "text-slate-500 hover:bg-white/[0.055] hover:text-slate-200"
+          }`}
+        >
+          <Settings size={15} className="shrink-0" />
+          Settings
+        </button>
+        {currentUser?.role === "admin" && (
           <button
-            onClick={() => router.push("/settings/")}
-            className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-              isSettingsPath(pathname)
-                ? "bg-slate-800 text-white"
-                : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
+            onClick={() => handleNavigate("/admin/")}
+            className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${
+              pathname.startsWith("/admin")
+                ? "bg-white/10 text-white"
+                : "text-slate-500 hover:bg-white/[0.055] hover:text-slate-200"
             }`}
           >
-            <Settings size={15} className="shrink-0" />
-            Settings
+            <Shield size={15} className="shrink-0" />
+            Admin
           </button>
-          {currentUser?.role === "admin" && (
-            <button
-              onClick={() => router.push("/admin/")}
-              className={`flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm transition-colors ${
-                pathname.startsWith("/admin")
-                  ? "bg-slate-800 text-white"
-                  : "text-slate-400 hover:bg-slate-900 hover:text-slate-200"
-              }`}
-            >
-              <Shield size={15} className="shrink-0" />
-              Admin
-            </button>
-          )}
-          <ThemeToggle variant="segmented" className="px-3 py-2" />
-          <button
-            onClick={handleLogout}
-            className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-sm text-slate-400 hover:bg-slate-900 hover:text-slate-200 transition-colors"
-          >
-            <LogOut size={15} className="shrink-0" />
-            Sign out
-          </button>
-        </div>
+        )}
+        <ThemeToggle variant="segmented" className="px-3 py-2" />
+        <button
+          onClick={handleLogout}
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-500 transition hover:bg-white/[0.055] hover:text-slate-200"
+        >
+          <LogOut size={15} className="shrink-0" />
+          Sign out
+        </button>
+      </div>
+    </>
+  );
+
+  return (
+    <>
+      <div className="fixed inset-x-0 top-0 z-30 flex h-14 items-center justify-between border-b border-slate-200/70 bg-white/80 px-3 backdrop-blur-xl dark:border-slate-800 dark:bg-slate-950/80 md:hidden">
+        <BrandMark compact />
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="icon-button size-9"
+          aria-label="Open menu"
+        >
+          <Menu size={18} />
+        </button>
+      </div>
+
+      {mobileOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-slate-950/60 backdrop-blur-sm md:hidden"
+          onClick={() => setMobileOpen(false)}
+        />
+      )}
+
+      <aside
+        className={`h-full w-[17rem] shrink-0 flex-col border-r border-white/[0.06] bg-[#11131d] text-slate-300 shadow-2xl shadow-slate-950/10 ${
+          mobileOpen ? "fixed inset-y-0 left-0 z-50 flex" : "hidden"
+        } md:relative md:flex`}
+      >
+        {sidebarContent}
       </aside>
 
       <Dialog
@@ -165,13 +232,13 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
           <DialogFooter>
             <button
               onClick={() => setDeleteTarget(null)}
-              className="rounded-lg px-3 py-1.5 text-sm text-slate-400 hover:text-white transition-colors"
+              className="secondary-action min-h-9 px-3 py-1.5"
             >
               Cancel
             </button>
             <button
               onClick={handleDeleteConfirm}
-              className="rounded-lg px-3 py-1.5 text-sm bg-red-600 text-white hover:bg-red-500 transition-colors"
+              className="inline-flex min-h-9 items-center justify-center rounded-xl bg-red-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-red-500"
             >
               Delete
             </button>

@@ -79,16 +79,18 @@ pub fn load_personality(conn: &Connection, user_id: &str) -> anyhow::Result<Pers
 }
 
 /// Read one personality file by name (`soul`, `identity`, or `user`).
+/// Returns (content, updated_at) if found.
 pub fn get_personality(
     conn: &Connection,
     user_id: &str,
     name: &str,
-) -> anyhow::Result<Option<String>> {
-    let mut stmt = conn
-        .prepare_cached("SELECT content FROM user_personality WHERE user_id = ?1 AND name = ?2")?;
-    let result = stmt.query_row(params![user_id, name], |row| row.get(0));
+) -> anyhow::Result<Option<(String, String)>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT content, updated_at FROM user_personality WHERE user_id = ?1 AND name = ?2",
+    )?;
+    let result = stmt.query_row(params![user_id, name], |row| Ok((row.get(0)?, row.get(1)?)));
     match result {
-        Ok(content) => Ok(Some(content)),
+        Ok(pair) => Ok(Some(pair)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e.into()),
     }
@@ -383,13 +385,14 @@ mod tests {
         pool.call_sync(|conn| {
             let uid = setup_user(conn);
             set_personality(conn, &uid, "soul", "Be helpful.")?;
-            let got = get_personality(conn, &uid, "soul")?.unwrap();
-            assert_eq!(got, "Be helpful.");
+            let (content, updated_at) = get_personality(conn, &uid, "soul")?.unwrap();
+            assert_eq!(content, "Be helpful.");
+            assert!(!updated_at.is_empty());
 
             // Overwrite
             set_personality(conn, &uid, "soul", "Be direct.")?;
-            let got2 = get_personality(conn, &uid, "soul")?.unwrap();
-            assert_eq!(got2, "Be direct.");
+            let (content2, _) = get_personality(conn, &uid, "soul")?.unwrap();
+            assert_eq!(content2, "Be direct.");
             Ok(())
         })
         .unwrap();
@@ -669,7 +672,7 @@ mod tests {
                 "owner's secret pasta recipe"
             );
             assert_eq!(
-                get_personality(conn, &owner, "soul")?.unwrap(),
+                get_personality(conn, &owner, "soul")?.unwrap().0,
                 "owner's private soul"
             );
             assert_eq!(list_memory(conn, &owner)?.len(), 1);

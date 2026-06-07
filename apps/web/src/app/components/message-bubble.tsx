@@ -4,9 +4,23 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeHighlight from "rehype-highlight";
-import { ChevronDown, ChevronRight, Volume2, VolumeX } from "lucide-react";
+import {
+  ChevronDown,
+  ChevronRight,
+  FileText,
+  Pencil,
+  Plus,
+  Search,
+  Trash2,
+  FolderOpen,
+  MoveRight,
+  Brain,
+  Volume2,
+  VolumeX,
+} from "lucide-react";
 import { tts } from "@/lib/api";
 import type { Message } from "@/lib/types";
+import BrandMark from "./brand-mark";
 
 import "highlight.js/styles/github.css";
 
@@ -24,48 +38,230 @@ function stripMarkdown(text: string): string {
     .trim();
 }
 
-function prettyJson(raw: string): string {
-  try {
-    return JSON.stringify(JSON.parse(raw), null, 2);
-  } catch {
-    return raw;
-  }
+// ── Tool rendering helpers ─────────────────────────────────────────────────────
+
+interface ToolCallInfo {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
 }
 
-function ToolMessage({ message }: { message: Message }) {
-  const [expanded, setExpanded] = useState(false);
-  const pretty = prettyJson(message.content);
-  const isError = (() => {
-    try {
-      return (JSON.parse(message.content) as { ok?: boolean }).ok === false;
-    } catch {
-      return false;
+function parseToolCalls(raw: unknown[]): ToolCallInfo[] {
+  return raw
+    .map((item) => {
+      const call = item as Record<string, unknown> | null;
+      if (!call || typeof call.id !== "string" || typeof call.name !== "string") return null;
+      return {
+        id: call.id,
+        name: call.name,
+        arguments: (call.arguments as Record<string, unknown>) ?? {},
+      };
+    })
+    .filter(Boolean) as ToolCallInfo[];
+}
+
+const TOOL_META: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
+  memory_list: {
+    icon: <FolderOpen size={11} />,
+    label: "List memory",
+    color: "text-slate-500 dark:text-slate-400",
+  },
+  memory_read: {
+    icon: <FileText size={11} />,
+    label: "Read",
+    color: "text-blue-500 dark:text-blue-400",
+  },
+  memory_write: {
+    icon: <Pencil size={11} />,
+    label: "Write",
+    color: "text-emerald-500 dark:text-emerald-400",
+  },
+  memory_append: {
+    icon: <Plus size={11} />,
+    label: "Append",
+    color: "text-emerald-500 dark:text-emerald-400",
+  },
+  memory_move: {
+    icon: <MoveRight size={11} />,
+    label: "Move",
+    color: "text-amber-500 dark:text-amber-400",
+  },
+  memory_delete: {
+    icon: <Trash2 size={11} />,
+    label: "Delete",
+    color: "text-red-500 dark:text-red-400",
+  },
+  memory_search: {
+    icon: <Search size={11} />,
+    label: "Search",
+    color: "text-violet-500 dark:text-violet-400",
+  },
+  personality_write: {
+    icon: <Brain size={11} />,
+    label: "Personality",
+    color: "text-fuchsia-500 dark:text-fuchsia-400",
+  },
+};
+
+function toolArgsPreview(name: string, args: Record<string, unknown>): string {
+  if (name === "personality_write") return `/${(args.name as string) ?? "?"}`;
+  const path = args.path ?? args.from ?? null;
+  if (path && typeof path === "string") {
+    const label = path.split("/").pop() ?? path;
+    if (name === "memory_move") return `${label} → ${(args.to as string) ?? "?"}`;
+    return label;
+  }
+  return "";
+}
+
+function inferToolResultType(content: string): { kind: string } | null {
+  try {
+    const parsed = JSON.parse(content);
+    if (Array.isArray(parsed) && parsed.length > 0) {
+      const first = parsed[0] as Record<string, unknown>;
+      if ("path" in first && "updated_at" in first && !("content" in first)) {
+        return { kind: "memory_list" };
+      }
+      if ("path" in first && "content" in first) {
+        return { kind: "memory_search" };
+      }
     }
-  })();
+    if (typeof parsed === "object" && parsed !== null && "ok" in parsed && parsed.ok === false) {
+      return { kind: "error" };
+    }
+  } catch {
+    // not JSON
+  }
+  if (content === "saved") return { kind: "write" };
+  if (content === "appended") return { kind: "append" };
+  if (content === "deleted") return { kind: "delete" };
+  if (content === "moved") return { kind: "move" };
+  if (content.startsWith("(no memory file")) return { kind: "not_found" };
+  return { kind: "generic" };
+}
+
+// ── Tool call badges (shown inline inside assistant messages) ──────────────────
+
+function ToolCallBadge({ call }: { call: ToolCallInfo }) {
+  const meta = TOOL_META[call.name];
+  const preview = toolArgsPreview(call.name, call.arguments);
+  if (!meta) return null;
+  return (
+    <span
+      className={`inline-flex items-center gap-1 rounded-md border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50 px-2 py-0.5 text-[11px] font-medium ${meta.color}`}
+    >
+      {meta.icon}
+      <span>{meta.label}</span>
+      {preview && <span className="text-slate-400 dark:text-slate-500 font-mono">· {preview}</span>}
+    </span>
+  );
+}
+
+// ── Tool message (improved rendering for memory/personality results) ───────────
+
+function ToolMessage({ message, calls }: { message: Message; calls: ToolCallInfo[] }) {
+  const [expanded, setExpanded] = useState(false);
+  const inferred = inferToolResultType(message.content);
+  const isError = inferred?.kind === "error" || message.content.startsWith("(no memory");
+
+  // Try to find the matching tool call by tool_call_id
+  const matchingCall = message.tool_call_id
+    ? calls.find((c) => c.id === message.tool_call_id)
+    : undefined;
+
+  const meta = matchingCall ? TOOL_META[matchingCall.name] : undefined;
+  const label = matchingCall
+    ? (TOOL_META[matchingCall.name]?.label ?? matchingCall.name)
+    : isError
+      ? "error"
+      : "tool result";
+  const preview = matchingCall
+    ? toolArgsPreview(matchingCall.name, matchingCall.arguments)
+    : undefined;
+
+  // Build result text from content
+  function resultSummary(): string {
+    if (inferred?.kind === "write" && matchingCall) {
+      const path = matchingCall.arguments.path as string;
+      if (matchingCall.name === "personality_write") {
+        return `Updated ${matchingCall.arguments.name as string} personality`;
+      }
+      return `Saved ${path ?? "file"}`;
+    }
+    if (inferred?.kind === "append" && matchingCall) {
+      return `Appended to ${(matchingCall.arguments.path as string) ?? "file"}`;
+    }
+    if (inferred?.kind === "delete" && matchingCall) {
+      return `Deleted ${(matchingCall.arguments.path as string) ?? "file"}`;
+    }
+    if (inferred?.kind === "move" && matchingCall) {
+      return `Moved ${(matchingCall.arguments.from as string) ?? "?"} → ${(matchingCall.arguments.to as string) ?? "?"}`;
+    }
+    if (inferred?.kind === "memory_list") {
+      try {
+        const files = JSON.parse(message.content) as { path: string }[];
+        return `Found ${files.length} memory file${files.length === 1 ? "" : "s"}`;
+      } catch {
+        return "Listed memory files";
+      }
+    }
+    if (inferred?.kind === "memory_search") {
+      try {
+        const results = JSON.parse(message.content) as { path: string }[];
+        return `Search: ${results.length} result${results.length === 1 ? "" : "s"}`;
+      } catch {
+        return "Search results";
+      }
+    }
+    if (inferred?.kind === "not_found") return "Not found";
+    if (inferred?.kind === "generic" && matchingCall) {
+      if (matchingCall.name === "memory_read") {
+        const lines = message.content.split("\n");
+        if (lines.length <= 3) return `Read ${matchingCall.arguments.path ?? "file"}`;
+        return `Read ${matchingCall.arguments.path ?? "file"} (${lines.length} lines)`;
+      }
+    }
+    if (message.content.length < 60) return message.content;
+    return `${message.content.slice(0, 60)}…`;
+  }
 
   return (
     <div className="flex justify-start">
-      <div className="max-w-[85%] rounded-xl border border-slate-200 bg-slate-50 text-xs dark:border-slate-700 dark:bg-slate-900/50">
+      <div
+        className={`max-w-[85%] rounded-xl border text-xs ${
+          isError
+            ? "border-red-200 bg-red-50 dark:border-red-900 dark:bg-red-950/50"
+            : "border-slate-200 bg-slate-50 dark:border-slate-700 dark:bg-slate-900/50"
+        }`}
+      >
         <button
           type="button"
           onClick={() => setExpanded((v) => !v)}
-          className="flex w-full items-center gap-1.5 px-3 py-2 text-left text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
+          className="flex w-full items-center gap-1.5 px-3 py-2 text-left hover:text-slate-700 dark:hover:text-slate-200"
         >
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          <span
-            className={`font-mono font-medium ${isError ? "text-red-500 dark:text-red-400" : "text-slate-500 dark:text-slate-400"}`}
-          >
-            {isError ? "tool error" : "tool result"}
-          </span>
-          {message.tool_call_id && (
-            <span className="ml-1 truncate text-slate-400 dark:text-slate-500">
-              · {message.tool_call_id}
+          {meta ? (
+            <span className={`flex items-center gap-1 ${meta.color}`}>
+              {meta.icon}
+              <span className="font-medium">{label}</span>
             </span>
+          ) : (
+            <span
+              className={`font-mono font-medium ${isError ? "text-red-500 dark:text-red-400" : "text-slate-500 dark:text-slate-400"}`}
+            >
+              {isError ? "error" : "tool result"}
+            </span>
+          )}
+          {preview && (
+            <span className="truncate text-slate-400 dark:text-slate-500">· {preview}</span>
+          )}
+          {!matchingCall && (
+            <span className="ml-auto text-slate-400 dark:text-slate-500">{resultSummary()}</span>
           )}
         </button>
         {expanded && (
-          <pre className="overflow-x-auto border-t border-slate-200 px-3 py-2 font-mono text-slate-700 dark:border-slate-700 dark:text-slate-300">
-            {pretty}
+          <pre className="overflow-x-auto border-t border-slate-200 dark:border-slate-700 px-3 py-2 font-mono text-slate-700 dark:text-slate-300 max-h-[300px] overflow-y-auto">
+            {message.content}
           </pre>
         )}
       </div>
@@ -73,12 +269,16 @@ function ToolMessage({ message }: { message: Message }) {
   );
 }
 
+// ── Main MessageBubble ─────────────────────────────────────────────────────────
+
 interface Props {
   message: Message;
   onRetry?: (messageId: string) => void;
   retrying?: boolean;
   accessToken: string;
   hasAudio?: boolean;
+  /** Tool calls from the nearest preceding assistant message (for pairing with tool results). */
+  toolCalls?: ToolCallInfo[];
 }
 
 export default function MessageBubble({
@@ -87,8 +287,10 @@ export default function MessageBubble({
   retrying = false,
   accessToken,
   hasAudio = false,
+  toolCalls,
 }: Props) {
   const isUser = message.role === "user";
+  const isAssistant = message.role === "assistant";
 
   const [playing, setPlaying] = useState(false);
   const [playError, setPlayError] = useState(false);
@@ -152,29 +354,48 @@ export default function MessageBubble({
   }, []);
 
   if (message.role === "tool") {
-    return <ToolMessage message={message} />;
+    return <ToolMessage message={message} calls={toolCalls ?? []} />;
   }
 
   if (isUser) {
     return (
       <div className="flex justify-end">
-        <div className="max-w-[80%] rounded-2xl rounded-tr-sm bg-blue-600 px-4 py-2.5 text-sm text-white shadow-sm">
+        <div className="max-w-[88%] rounded-2xl rounded-br-md bg-gradient-to-br from-indigo-600 to-indigo-500 px-4 py-3 text-sm text-white shadow-md shadow-indigo-950/10 sm:max-w-[78%]">
           <p className="whitespace-pre-wrap leading-relaxed">{message.content}</p>
         </div>
       </div>
     );
   }
 
+  // Parse tool calls on assistant messages
+  const calls =
+    isAssistant && message.tool_calls?.length
+      ? parseToolCalls(message.tool_calls as unknown[])
+      : [];
+
   const active = message.status === "pending" || message.status === "streaming";
   const retryable = message.status === "failed" || message.status === "interrupted";
-
   const canSpeak = hasAudio && message.status === "complete" && !!message.content;
 
   if (!isUser && !active && !retryable && !message.content) return null;
 
   return (
-    <div className="flex justify-start">
-      <div className="max-w-[85%] rounded-2xl rounded-tl-sm border border-slate-200 bg-white px-4 py-3 text-sm text-slate-900 shadow-sm dark:border-slate-700 dark:bg-slate-900 dark:text-slate-100">
+    <div className="flex items-start gap-2.5">
+      <BrandMark
+        compact
+        markOnly
+        className="mt-0.5 [&>span:first-child]:size-7 [&>span:first-child]:rounded-[0.65rem]"
+      />
+      <div className="max-w-[calc(100%-2.5rem)] rounded-2xl rounded-tl-md border border-slate-200/70 bg-white/70 px-4 py-3 text-sm text-slate-900 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/65 dark:text-slate-100 sm:max-w-[85%]">
+        {/* Tool call badges */}
+        {calls.length > 0 && (
+          <div className="flex flex-wrap gap-1 mb-2 pb-2 border-b border-slate-100 dark:border-slate-800">
+            {calls.map((call) => (
+              <ToolCallBadge key={call.id} call={call} />
+            ))}
+          </div>
+        )}
+
         {active && !message.content ? (
           <span className="flex gap-1 items-center py-0.5">
             <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-bounce [animation-delay:0ms]" />
