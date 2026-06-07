@@ -477,7 +477,7 @@ fn ensure_allowed_host(manifest: &Manifest, url: &reqwest::Url) -> anyhow::Resul
 
 /// Whether a URL points to a private address where self-signed certs are expected.
 fn is_private_or_local(url: &reqwest::Url) -> bool {
-    url.host_str().map_or(false, |host| {
+    url.host_str().is_some_and(|host| {
         host == "localhost"
             || host.ends_with(".local")
             || host
