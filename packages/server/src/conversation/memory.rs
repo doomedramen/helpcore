@@ -249,14 +249,16 @@ pub fn delete_memory(conn: &Connection, user_id: &str, path: &str) -> anyhow::Re
 
 /// Turn free text into a safe, broad FTS5 MATCH expression.
 ///
-/// FTS5 has its own query parser that treats `!`, `"`, `*`, `^`, `(`, `)` and
-/// similar characters as operators or syntax. Passing a raw user message
-/// directly causes parse errors (e.g. "Hi!" → `fts5: syntax error near "!"`).
-/// This keeps only alphanumerics and hyphens — the characters that can appear
-/// in FTS5 bareword terms without special meaning — lowercases each word
-/// (matching is case-insensitive anyway, and this keeps a stray "OR"/"AND" in
-/// the input from being parsed as an operator), drops duplicates, and joins
-/// the result with `OR`.
+/// FTS5 has its own query parser that treats `!`, `"`, `*`, `^`, `(`, `)`,
+/// `-` and similar characters as operators or syntax. Passing a raw user
+/// message directly causes parse errors (e.g. "Hi!" → `fts5: syntax error
+/// near "!"`, and a hyphen-only word like "--" between two terms produces
+/// `fts5: syntax error near "OR"` once joined below). This keeps only
+/// alphanumerics — the characters that can appear in FTS5 bareword terms
+/// without special meaning — lowercases each word (matching is
+/// case-insensitive anyway, and this keeps a stray "OR"/"AND" in the input
+/// from being parsed as an operator), drops duplicates, and joins the result
+/// with `OR`.
 ///
 /// `OR` rather than FTS5's default `AND`: a bare `term1 term2` query only
 /// matches files containing *every* term, which is far too strict for
@@ -271,7 +273,7 @@ fn sanitize_fts_query(query: &str) -> String {
         .filter_map(|word| {
             let term: String = word
                 .chars()
-                .filter(|c| c.is_alphanumeric() || *c == '-')
+                .filter(|c| c.is_alphanumeric())
                 .collect::<String>()
                 .to_lowercase();
             (!term.is_empty() && seen.insert(term.clone())).then_some(term)
@@ -562,6 +564,27 @@ mod tests {
             // FTS5 search against a completely empty table must return [] not error.
             let results = search_memory(conn, &uid, "Hi!", 10)?;
             assert!(results.is_empty(), "expected empty, got {}", results.len());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn search_memory_strips_hyphens_that_break_fts5_syntax() {
+        let pool = open_in_memory();
+        pool.call_sync(|conn| {
+            let uid = setup_user(conn);
+            write_memory(conn, &uid, "notes.md", "Rust is great")?;
+
+            // A hyphen-only "word" (e.g. an em-dash typed as "--") sits between
+            // sanitised terms once joined with " OR " and previously produced
+            // `fts5: syntax error near "OR"`; internally hyphenated words like
+            // "well-known" hit `fts5: syntax error near` / "no such column" for
+            // the same reason. Neither should reach FTS5 at all.
+            assert!(search_memory(conn, &uid, "wait -- really?", 10).is_ok());
+            assert!(search_memory(conn, &uid, "a well-known fact", 10).is_ok());
+            assert!(search_memory(conn, &uid, "trailing- hyphen", 10).is_ok());
+            assert!(search_memory(conn, &uid, "-leading hyphen", 10).is_ok());
             Ok(())
         })
         .unwrap();
