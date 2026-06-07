@@ -1,6 +1,7 @@
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::{Connection, params};
+use std::collections::HashSet;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -246,22 +247,37 @@ pub fn delete_memory(conn: &Connection, user_id: &str, path: &str) -> anyhow::Re
 
 // ── Memory search ─────────────────────────────────────────────────────────────
 
-/// Sanitise a user message so it is safe to pass as an FTS5 query.
+/// Turn free text into a safe, broad FTS5 MATCH expression.
 ///
 /// FTS5 has its own query parser that treats `!`, `"`, `*`, `^`, `(`, `)` and
-/// similar characters as operators or syntax.  Passing a raw user message
+/// similar characters as operators or syntax. Passing a raw user message
 /// directly causes parse errors (e.g. "Hi!" → `fts5: syntax error near "!"`).
-/// This strips everything except alphanumerics, spaces, and hyphens, which
-/// are the only characters that can appear in FTS5 term queries without
-/// special meaning.
+/// This keeps only alphanumerics and hyphens — the characters that can appear
+/// in FTS5 bareword terms without special meaning — lowercases each word
+/// (matching is case-insensitive anyway, and this keeps a stray "OR"/"AND" in
+/// the input from being parsed as an operator), drops duplicates, and joins
+/// the result with `OR`.
+///
+/// `OR` rather than FTS5's default `AND`: a bare `term1 term2` query only
+/// matches files containing *every* term, which is far too strict for
+/// natural-language recall — a multi-word message, let alone one enriched
+/// with recent conversation turns (see `memory_recall_query` in chat.rs),
+/// would rarely find every word in a single memory file. `OR` casts a wide
+/// net and lets FTS5's relevance ranking surface the best matches instead.
 fn sanitize_fts_query(query: &str) -> String {
+    let mut seen = HashSet::new();
     query
-        .chars()
-        .filter(|c| c.is_alphanumeric() || c.is_whitespace() || *c == '-')
-        .collect::<String>()
         .split_whitespace()
+        .filter_map(|word| {
+            let term: String = word
+                .chars()
+                .filter(|c| c.is_alphanumeric() || *c == '-')
+                .collect::<String>()
+                .to_lowercase();
+            (!term.is_empty() && seen.insert(term.clone())).then_some(term)
+        })
         .collect::<Vec<_>>()
-        .join(" ")
+        .join(" OR ")
 }
 
 /// FTS5 search across a user's memory files.

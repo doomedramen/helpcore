@@ -235,6 +235,29 @@ struct GenerationJob {
     tx: EventSender,
 }
 
+/// Build the text used to recall relevant memories for this turn.
+///
+/// Searching on the new message alone misses short, contextual replies like
+/// "yes" or "what's her number again?" — they carry no topical keywords of
+/// their own. Folding in the most recent exchange (the last assistant reply
+/// and the user message that prompted it) gives `search_memory` something to
+/// match against. `search_memory` ORs its terms and ranks by relevance, so
+/// adding more text only broadens recall — it never excludes a file that
+/// would have matched on the new message alone.
+fn memory_recall_query(history: &[MessageSummary], current_message: &str) -> String {
+    let mut text = current_message.to_string();
+    for msg in history
+        .iter()
+        .rev()
+        .filter(|msg| msg.role == "user" || msg.role == "assistant")
+        .take(2)
+    {
+        text.push(' ');
+        text.push_str(&msg.content);
+    }
+    text
+}
+
 async fn run_generation(mut job: GenerationJob) {
     if let Err(error) = generate(&mut job).await {
         tracing::error!(error = %error, "chat generation failed");
@@ -246,13 +269,13 @@ async fn run_generation(mut job: GenerationJob) {
 
 async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
     let user_id = job.user_id.clone();
-    let user_message = job.user_content.clone();
+    let recall_query = memory_recall_query(&job.history, &job.user_content);
     let (personality, mem_results, plugin_skills) = job
         .state
         .db
         .call(move |conn| {
             let personality = memory::load_personality(conn, &user_id)?;
-            let memories = memory::search_memory(conn, &user_id, &user_message, 10)?;
+            let memories = memory::search_memory(conn, &user_id, &recall_query, 10)?;
             let skills = registry::enabled_skills(conn, &user_id)?;
             Ok((personality, memories, skills))
         })

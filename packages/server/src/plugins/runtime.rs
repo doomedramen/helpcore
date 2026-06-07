@@ -122,6 +122,11 @@ impl ToolCatalog {
 // They run directly against the conversation::memory module rather than
 // through the WASM/bridge plugin runtimes.
 
+/// Upper bound on the `limit` a model can request from `memory_search`,
+/// mirroring how the wasm/bridge tiers cap `MAX_TOOL_RESULT_BYTES` — without
+/// it a single tool call could dump a large slice of memory back into context.
+const MEMORY_SEARCH_MAX_LIMIT: u64 = 25;
+
 const BUILTIN_TOOL_NAMES: &[&str] = &[
     "memory_list",
     "memory_read",
@@ -233,7 +238,9 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "query": { "type": "string", "description": "Search keywords" },
                     "limit": {
                         "type": "integer",
-                        "description": "Maximum number of results (default 10)"
+                        "minimum": 1,
+                        "maximum": 25,
+                        "description": "Maximum number of results (default 10, capped at 25)"
                     }
                 },
                 "required": ["query"],
@@ -343,11 +350,15 @@ async fn execute_builtin(
         }
         "memory_search" => {
             let query = require_str_arg(&call.arguments, "query")?.to_string();
+            // Clamp like the wasm/bridge tiers clamp result size: an
+            // unbounded model-supplied limit could pull a large slice of the
+            // user's memory back into its own context in one round trip.
             let limit = call
                 .arguments
                 .get("limit")
                 .and_then(serde_json::Value::as_u64)
-                .unwrap_or(10) as usize;
+                .unwrap_or(10)
+                .clamp(1, MEMORY_SEARCH_MAX_LIMIT) as usize;
             let results = state
                 .db
                 .call(move |conn| memory::search_memory(conn, &uid, &query, limit))
