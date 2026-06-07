@@ -32,7 +32,7 @@ This runs the Next.js static export and embeds its output directly in
 `target/release/helpcore-server`. No web files are needed beside the resulting
 executable.
 
-Run the server with the repository's `config.toml`:
+After `make build`, run the bundled server with the repository's `config.toml`:
 
 ```bash
 make run

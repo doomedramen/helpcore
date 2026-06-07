@@ -3,7 +3,7 @@ name = "helpcore"
 url  = "http://localhost:3000"
 
 [[providers]]
-id            = "ollama"
+id            = "7231fccf-0a8a-4be7-94f4-3315fb64006b"
 name          = "Ollama"
 type          = "ollama"
 default_model = "qwen2.5:3b"

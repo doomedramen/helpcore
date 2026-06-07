@@ -256,14 +256,14 @@ is not required for a core-only build:
 
 ```bash
 make build-headless
-make run
+./target/release/helpcore-server --headless
 ```
 
 Build a single server executable containing the static web UI:
 
 ```bash
 make build
-./target/release/helpcore-server
+make run
 ```
 
 The bundled server serves the UI by default. Run only the API with:

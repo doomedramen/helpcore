@@ -10,8 +10,12 @@ help: ## Show available commands
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) \
 	  | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}'
 
-run: ## Run the API using ./config.toml
-	HELPCORE_CONFIG="$(CURDIR)/config.toml" $(CARGO) run -p helpcore-server
+run: ## Run the bundled release server using ./config.toml
+	@test -f "$(WEB_DIR)/out/index.html" || \
+		(echo "Web bundle missing; run 'make build' first." >&2; exit 1)
+	HELPCORE_CONFIG="$(CURDIR)/config.toml" \
+	HELPCORE_EMBED_WEB_DIR="$(WEB_DIR)/out" \
+	$(CARGO) run --release -p helpcore-server
 
 check: ## Type-check the Rust workspace
 	$(CARGO) check --workspace
