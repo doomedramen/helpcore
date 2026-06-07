@@ -520,6 +520,41 @@ mod tests {
     }
 
     #[test]
+    fn search_memory_ors_terms_instead_of_anding() {
+        let pool = open_in_memory();
+        pool.call_sync(|conn| {
+            let uid = setup_user(conn);
+            write_memory(
+                conn,
+                &uid,
+                "rust.md",
+                "Rust is a systems programming language.",
+            )?;
+            write_memory(
+                conn,
+                &uid,
+                "cooking.md",
+                "My favourite recipe is carbonara.",
+            )?;
+
+            // Neither file contains every word of this query — under FTS5's
+            // default implicit-AND join this would return nothing. Recall
+            // queries are enriched with extra context (see memory_recall_query
+            // in chat.rs) and must broaden, not narrow, so search_memory joins
+            // terms with OR and ranks by relevance instead.
+            let results = search_memory(conn, &uid, "rust carbonara dinner", 10)?;
+            assert_eq!(results.len(), 2, "OR join should surface both files");
+
+            // A query containing "OR"/"or" as ordinary words must not be
+            // parsed as the FTS5 operator or break the query.
+            let results = search_memory(conn, &uid, "carbonara or rust OR sandwich", 10)?;
+            assert_eq!(results.len(), 2);
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
     fn search_empty_table_returns_empty_not_error() {
         let pool = open_in_memory();
         pool.call_sync(|conn| {

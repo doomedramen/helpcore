@@ -623,3 +623,66 @@ pub async fn compact_conversation(
         summary_length: result.summary_length,
     }))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn msg(role: &str, content: &str) -> MessageSummary {
+        MessageSummary {
+            id: "id".to_string(),
+            role: role.to_string(),
+            content: content.to_string(),
+            tool_call_id: None,
+            tool_calls: None,
+            sequence: 1,
+            created_at: "now".to_string(),
+            status: helpcore_api::MessageStatus::Complete,
+            error: None,
+            updated_at: "now".to_string(),
+        }
+    }
+
+    #[test]
+    fn recall_query_is_just_the_message_without_history() {
+        assert_eq!(
+            memory_recall_query(&[], "what's Alice's number?"),
+            "what's Alice's number?"
+        );
+    }
+
+    #[test]
+    fn recall_query_folds_in_the_most_recent_exchange() {
+        let history = vec![
+            msg("user", "tell me about my trip to Berlin"),
+            msg(
+                "assistant",
+                "Sure — you flew out on the 3rd and stayed near Mitte.",
+            ),
+        ];
+        let query = memory_recall_query(&history, "yes, that one");
+        // New message first (it's weighted highest by being listed first and
+        // by search_memory ranking), then the most recent exchange.
+        assert_eq!(
+            query,
+            "yes, that one Sure — you flew out on the 3rd and stayed near Mitte. \
+             tell me about my trip to Berlin"
+        );
+    }
+
+    #[test]
+    fn recall_query_ignores_tool_messages() {
+        let history = vec![
+            msg("user", "what's the weather"),
+            msg("tool", "{\"temp\": 12}"),
+            msg("assistant", "It's 12 degrees and cloudy."),
+        ];
+        let query = memory_recall_query(&history, "should I bring a coat?");
+        assert!(
+            !query.contains("temp"),
+            "tool message content should be excluded"
+        );
+        assert!(query.contains("It's 12 degrees and cloudy."));
+        assert!(query.contains("what's the weather"));
+    }
+}
