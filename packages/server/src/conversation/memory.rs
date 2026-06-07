@@ -197,6 +197,39 @@ pub fn write_memory(
     Ok(())
 }
 
+/// Append content to a memory file, creating it if it does not exist yet.
+///
+/// Joins existing and new content with a newline so appended notes don't run
+/// together with what was already there.
+pub fn append_memory(
+    conn: &Connection,
+    user_id: &str,
+    path: &str,
+    content: &str,
+) -> anyhow::Result<()> {
+    let existing = read_memory(conn, user_id, path)?;
+    let combined = match existing {
+        Some(existing) if !existing.is_empty() => format!("{existing}\n{content}"),
+        _ => content.to_string(),
+    };
+    write_memory(conn, user_id, path, &combined)
+}
+
+/// Rename or move a memory file. Returns `true` if a row was moved, `false`
+/// if the source path did not exist. Fails if the destination already exists.
+///
+/// The `memory_files_au` trigger keeps the FTS5 index up to date automatically.
+pub fn move_memory(conn: &Connection, user_id: &str, from: &str, to: &str) -> anyhow::Result<bool> {
+    let now = Utc::now().to_rfc3339();
+    let n = conn
+        .execute(
+            "UPDATE memory_files SET path = ?1, updated_at = ?2 WHERE user_id = ?3 AND path = ?4",
+            params![to, now, user_id, from],
+        )
+        .context("failed to move memory file")?;
+    Ok(n > 0)
+}
+
 /// Delete a memory file. Returns `true` if a row was deleted, `false` if it
 /// did not exist.
 ///
@@ -380,6 +413,48 @@ mod tests {
             assert!(delete_memory(conn, &uid, "notes.md")?);
             assert!(read_memory(conn, &uid, "notes.md")?.is_none());
             assert!(!delete_memory(conn, &uid, "notes.md")?); // second delete = false
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn append_memory_creates_and_appends() {
+        let pool = open_in_memory();
+        pool.call_sync(|conn| {
+            let uid = setup_user(conn);
+
+            append_memory(conn, &uid, "log.md", "first entry")?;
+            assert_eq!(read_memory(conn, &uid, "log.md")?.unwrap(), "first entry");
+
+            append_memory(conn, &uid, "log.md", "second entry")?;
+            assert_eq!(
+                read_memory(conn, &uid, "log.md")?.unwrap(),
+                "first entry\nsecond entry"
+            );
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn move_memory_renames_file() {
+        let pool = open_in_memory();
+        pool.call_sync(|conn| {
+            let uid = setup_user(conn);
+            write_memory(conn, &uid, "old.md", "content")?;
+
+            assert!(move_memory(conn, &uid, "old.md", "new.md")?);
+            assert!(read_memory(conn, &uid, "old.md")?.is_none());
+            assert_eq!(read_memory(conn, &uid, "new.md")?.unwrap(), "content");
+
+            // Moving a non-existent file returns false.
+            assert!(!move_memory(conn, &uid, "old.md", "another.md")?);
+
+            // Search index follows the move (old path no longer matches).
+            let results = search_memory(conn, &uid, "content", 10)?;
+            assert_eq!(results.len(), 1);
+            assert_eq!(results[0].path, "new.md");
             Ok(())
         })
         .unwrap();

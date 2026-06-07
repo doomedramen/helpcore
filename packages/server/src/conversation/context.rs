@@ -39,10 +39,11 @@ pub struct ContextOptions<'a> {
 /// Assembly order (per `docs/conversation.md` §Context assembly):
 /// ```text
 /// [system]  CORE_INSTRUCTIONS
-///           ## Soul          (if opts.soul is set)
-///           ## Identity      (if opts.identity is set)
-///           ## User          (if opts.user_profile is set)
-///           ## Memories      (if opts.memories is non-empty)
+///           ## Soul             (if opts.soul is set)
+///           ## Identity         (if opts.identity is set)
+///           ## User             (if opts.user_profile is set)
+///           ## Memory system    (always — rules + memory_*/personality_write tools)
+///           ## Current memories (if opts.memories is non-empty)
 ///           ## Current date
 /// [user/assistant…]  conversation history
 /// [user]    new user message
@@ -109,10 +110,12 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
         out.push_str("\n\n## User\n");
         out.push_str(user_profile);
     }
+    // Always inject the memory rules — the memory_* and personality_write
+    // tools are available to every user regardless of whether they have any
+    // memory files yet (e.g. the very first thing they say may be worth saving).
+    out.push_str("\n\n## Memory system\n");
+    out.push_str(MEMORY_RULES);
     if !opts.memories.is_empty() {
-        // Inject the memory rules so the AI knows how to manage memory files.
-        out.push_str("\n\n## Memory system\n");
-        out.push_str(MEMORY_RULES);
         out.push_str("\n\n## Current memories\n");
         for mem in opts.memories {
             out.push_str(&format!("### {}\n{}\n", mem.path, mem.content));
@@ -198,6 +201,21 @@ mod tests {
         assert!(
             system.contains("## User\nI am Martin."),
             "missing user section"
+        );
+    }
+
+    #[test]
+    fn memory_system_section_present_even_without_memories() {
+        let messages = assemble(&[], "hi", ContextOptions::default());
+        let system = &messages[0].content;
+        assert!(
+            system.contains("## Memory system"),
+            "memory rules should always be injected so the AI knows the memory_* \
+             and personality_write tools exist, even before any memory files do"
+        );
+        assert!(
+            !system.contains("## Current memories"),
+            "current-memories section should be omitted when there are no results"
         );
     }
 

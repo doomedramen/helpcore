@@ -15,6 +15,7 @@ use wasmtime::{
 };
 
 use crate::{
+    conversation::memory,
     plugins::{
         package,
         registry::{InstalledPlugin, Manifest},
@@ -66,11 +67,11 @@ impl ToolCatalog {
             .db
             .call(move |conn| crate::plugins::registry::list_enabled(conn, &user_id))
             .await?;
-        let mut definitions = Vec::new();
+        let mut definitions = builtin_tool_definitions();
         let mut tools = HashMap::new();
         for plugin in plugins.into_iter().filter(|plugin| plugin.enabled) {
             for tool in &plugin.tools.tools {
-                if tools.contains_key(&tool.name) {
+                if tools.contains_key(&tool.name) || is_builtin_tool(&tool.name) {
                     anyhow::bail!("enabled plugins expose duplicate tool {}", tool.name);
                 }
                 definitions.push(ToolDefinition {
@@ -99,6 +100,9 @@ impl ToolCatalog {
         user_id: &str,
         call: &ToolCall,
     ) -> anyhow::Result<String> {
+        if is_builtin_tool(&call.name) {
+            return execute_builtin(state, user_id, call).await;
+        }
         let runtime = self
             .tools
             .get(&call.name)
@@ -108,6 +112,265 @@ impl ToolCatalog {
             "bridge" => execute_bridge(state, user_id, &runtime.plugin, call).await,
             tier => anyhow::bail!("unsupported plugin tier {tier}"),
         }
+    }
+}
+
+// ── Built-in tools ────────────────────────────────────────────────────────────
+//
+// Memory and personality management are core capabilities, not plugin
+// concerns — every user gets them regardless of which plugins are enabled.
+// They run directly against the conversation::memory module rather than
+// through the WASM/bridge plugin runtimes.
+
+const BUILTIN_TOOL_NAMES: &[&str] = &[
+    "memory_list",
+    "memory_read",
+    "memory_write",
+    "memory_append",
+    "memory_move",
+    "memory_delete",
+    "memory_search",
+    "personality_write",
+];
+
+fn is_builtin_tool(name: &str) -> bool {
+    BUILTIN_TOOL_NAMES.contains(&name)
+}
+
+fn builtin_tool_definitions() -> Vec<ToolDefinition> {
+    let path_property = serde_json::json!({
+        "type": "string",
+        "description": "Relative path, e.g. 'alice-chen.md' or 'home/devices.md'"
+    });
+    let content_property = serde_json::json!({
+        "type": "string",
+        "description": "Full Markdown content"
+    });
+    vec![
+        ToolDefinition {
+            name: "memory_list".into(),
+            description: "List all of your memory files (path and last-updated time, no \
+                content). Use this to see what already exists before deciding where to \
+                save something new."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "memory_read".into(),
+            description: "Read the full content of one memory file by its relative path.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": { "path": path_property },
+                "required": ["path"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "memory_write".into(),
+            description: "Create a new memory file, or completely replace the content of \
+                an existing one. Use memory_append instead if you want to add to a file \
+                without losing what's already in it."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": { "path": path_property, "content": content_property },
+                "required": ["path", "content"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "memory_append".into(),
+            description: "Append content to the end of a memory file on its own line, \
+                creating the file if it doesn't exist yet."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": { "path": path_property, "content": content_property },
+                "required": ["path", "content"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "memory_move".into(),
+            description: "Rename or move a memory file to a new path. Always ask the user \
+                before moving or renaming a file."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "from": { "type": "string", "description": "Current relative path" },
+                    "to": { "type": "string", "description": "New relative path" }
+                },
+                "required": ["from", "to"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "memory_delete".into(),
+            description: "Permanently delete a memory file. This cannot be undone — \
+                always confirm with the user first."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": { "path": path_property },
+                "required": ["path"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "memory_search".into(),
+            description: "Full-text search across all memory files by keyword. Relevant \
+                files are already injected into context automatically each turn — use \
+                this when you need to look for something specific that wasn't surfaced."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "query": { "type": "string", "description": "Search keywords" },
+                    "limit": {
+                        "type": "integer",
+                        "description": "Maximum number of results (default 10)"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "personality_write".into(),
+            description: "Replace the content of one of your own personality files: \
+                'soul' (your tone and personality), 'identity' (your name and \
+                background), or 'user' (facts about the person you're talking to). This \
+                replaces the whole file, so re-read its current contents from the system \
+                prompt first and fold them into the new version rather than losing them."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "enum": ["soul", "identity", "user"],
+                        "description": "Which personality file to replace"
+                    },
+                    "content": content_property
+                },
+                "required": ["name", "content"],
+                "additionalProperties": false
+            }),
+        },
+    ]
+}
+
+fn require_str_arg<'a>(arguments: &'a serde_json::Value, key: &str) -> anyhow::Result<&'a str> {
+    arguments
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .with_context(|| format!("tool call is missing required string argument '{key}'"))
+}
+
+async fn execute_builtin(
+    state: &AppState,
+    user_id: &str,
+    call: &ToolCall,
+) -> anyhow::Result<String> {
+    let uid = user_id.to_string();
+    match call.name.as_str() {
+        "memory_list" => {
+            let entries = state
+                .db
+                .call(move |conn| memory::list_memory(conn, &uid))
+                .await?;
+            let payload: Vec<_> = entries
+                .into_iter()
+                .map(|entry| serde_json::json!({ "path": entry.path, "updated_at": entry.updated_at }))
+                .collect();
+            Ok(serde_json::to_string(&payload)?)
+        }
+        "memory_read" => {
+            let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
+            let content = state
+                .db
+                .call(move |conn| memory::read_memory(conn, &uid, &path))
+                .await?;
+            Ok(content.unwrap_or_else(|| "(no memory file exists at this path)".to_string()))
+        }
+        "memory_write" => {
+            let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
+            let content = require_str_arg(&call.arguments, "content")?.to_string();
+            state
+                .db
+                .call(move |conn| memory::write_memory(conn, &uid, &path, &content))
+                .await?;
+            Ok("saved".to_string())
+        }
+        "memory_append" => {
+            let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
+            let content = require_str_arg(&call.arguments, "content")?.to_string();
+            state
+                .db
+                .call(move |conn| memory::append_memory(conn, &uid, &path, &content))
+                .await?;
+            Ok("appended".to_string())
+        }
+        "memory_move" => {
+            let from = memory::sanitize_path(require_str_arg(&call.arguments, "from")?)?;
+            let to = memory::sanitize_path(require_str_arg(&call.arguments, "to")?)?;
+            let moved = state
+                .db
+                .call(move |conn| memory::move_memory(conn, &uid, &from, &to))
+                .await?;
+            if moved {
+                Ok("moved".to_string())
+            } else {
+                Ok("(no memory file exists at the source path)".to_string())
+            }
+        }
+        "memory_delete" => {
+            let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
+            let deleted = state
+                .db
+                .call(move |conn| memory::delete_memory(conn, &uid, &path))
+                .await?;
+            if deleted {
+                Ok("deleted".to_string())
+            } else {
+                Ok("(no memory file exists at this path)".to_string())
+            }
+        }
+        "memory_search" => {
+            let query = require_str_arg(&call.arguments, "query")?.to_string();
+            let limit = call
+                .arguments
+                .get("limit")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(10) as usize;
+            let results = state
+                .db
+                .call(move |conn| memory::search_memory(conn, &uid, &query, limit))
+                .await?;
+            let payload: Vec<_> = results
+                .into_iter()
+                .map(|result| serde_json::json!({ "path": result.path, "content": result.content }))
+                .collect();
+            Ok(serde_json::to_string(&payload)?)
+        }
+        "personality_write" => {
+            let name = require_str_arg(&call.arguments, "name")?.to_string();
+            if !["soul", "identity", "user"].contains(&name.as_str()) {
+                anyhow::bail!("personality name must be one of 'soul', 'identity', 'user'");
+            }
+            let content = require_str_arg(&call.arguments, "content")?.to_string();
+            state
+                .db
+                .call(move |conn| memory::set_personality(conn, &uid, &name, &content))
+                .await?;
+            Ok("saved".to_string())
+        }
+        other => anyhow::bail!("unknown built-in tool {other}"),
     }
 }
 
