@@ -491,6 +491,8 @@ pub struct CompactableMessage {
     pub role: String,
     pub content: String,
     pub sequence: i64,
+    pub tool_calls: Option<String>,
+    pub tool_call_id: Option<String>,
 }
 
 /// Returns all non-compacted, non-summary messages ordered by sequence.
@@ -500,7 +502,7 @@ pub fn load_compactable_messages(
     conversation_id: &str,
 ) -> anyhow::Result<Vec<CompactableMessage>> {
     let mut stmt = conn.prepare_cached(
-        "SELECT id, role, content, sequence
+        "SELECT id, role, content, sequence, tool_calls, tool_call_id
            FROM messages
           WHERE conversation_id = ?1
             AND compacted = 0
@@ -515,6 +517,8 @@ pub fn load_compactable_messages(
                 role: row.get(1)?,
                 content: row.get(2)?,
                 sequence: row.get(3)?,
+                tool_calls: row.get(4)?,
+                tool_call_id: row.get(5)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;

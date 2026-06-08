@@ -318,10 +318,11 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "chart_generate".into(),
             description: "Generate a chart (pie, bar, line, or donut) from raw data. \
-                The result includes a data_uri (base64 SVG). You MUST render the chart \
-                in your response using ![title](data_uri) — this is how the user sees \
-                it. Do NOT just describe the chart; always include the markdown image. \
-                Use this when the user needs to visualize numbers, trends, or proportions."
+                The result includes a 'markdown' field containing a pre-built image tag. \
+                You MUST include the value of the 'markdown' field verbatim in your \
+                response so the user can see the chart. Do not just describe the data \
+                numerically — always include the markdown image. Use this when the \
+                user needs to visualize numbers, trends, or proportions."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -368,12 +369,12 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "mermaid_render".into(),
             description: "Render a Mermaid diagram definition. The result includes a \
-                data_uri (base64 PNG). You MUST render the diagram in your response \
-                using ![diagram](data_uri) — this is how the user sees it. Do NOT just \
-                describe the diagram; always include the markdown image. Supports \
-                flowcharts, sequence diagrams, gantt charts, class diagrams, and more. \
-                Use this when the user needs to visualize processes, architectures, or \
-                relationships."
+                'markdown' field containing a pre-built image tag. You MUST include the \
+                value of the 'markdown' field verbatim in your response so the user can \
+                see the diagram. Do not just describe the diagram — always include the \
+                markdown image. Supports flowcharts, sequence diagrams, gantt charts, \
+                class diagrams, and more. Use this when the user needs to visualize \
+                processes, architectures, or relationships."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -656,6 +657,7 @@ async fn execute_builtin(
             );
             let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, svg);
             let data_uri = format!("data:image/svg+xml;base64,{}", b64);
+            let alt = title.unwrap_or("Chart");
             Ok(serde_json::json!({
                 "action": "chart",
                 "chart_type": chart_type,
@@ -663,6 +665,7 @@ async fn execute_builtin(
                 "labels": labels,
                 "values": values,
                 "data_uri": data_uri,
+                "markdown": format!("![{}]({})", alt, data_uri),
                 "width": width,
                 "height": height
             })
@@ -684,7 +687,7 @@ async fn execute_builtin(
             let bytes = serde_json::to_vec(&json)?;
             let encoded =
                 base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, bytes);
-            let url = format!("https://mermaid.ink/img/{}", encoded);
+            let url = format!("https://mermaid.ink/img/svg/{}", encoded);
 
             let client = reqwest::Client::builder().timeout(BRIDGE_TIMEOUT).build()?;
             let resp = client.get(url).send().await?;
@@ -710,10 +713,12 @@ async fn execute_builtin(
                 anyhow::bail!("mermaid render result exceeds the 1 MiB limit");
             }
             let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+            let data_uri = format!("data:image/svg+xml;base64,{}", b64);
             Ok(serde_json::json!({
                 "action": "mermaid",
                 "theme": theme,
-                "data_uri": format!("data:image/png;base64,{}", b64)
+                "data_uri": data_uri,
+                "markdown": format!("![Diagram]({})", data_uri)
             })
             .to_string())
         }

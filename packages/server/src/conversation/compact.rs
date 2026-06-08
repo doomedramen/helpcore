@@ -74,6 +74,47 @@ pub async fn compact_conversation(
 
     // 3. Take the oldest third (rounded down).
     let segment_len = (candidates.len() / 3).max(1);
+
+    // 3a. Ensure the cut point does not split a tool round — if the segment
+    //     ends with an assistant that has tool_calls, extend the segment to
+    //     include all of its tool results. This prevents orphaned tool messages
+    //     that would cause provider errors.
+    let segment_len = {
+        let mut ids_in_segment = std::collections::HashSet::new();
+        for msg in &candidates[..segment_len] {
+            if msg.role == "assistant" {
+                if let Some(ref tc_json) = msg.tool_calls {
+                    if let Ok(calls) = serde_json::from_str::<serde_json::Value>(tc_json) {
+                        if let Some(arr) = calls.as_array() {
+                            for call in arr {
+                                if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
+                                    ids_in_segment.insert(id.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        let mut len = segment_len;
+        for msg in &candidates[segment_len..] {
+            if msg.role == "tool" {
+                let belongs = msg
+                    .tool_call_id
+                    .as_ref()
+                    .is_some_and(|id| ids_in_segment.contains(id));
+                if belongs {
+                    len += 1;
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+        len
+    };
+
     let segment = &candidates[..segment_len];
 
     // 4. Format the segment for the summarisation call.
