@@ -694,7 +694,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
               >
                 <SelectTrigger
                   size="sm"
-                  className="h-7 max-w-[13rem] border-0 bg-transparent px-1.5 text-xs shadow-none focus-visible:ring-0"
+                  className="h-7 max-w-[13rem] border-border/30 px-1.5 text-xs shadow-none hover:bg-muted data-[popup-open]:bg-muted"
                 >
                   <SelectValue placeholder="No chat provider">
                     {providers.find((p) => p.id === selectedProviderId)?.name ?? selectedProviderId}
