@@ -318,10 +318,10 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "chart_generate".into(),
             description: "Generate a chart (pie, bar, line, or donut) from raw data. \
-                Returns JSON with an 'action' of 'chart', the 'chart_type', an optional \
-                'title', and a 'data_uri' (base64 SVG). To display the chart, extract \
-                the data_uri and emit it in markdown as ![title](data_uri). Use this \
-                when the user needs to visualize numbers, trends, or proportions."
+                The result includes a data_uri (base64 SVG). You MUST render the chart \
+                in your response using ![title](data_uri) — this is how the user sees \
+                it. Do NOT just describe the chart; always include the markdown image. \
+                Use this when the user needs to visualize numbers, trends, or proportions."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -367,12 +367,13 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "mermaid_render".into(),
-            description: "Render a Mermaid diagram definition. Returns JSON with an \
-                'action' of 'mermaid', the 'theme', and a 'data_uri' (base64 PNG). To \
-                display the diagram, extract the data_uri and emit it in markdown as \
-                ![diagram](data_uri). Supports flowcharts, sequence diagrams, gantt \
-                charts, and more. Use this when the user needs to visualize processes, \
-                architectures, or relationships."
+            description: "Render a Mermaid diagram definition. The result includes a \
+                data_uri (base64 PNG). You MUST render the diagram in your response \
+                using ![diagram](data_uri) — this is how the user sees it. Do NOT just \
+                describe the diagram; always include the markdown image. Supports \
+                flowcharts, sequence diagrams, gantt charts, class diagrams, and more. \
+                Use this when the user needs to visualize processes, architectures, or \
+                relationships."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",

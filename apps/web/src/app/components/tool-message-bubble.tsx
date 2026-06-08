@@ -18,8 +18,6 @@ import {
   Brain,
 } from "lucide-react";
 import type { Message } from "@/lib/types";
-import InlineChart from "@/app/components/inline-chart";
-import type { InlineChartProps } from "@/app/components/inline-chart";
 
 interface ToolCallInfo {
   id: string;
@@ -335,33 +333,37 @@ export default function ToolMessageBubble({
               </div>
             ) : kind === "chart" ? (
               <div className="flex flex-col gap-2 py-1">
-                {data?.title && (
-                  <span className="text-[10px] uppercase text-muted-foreground">{data.title}</span>
-                )}
-                {data?.labels && data?.values ? (
-                  <InlineChart
-                    chartType={(data.chart_type as InlineChartProps["chartType"]) ?? "bar"}
-                    labels={data.labels as string[]}
-                    values={data.values as number[]}
-                    colors={data.colors as string[] | undefined}
-                    width={Math.min((data.width as number) ?? 400, 520)}
-                    height={Math.min((data.height as number) ?? 250, 400)}
-                  />
-                ) : (
-                  <img
-                    src={data?.data_uri as string}
-                    alt={(data?.chart_type as string) ?? "chart"}
-                    className="max-w-full h-auto rounded"
-                  />
-                )}
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <span className="text-[10px] uppercase">Chart</span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                    {data?.chart_type ?? "?"}
+                  </span>
+                  {data?.title && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                      {data.title}
+                    </span>
+                  )}
+                  {data?.labels && (
+                    <span className="text-[10px]">{(data.labels as unknown[]).length} points</span>
+                  )}
+                </div>
+                <span className="text-[10px] text-muted-foreground italic">
+                  Rendered inline in the response above
+                </span>
               </div>
             ) : kind === "mermaid" ? (
               <div className="flex flex-col gap-2 py-1">
-                <img
-                  src={data?.data_uri as string}
-                  alt="mermaid diagram"
-                  className="max-w-full h-auto rounded"
-                />
+                <div className="flex items-center gap-2 text-muted-foreground">
+                  <span className="text-[10px] uppercase">Diagram</span>
+                  {data?.theme && data.theme !== "default" && (
+                    <span className="rounded bg-muted px-1.5 py-0.5 text-xs text-foreground">
+                      {data.theme}
+                    </span>
+                  )}
+                </div>
+                <span className="text-[10px] text-muted-foreground italic">
+                  Rendered inline in the response above
+                </span>
               </div>
             ) : (
               <pre className="whitespace-pre-wrap">
