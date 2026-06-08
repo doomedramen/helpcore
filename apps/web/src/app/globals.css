@@ -149,27 +149,12 @@
     @apply bg-slate-100 text-slate-800 rounded px-1 py-0.5 text-sm font-mono dark:bg-slate-800 dark:text-slate-100;
   }
 
-  /* Streamdown code-block: put header + actions on same row */
+  /* Streamdown code-block: keep header and actions on same row */
   [data-streamdown="code-block"] {
-    @apply grid;
-    grid-template-areas:
-      "header actions"
-      "body body";
-    grid-template-columns: 1fr auto;
+    @apply gap-0;
   }
-  [data-streamdown="code-block-header"] {
-    grid-area: header;
-    @apply flex items-center;
-  }
-  [data-streamdown="code-block-header"] + div {
-    grid-area: actions;
-    @apply static m-0 flex items-center;
-  }
-  [data-streamdown="code-block-header"] + div > div {
-    @apply static m-0;
-  }
-  [data-streamdown="code-block-body"] {
-    grid-area: body;
+  [data-streamdown="code-block"] > [data-streamdown="code-block-header"] {
+    @apply -mb-8;
   }
 
   * {

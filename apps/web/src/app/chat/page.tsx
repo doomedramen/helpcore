@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useAuth } from "@/context/auth";
 import ChatWindow from "@/app/components/chat-window";
 import AppShell from "@/app/components/app-shell";
+import StreamdownCodeBlockHandlers from "@/app/components/streamdown-code-block-handlers";
 
 function ChatApp() {
   const { accessToken, isLoading } = useAuth();
@@ -43,6 +44,7 @@ function ChatApp() {
       }}
       mainClassName="flex flex-col"
     >
+      <StreamdownCodeBlockHandlers />
       <ChatWindow
         conversationId={conversationId}
         onConversationCreated={(id) => setConversationId(id)}
