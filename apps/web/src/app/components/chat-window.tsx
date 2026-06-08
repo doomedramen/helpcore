@@ -20,11 +20,7 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
-import {
-  Message as AIMessage,
-  MessageContent,
-  MessageResponse,
-} from "@/components/ai-elements/message";
+import { Message as AIMessage, MessageContent } from "@/components/ai-elements/message";
 import {
   PromptInput,
   type PromptInputMessage,
@@ -38,6 +34,7 @@ import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import BrandMark from "./brand-mark";
 import ToolMessageBubble from "./tool-message-bubble";
+import { MessageContentWithAssets } from "./asset-renderer";
 import {
   Select,
   SelectContent,
@@ -567,7 +564,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                   return (
                     <AIMessage key={message.id} from="user">
                       <MessageContent>
-                        <MessageResponse>{message.content}</MessageResponse>
+                        <MessageContentWithAssets>{message.content}</MessageContentWithAssets>
                       </MessageContent>
                     </AIMessage>
                   );
@@ -631,7 +628,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                       {msgActive && !message.content ? (
                         <Shimmer duration={1}>Thinking…</Shimmer>
                       ) : (
-                        <MessageResponse>{message.content}</MessageResponse>
+                        <MessageContentWithAssets>{message.content}</MessageContentWithAssets>
                       )}
 
                       {msgActive && message.content && (
