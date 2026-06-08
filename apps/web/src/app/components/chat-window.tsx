@@ -522,7 +522,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
               description="Start with a rough thought. HelpCore can help you shape it, plan it, or move it forward."
             >
               <div className="mt-6 flex w-full min-w-0 items-center justify-center gap-2">
-                <div className="min-w-0 flex-1">
+                <div className="min-w-0 max-w-full">
                   <Suggestions>
                     {suggestions.map((s) => (
                       <Suggestion
