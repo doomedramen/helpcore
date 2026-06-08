@@ -597,27 +597,42 @@ async fn execute_wasm(
             &wasm_path,
             &tool,
             &input,
-            workspace,
-            permissions,
-            allowed_hosts,
-            plugin_config,
-            plugin_secrets,
+            WasmSandboxConfig {
+                workspace,
+                permissions,
+                allowed_hosts,
+                config: plugin_config,
+                secrets: plugin_secrets,
+            },
         )
     })
     .await
     .map_err(|error| anyhow::anyhow!("WASM plugin task failed: {error}"))?
 }
 
+/// Everything needed to build the sandboxed [`WasmState`] for a single tool call,
+/// besides the resource `limits` (which are constructed fresh per run).
+struct WasmSandboxConfig {
+    workspace: PathBuf,
+    permissions: HashSet<String>,
+    allowed_hosts: Vec<String>,
+    config: serde_json::Value,
+    secrets: serde_json::Value,
+}
+
 fn run_wasm_component(
     wasm_path: &Path,
     tool: &str,
     input: &str,
-    workspace: PathBuf,
-    permissions: HashSet<String>,
-    allowed_hosts: Vec<String>,
-    plugin_config: serde_json::Value,
-    plugin_secrets: serde_json::Value,
+    sandbox: WasmSandboxConfig,
 ) -> anyhow::Result<String> {
+    let WasmSandboxConfig {
+        workspace,
+        permissions,
+        allowed_hosts,
+        config,
+        secrets,
+    } = sandbox;
     let mut engine_config = Config::new();
     engine_config.wasm_component_model(true);
     engine_config.consume_fuel(true);
@@ -643,8 +658,8 @@ fn run_wasm_component(
             permissions,
             workspace,
             allowed_hosts,
-            config: plugin_config,
-            secrets: plugin_secrets,
+            config,
+            secrets,
         },
     );
     store.limiter(|state| &mut state.limits);
