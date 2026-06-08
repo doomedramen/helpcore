@@ -659,6 +659,8 @@ async fn execute_builtin(
                 "action": "chart",
                 "chart_type": chart_type,
                 "title": title,
+                "labels": labels,
+                "values": values,
                 "data_uri": data_uri,
                 "width": width,
                 "height": height

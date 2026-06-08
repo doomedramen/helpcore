@@ -18,6 +18,8 @@ import {
   Brain,
 } from "lucide-react";
 import type { Message } from "@/lib/types";
+import InlineChart from "@/app/components/inline-chart";
+import type { InlineChartProps } from "@/app/components/inline-chart";
 
 interface ToolCallInfo {
   id: string;
@@ -331,16 +333,33 @@ export default function ToolMessageBubble({
                   </pre>
                 </div>
               </div>
-            ) : kind === "chart" || kind === "mermaid" ? (
+            ) : kind === "chart" ? (
               <div className="flex flex-col gap-2 py-1">
                 {data?.title && (
                   <span className="text-[10px] uppercase text-muted-foreground">{data.title}</span>
                 )}
+                {data?.labels && data?.values ? (
+                  <InlineChart
+                    chartType={(data.chart_type as InlineChartProps["chartType"]) ?? "bar"}
+                    labels={data.labels as string[]}
+                    values={data.values as number[]}
+                    colors={data.colors as string[] | undefined}
+                    width={Math.min((data.width as number) ?? 400, 520)}
+                    height={Math.min((data.height as number) ?? 250, 400)}
+                  />
+                ) : (
+                  <img
+                    src={data?.data_uri as string}
+                    alt={(data?.chart_type as string) ?? "chart"}
+                    className="max-w-full h-auto rounded"
+                  />
+                )}
+              </div>
+            ) : kind === "mermaid" ? (
+              <div className="flex flex-col gap-2 py-1">
                 <img
                   src={data?.data_uri as string}
-                  alt={
-                    kind === "chart" ? ((data?.chart_type as string) ?? "chart") : "mermaid diagram"
-                  }
+                  alt="mermaid diagram"
                   className="max-w-full h-auto rounded"
                 />
               </div>
