@@ -22,7 +22,6 @@ import {
   ChartLegendContent,
   type ChartConfig,
 } from "@/app/components/ui/chart";
-import { useTheme } from "@/context/theme";
 import type { RendererProps } from "./content-renderers";
 
 const CHART_CSS_VARS = [
@@ -63,13 +62,12 @@ interface ChartData {
 
 function resolvePalette(
   theme: "auto" | "dark" | "light" | undefined,
-  resolvedPageTheme: string | undefined,
   customColors?: string[],
 ): string[] {
   if (customColors?.length) return customColors;
-  const effective = theme === "auto" || !theme ? (resolvedPageTheme ?? "light") : theme;
-  const palette = effective === "dark" ? DARK_PALETTE : LIGHT_PALETTE;
-  return palette;
+  if (theme === "dark") return DARK_PALETTE;
+  if (theme === "light") return LIGHT_PALETTE;
+  return []; // auto: CSS variables handle it
 }
 
 function pickColor(index: number, palette: string[], useCssVars: boolean): string {
@@ -131,7 +129,6 @@ function EmptyState({ title }: { title?: string }) {
 
 export function InlineChart({ variant, content, onError }: RendererProps) {
   const chartType = variant || "bar";
-  const { resolvedTheme } = useTheme();
   const [error, setError] = React.useState<string | null>(null);
   const [data, setData] = React.useState<ChartData | null>(null);
   const [isEmpty, setIsEmpty] = React.useState(false);
@@ -234,7 +231,7 @@ export function InlineChart({ variant, content, onError }: RendererProps) {
     return <EmptyState title={data.title} />;
   }
 
-  const palette = resolvePalette(data.theme, resolvedTheme, data.colors);
+  const palette = resolvePalette(data.theme, data.colors);
   const useCssVars = !data.colors?.length && (!data.theme || data.theme === "auto");
   const width = data.width ?? 480;
   const height = data.height ?? 280;
