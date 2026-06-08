@@ -274,6 +274,44 @@ async fn run_generation(mut job: GenerationJob) {
     }
 }
 
+/// Classify a tool error message into a stable, machine-readable code so the
+/// model can decide whether to retry, fix its input, or give up.
+fn tool_error_code(msg: &str) -> &str {
+    let lower = msg.to_lowercase();
+    if lower.contains("must not") || lower.contains("must be") || lower.contains("must contain") {
+        "INVALID_INPUT"
+    } else if lower.contains("'..'")
+        || lower.contains("absolute")
+        || lower.contains("escape")
+        || lower.contains("traverse")
+        || lower.contains("symlinks")
+    {
+        "INVALID_PATH"
+    } else if lower.contains("exceeds") || lower.contains("limit") {
+        "TOO_LARGE"
+    } else if lower.contains("not found") || lower.contains("unknown") {
+        "NOT_FOUND"
+    } else if lower.contains("401")
+        || lower.contains("403")
+        || lower.contains("unauthorized")
+        || lower.contains("expired")
+    {
+        "AUTH_ERROR"
+    } else if lower.contains("timeout") || lower.contains("timed out") {
+        "TIMEOUT"
+    } else if lower.contains("duplicate") || lower.contains("already") {
+        "CONFLICT"
+    } else if lower.contains("unsupported") {
+        "UNSUPPORTED"
+    } else if lower.contains("not declared") || lower.contains("not allow") {
+        "CONFIG_ERROR"
+    } else if lower.contains("empty") {
+        "INVALID_INPUT"
+    } else {
+        "UNKNOWN"
+    }
+}
+
 async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
     let user_id = job.user_id.clone();
     let recall_query = memory_recall_query(&job.history, &job.user_content);
@@ -382,7 +420,9 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
             let result = match tool_catalog.execute(&job.state, &job.user_id, call).await {
                 Ok(result) => serde_json::json!({"ok": true, "result": result}).to_string(),
                 Err(error) => {
-                    serde_json::json!({"ok": false, "error": error.to_string()}).to_string()
+                    let msg = error.to_string();
+                    let code = tool_error_code(&msg);
+                    serde_json::json!({"ok": false, "error": msg, "code": code}).to_string()
                 }
             };
             let result_event = Event::default()
