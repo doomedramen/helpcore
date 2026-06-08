@@ -129,7 +129,7 @@ pub async fn delete_memory(
         .db
         .call(move |conn| memory::delete_memory(conn, &uid, &path))
         .await?;
-    if deleted {
+    if deleted.is_some() {
         Ok(StatusCode::NO_CONTENT)
     } else {
         Err(AppError::NotFound("memory file not found".into()))

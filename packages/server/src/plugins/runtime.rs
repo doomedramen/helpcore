@@ -365,11 +365,17 @@ async fn execute_builtin(
         }
         "memory_read" => {
             let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
+            let path_clone = path.clone();
             let content = state
                 .db
-                .call(move |conn| memory::read_memory(conn, &uid, &path))
+                .call(move |conn| memory::read_memory(conn, &uid, &path_clone))
                 .await?;
-            Ok(content.unwrap_or_else(|| "(no memory file exists at this path)".to_string()))
+            Ok(serde_json::json!({
+                "action": "read",
+                "path": path,
+                "content": content
+            })
+            .to_string())
         }
         "memory_write" => {
             let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
@@ -408,27 +414,33 @@ async fn execute_builtin(
         "memory_move" => {
             let from = memory::sanitize_path(require_str_arg(&call.arguments, "from")?)?;
             let to = memory::sanitize_path(require_str_arg(&call.arguments, "to")?)?;
+            let from_clone = from.clone();
+            let to_clone = to.clone();
             let moved = state
                 .db
-                .call(move |conn| memory::move_memory(conn, &uid, &from, &to))
+                .call(move |conn| memory::move_memory(conn, &uid, &from_clone, &to_clone))
                 .await?;
-            if moved {
-                Ok("moved".to_string())
-            } else {
-                Ok("(no memory file exists at the source path)".to_string())
-            }
+            Ok(serde_json::json!({
+                "action": "move",
+                "from": from,
+                "to": to,
+                "status": if moved { "moved" } else { "not_found" }
+            })
+            .to_string())
         }
         "memory_delete" => {
             let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
-            let deleted = state
+            let path_clone = path.clone();
+            let old_content = state
                 .db
-                .call(move |conn| memory::delete_memory(conn, &uid, &path))
+                .call(move |conn| memory::delete_memory(conn, &uid, &path_clone))
                 .await?;
-            if deleted {
-                Ok("deleted".to_string())
-            } else {
-                Ok("(no memory file exists at this path)".to_string())
-            }
+            Ok(serde_json::json!({
+                "action": "delete",
+                "path": path,
+                "old_content": old_content
+            })
+            .to_string())
         }
         "memory_search" => {
             let query = require_str_arg(&call.arguments, "query")?.to_string();

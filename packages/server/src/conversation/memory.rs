@@ -257,18 +257,23 @@ pub fn move_memory(conn: &Connection, user_id: &str, from: &str, to: &str) -> an
     Ok(n > 0)
 }
 
-/// Delete a memory file. Returns `true` if a row was deleted, `false` if it
-/// did not exist.
+/// Delete a memory file. Returns the deleted content if it existed.
 ///
 /// The `memory_files_ad` trigger keeps the FTS5 index up to date automatically.
-pub fn delete_memory(conn: &Connection, user_id: &str, path: &str) -> anyhow::Result<bool> {
-    let n = conn
-        .execute(
+pub fn delete_memory(
+    conn: &Connection,
+    user_id: &str,
+    path: &str,
+) -> anyhow::Result<Option<String>> {
+    let old = read_memory(conn, user_id, path)?;
+    if old.is_some() {
+        conn.execute(
             "DELETE FROM memory_files WHERE user_id = ?1 AND path = ?2",
             params![user_id, path],
         )
         .context("failed to delete memory file")?;
-    Ok(n > 0)
+    }
+    Ok(old)
 }
 
 // ── Memory search ─────────────────────────────────────────────────────────────
@@ -455,9 +460,9 @@ mod tests {
             assert_eq!(read_memory(conn, &uid, "notes.md")?.unwrap(), "updated");
 
             // Delete
-            assert!(delete_memory(conn, &uid, "notes.md")?);
+            assert!(delete_memory(conn, &uid, "notes.md")?.is_some());
             assert!(read_memory(conn, &uid, "notes.md")?.is_none());
-            assert!(!delete_memory(conn, &uid, "notes.md")?); // second delete = false
+            assert!(delete_memory(conn, &uid, "notes.md")?.is_none()); // second delete = None
             Ok(())
         })
         .unwrap();
@@ -687,7 +692,7 @@ mod tests {
 
             // Mutations: report "not found" / no-op rather than touching the
             // owner's row.
-            assert!(!delete_memory(conn, intruder, "secret.md")?);
+            assert!(delete_memory(conn, intruder, "secret.md")?.is_none());
             assert!(!move_memory(conn, intruder, "secret.md", "stolen.md")?);
 
             // The owner's data must be completely untouched by the above.

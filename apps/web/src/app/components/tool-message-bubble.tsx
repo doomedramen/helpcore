@@ -144,6 +144,9 @@ export default function ToolMessageBubble({
     : undefined;
 
   const meta = matchingCall ? TOOL_META[matchingCall.name] : undefined;
+  const kind = inferred?.kind;
+  const data = inferred?.data;
+
   const toolIcon = meta?.icon ?? (isError ? <AlertTriangle size={11} /> : <Plug size={11} />);
   const toolName = matchingCall
     ? (TOOL_META[matchingCall.name]?.label ?? matchingCall.name)
@@ -172,42 +175,21 @@ export default function ToolMessageBubble({
       const path = (data?.path as string) ?? (matchingCall.arguments.path as string);
       return `Appended to ${path ?? "file"}`;
     }
-    if (kind === "delete" && matchingCall) {
-      return `Deleted ${(matchingCall.arguments.path as string) ?? "file"}`;
+    if ((kind === "memory_read" || kind === "read") && (data || matchingCall)) {
+      const content = data?.content ?? unwrapResult(message.content);
+      const path = data?.path ?? matchingCall?.arguments.path ?? "file";
+      const lines = typeof content === "string" ? content.split("\n") : [];
+      if (lines.length <= 3) return `Read ${path}`;
+      return `Read ${path} (${lines.length} lines)`;
     }
-    if (kind === "move" && matchingCall) {
-      return `Moved ${(matchingCall.arguments.from as string) ?? "?"} → ${(matchingCall.arguments.to as string) ?? "?"}`;
+    if (kind === "delete" && (data || matchingCall)) {
+      const path = data?.path ?? matchingCall?.arguments.path ?? "file";
+      return `Deleted ${path}`;
     }
-    if (kind === "memory_list") {
-      try {
-        const content = unwrapResult(message.content);
-        const files = (typeof content === "string" ? JSON.parse(content) : content) as {
-          path: string;
-        }[];
-        return `Found ${files.length} memory file${files.length === 1 ? "" : "s"}`;
-      } catch {
-        return "Listed memory files";
-      }
-    }
-    if (kind === "memory_search") {
-      try {
-        const content = unwrapResult(message.content);
-        const results = (typeof content === "string" ? JSON.parse(content) : content) as {
-          path: string;
-        }[];
-        return `Search: ${results.length} result${results.length === 1 ? "" : "s"}`;
-      } catch {
-        return "Search results";
-      }
-    }
-    if (kind === "not_found") return "Not found";
-    if (kind === "generic" && matchingCall) {
-      if (matchingCall.name === "memory_read") {
-        const content = unwrapResult(message.content);
-        const lines = typeof content === "string" ? content.split("\n") : [];
-        if (lines.length <= 3) return `Read ${matchingCall.arguments.path ?? "file"}`;
-        return `Read ${matchingCall.arguments.path ?? "file"} (${lines.length} lines)`;
-      }
+    if (kind === "move" && (data || matchingCall)) {
+      const from = data?.from ?? matchingCall?.arguments.from ?? "?";
+      const to = data?.to ?? matchingCall?.arguments.to ?? "?";
+      return `Moved ${from} → ${to}`;
     }
     const finalContent = unwrapResult(message.content);
     const displayContent =
@@ -252,9 +234,62 @@ export default function ToolMessageBubble({
         </button>
         {expanded && (
           <div className="overflow-x-auto border-t border-border px-3 py-2 font-mono text-foreground max-h-[400px] overflow-y-auto">
-            {inferred?.data?.content !== undefined ? (
+            {kind === "move" || kind === "memory_move" ? (
+              <div className="flex flex-col gap-2 py-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase text-muted-foreground w-12">From</span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                    {data?.from ?? matchingCall?.arguments.from}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] uppercase text-muted-foreground w-12">To</span>
+                  <span className="rounded bg-emerald-500/10 text-emerald-200/90 px-1.5 py-0.5 text-xs">
+                    {data?.to ?? matchingCall?.arguments.to}
+                  </span>
+                </div>
+              </div>
+            ) : kind === "delete" || kind === "memory_delete" ? (
+              <div className="flex flex-col gap-1">
+                <span className="text-[10px] uppercase text-muted-foreground">Deleted Content</span>
+                <pre className="whitespace-pre-wrap rounded bg-red-500/5 p-2 text-red-200/70 line-through">
+                  {data?.old_content ?? unwrapResult(message.content)}
+                </pre>
+              </div>
+            ) : kind === "memory_list" || kind === "memory_search" ? (
               <div className="flex flex-col gap-2">
-                {inferred.data.old_content && (
+                <span className="text-[10px] uppercase text-muted-foreground">
+                  {kind === "memory_list" ? "Files" : "Search Results"}
+                </span>
+                <div className="flex flex-wrap gap-2">
+                  {(() => {
+                    try {
+                      const content = unwrapResult(message.content);
+                      const files = (
+                        typeof content === "string" ? JSON.parse(content) : content
+                      ) as { path: string }[];
+                      return files.map((f, i) => (
+                        <div
+                          key={`${f.path}-${i}`}
+                          className="flex items-center gap-1.5 rounded border border-border bg-background px-2 py-1 text-xs"
+                        >
+                          <FileText size={12} className="text-muted-foreground" />
+                          <span>{f.path}</span>
+                        </div>
+                      ));
+                    } catch {
+                      return (
+                        <span className="text-muted-foreground italic">Error loading list</span>
+                      );
+                    }
+                  })()}
+                </div>
+              </div>
+            ) : inferred?.data?.content !== undefined ||
+              kind === "read" ||
+              kind === "memory_read" ? (
+              <div className="flex flex-col gap-2">
+                {inferred?.data?.old_content && (
                   <div className="flex flex-col gap-1">
                     <span className="text-[10px] uppercase text-muted-foreground">Before</span>
                     <pre className="whitespace-pre-wrap rounded bg-red-500/5 p-2 text-red-200/70 line-through">
@@ -264,10 +299,10 @@ export default function ToolMessageBubble({
                 )}
                 <div className="flex flex-col gap-1">
                   <span className="text-[10px] uppercase text-muted-foreground">
-                    {inferred.data.old_content ? "After" : "Content"}
+                    {inferred?.data?.old_content ? "After" : "Content"}
                   </span>
                   <pre className="whitespace-pre-wrap rounded bg-emerald-500/5 p-2 text-emerald-200/90">
-                    {inferred.data.content}
+                    {inferred?.data?.content ?? unwrapResult(message.content)}
                   </pre>
                 </div>
               </div>
