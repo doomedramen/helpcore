@@ -75,7 +75,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
   const sidebarContent = (
     <>
       <div className="flex items-center justify-between px-4 pb-5 pt-5">
-        <BrandMark compact inverse />
+        <BrandMark compact />
         <button
           onClick={() => setMobileOpen(false)}
           className="rounded-xl p-2 text-sidebar-foreground/50 transition hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground md:hidden"
