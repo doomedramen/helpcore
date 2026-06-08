@@ -700,7 +700,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                     {providers.find((p) => p.id === selectedProviderId)?.name ?? selectedProviderId}
                   </SelectValue>
                 </SelectTrigger>
-                <SelectContent side="top">
+                <SelectContent side="top" className="!min-w-[14rem]">
                   {providers.map((p) => (
                     <SelectItem key={p.id} value={p.id}>
                       {p.name} · {p.default_model}
