@@ -362,14 +362,18 @@ function InstalledRow({
               <Settings2 size={15} />
             </button>
           )}
-          {plugin.update_available && plugin.user_managed && (
+          {plugin.user_managed && (
             <button
               type="button"
               onClick={onUpdate}
               disabled={working !== null || plugin.blocked}
               className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900/50"
             >
-              {working === `update:${plugin.id}` ? "Updating…" : "Update"}
+              {working === `update:${plugin.id}`
+                ? "Updating…"
+                : plugin.update_available
+                  ? "Update"
+                  : "Refresh"}
             </button>
           )}
           {plugin.user_managed && (
@@ -500,9 +504,14 @@ function StoreRow({
           </button>
         )}
         {plugin.installed && !plugin.update_available && (
-          <span className="text-xs text-slate-400 dark:text-slate-500">
-            v{plugin.active_version}
-          </span>
+          <button
+            type="button"
+            disabled={working !== null || plugin.blocked}
+            onClick={onUpdate}
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500"
+          >
+            {working === `update:${plugin.id}` ? "Refreshing…" : "Refresh"}
+          </button>
         )}
       </div>
     </div>

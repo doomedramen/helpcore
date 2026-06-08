@@ -238,65 +238,95 @@ pub async fn update_plugin(
     let Some((current_version, older_previous)) = current else {
         return Err(AppError::NotFound("plugin not installed".into()));
     };
-    if !is_newer(&plugin.version, &current_version) {
-        return Err(AppError::Conflict(
-            "no newer plugin version is available".into(),
-        ));
-    }
+    let version_changed = is_newer(&plugin.version, &current_version);
 
-    let version_path = package::plugin_root(&state.data_dir, &auth_user.id, &plugin_id)
-        .join("versions")
-        .join(&plugin.version);
-    if version_path.exists() {
-        let _ = std::fs::remove_dir_all(&version_path);
-    }
-
-    let package = package::install_store_package(&state.data_dir, &auth_user.id, &plugin)
-        .await
-        .map_err(|error| AppError::BadRequest(error.to_string()))?;
-    let manifest_json = serde_json::to_string(&package.manifest)?;
-    let tools_json = serde_json::to_string(&package.tools)?;
-    let permissions_json = serde_json::to_string(&permissions)?;
-    let uid = auth_user.id.clone();
-    let pid = plugin_id.clone();
-    let version = package.manifest.version.clone();
-    let skill = package.skill_md.clone();
-    let previous = current_version.clone();
-    let update_result = state
-        .db
-        .call(move |conn| {
-            registry::upsert_plugin(conn, &package.manifest)?;
-            conn.execute(
-                "UPDATE plugin_installs
-                 SET previous_version = ?1, version = ?2, permissions = ?3,
-                     skill_md = ?4, manifest = ?5, tools = ?6,
-                     updated_at = ?7
-                 WHERE user_id = ?8 AND plugin_id = ?9",
-                rusqlite::params![
-                    previous,
-                    version,
-                    permissions_json,
-                    skill,
-                    manifest_json,
-                    tools_json,
-                    chrono::Utc::now().to_rfc3339(),
-                    uid,
-                    pid
-                ],
-            )?;
-            Ok(())
-        })
-        .await;
-    if let Err(error) = update_result {
-        let _ = std::fs::remove_dir_all(&package.version_path);
-        return Err(error.into());
-    }
-
-    if let Some(old) = older_previous {
-        let path = package::plugin_root(&state.data_dir, &auth_user.id, &plugin_id)
+    if version_changed {
+        let version_path = package::plugin_root(&state.data_dir, &auth_user.id, &plugin_id)
             .join("versions")
-            .join(old);
-        let _ = std::fs::remove_dir_all(path);
+            .join(&plugin.version);
+        if version_path.exists() {
+            let _ = std::fs::remove_dir_all(&version_path);
+        }
+
+        let package = package::install_store_package(&state.data_dir, &auth_user.id, &plugin)
+            .await
+            .map_err(|error| AppError::BadRequest(error.to_string()))?;
+        let manifest_json = serde_json::to_string(&package.manifest)?;
+        let tools_json = serde_json::to_string(&package.tools)?;
+        let permissions_json = serde_json::to_string(&permissions)?;
+        let uid = auth_user.id.clone();
+        let pid = plugin_id.clone();
+        let version = package.manifest.version.clone();
+        let skill = package.skill_md.clone();
+        let previous = current_version.clone();
+        let update_result = state
+            .db
+            .call(move |conn| {
+                registry::upsert_plugin(conn, &package.manifest)?;
+                conn.execute(
+                    "UPDATE plugin_installs
+                     SET previous_version = ?1, version = ?2, permissions = ?3,
+                         skill_md = ?4, manifest = ?5, tools = ?6,
+                         updated_at = ?7
+                     WHERE user_id = ?8 AND plugin_id = ?9",
+                    rusqlite::params![
+                        previous,
+                        version,
+                        permissions_json,
+                        skill,
+                        manifest_json,
+                        tools_json,
+                        chrono::Utc::now().to_rfc3339(),
+                        uid,
+                        pid
+                    ],
+                )?;
+                Ok(())
+            })
+            .await;
+        if let Err(error) = update_result {
+            let _ = std::fs::remove_dir_all(&package.version_path);
+            return Err(error.into());
+        }
+
+        if let Some(old) = older_previous {
+            let path = package::plugin_root(&state.data_dir, &auth_user.id, &plugin_id)
+                .join("versions")
+                .join(old);
+            let _ = std::fs::remove_dir_all(path);
+        }
+    } else {
+        // Same version — refresh metadata and permissions without bumping the version.
+        let package = package::install_store_package(&state.data_dir, &auth_user.id, &plugin)
+            .await
+            .map_err(|error| AppError::BadRequest(error.to_string()))?;
+        let manifest_json = serde_json::to_string(&package.manifest)?;
+        let tools_json = serde_json::to_string(&package.tools)?;
+        let permissions_json = serde_json::to_string(&permissions)?;
+        let uid = auth_user.id;
+        let pid = plugin_id;
+        state
+            .db
+            .call(move |conn| {
+                registry::upsert_plugin(conn, &package.manifest)?;
+                conn.execute(
+                    "UPDATE plugin_installs
+                     SET permissions = ?1, skill_md = ?2, manifest = ?3, tools = ?4,
+                         updated_at = ?5
+                     WHERE user_id = ?6 AND plugin_id = ?7",
+                    rusqlite::params![
+                        permissions_json,
+                        package.skill_md,
+                        manifest_json,
+                        tools_json,
+                        chrono::Utc::now().to_rfc3339(),
+                        uid,
+                        pid
+                    ],
+                )?;
+                Ok(())
+            })
+            .await?;
     }
     Ok(StatusCode::NO_CONTENT)
 }
@@ -466,33 +496,57 @@ pub async fn configure_plugin(
     // Split values by field type based on the declared schema.
     let mut config_map = serde_json::Map::new();
     let mut new_secret_map = serde_json::Map::new();
+    let mut cleared_secret_keys: Vec<&str> = Vec::new();
 
     for field in &manifest.config_schema {
         if let Some(value) = values.get(&field.key) {
             if field.field_type == "secret" {
                 if let Some(s) = value.as_str() {
-                    if !s.is_empty() {
+                    if s.is_empty() {
+                        cleared_secret_keys.push(field.key.as_str());
+                    } else {
                         new_secret_map.insert(field.key.clone(), value.clone());
                     }
-                    // empty string = clear this secret (omit from map)
                 }
-                // null = keep existing (handled below)
+                // null = keep existing (handled by merge below)
             } else {
                 config_map.insert(field.key.clone(), value.clone());
             }
         }
     }
 
-    // Determine updated secret_keys and secrets blob.
-    // If any new secret values were submitted, treat as a full secrets replacement.
-    // Otherwise, preserve the existing secrets and _secret_keys unchanged.
-    let has_new_secrets = !new_secret_map.is_empty();
-    let (secrets_json, secret_keys): (Option<String>, Vec<serde_json::Value>) = if has_new_secrets {
-        let keys = new_secret_map
+    // Merge new/cleared secrets with existing ones so unchanged secrets are never lost.
+    let has_changes = !new_secret_map.is_empty() || !cleared_secret_keys.is_empty();
+    let (secrets_json, secret_keys): (Option<String>, Vec<serde_json::Value>) = if has_changes {
+        let mut merged = if let Some(encrypted) = &existing_secrets {
+            decrypt_plugin_secrets(
+                state.data_dir.clone(),
+                auth_user.id.clone(),
+                plugin_id.clone(),
+                encrypted.clone(),
+            )
+            .await?
+        } else {
+            serde_json::Value::Object(serde_json::Map::new())
+        };
+        let merged_obj = merged.as_object_mut().ok_or_else(|| {
+            AppError::Internal(anyhow::anyhow!(
+                "existing plugin secrets are not a JSON object"
+            ))
+        })?;
+
+        for (key, value) in &new_secret_map {
+            merged_obj.insert(key.clone(), value.clone());
+        }
+        for key in &cleared_secret_keys {
+            merged_obj.remove(*key);
+        }
+
+        let keys: Vec<serde_json::Value> = merged_obj
             .keys()
             .map(|k| serde_json::Value::String(k.clone()))
             .collect();
-        let value = serde_json::Value::Object(new_secret_map.clone());
+        let value = serde_json::Value::Object(merged_obj.clone());
         let encrypted = tokio::task::spawn_blocking({
             let data_dir = state.data_dir.clone();
             let uid = auth_user.id.clone();
@@ -520,9 +574,7 @@ pub async fn configure_plugin(
         let config_so_far = serde_json::Value::Object(config_map.clone());
         let endpoint = registry::bridge_endpoint(&manifest.config_schema, &config_so_far)
             .ok_or_else(|| AppError::BadRequest("bridge endpoint is required".into()))?;
-        let effective_secrets = if has_new_secrets {
-            Some(serde_json::Value::Object(new_secret_map))
-        } else if let Some(encrypted) = secrets_json.as_deref() {
+        let effective_secrets = if let Some(encrypted) = secrets_json.as_deref() {
             Some(
                 decrypt_plugin_secrets(
                     state.data_dir.clone(),
