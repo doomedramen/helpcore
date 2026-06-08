@@ -78,6 +78,22 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
     await Promise.all([refreshInstalled(), refreshStore()]);
   }
 
+  async function updateAll() {
+    const toUpdate = installed.filter((p) => p.update_available && p.user_managed);
+    if (toUpdate.length === 0) return;
+    setWorking("update-all");
+    setActionError("");
+    try {
+      await Promise.all(toUpdate.map((p) => updatePlugin(p.id, p.permissions, accessToken)));
+      await Promise.all([refreshInstalled(), refreshStore()]);
+      toast.success(`Updated ${toUpdate.length} plugin${toUpdate.length > 1 ? "s" : ""}`);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not update plugins.");
+    } finally {
+      setWorking(null);
+    }
+  }
+
   async function act(key: string, operation: () => Promise<void>, successMessage?: string) {
     setWorking(key);
     setActionError("");
@@ -133,7 +149,17 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
         <TabButton active={tab === "browse"} onClick={() => setTab("browse")}>
           Browse
         </TabButton>
-        <div className="ml-auto flex items-center">
+        <div className="ml-auto flex items-center gap-1">
+          {installed.some((p) => p.update_available && p.user_managed) && (
+            <button
+              type="button"
+              disabled={working !== null}
+              onClick={() => updateAll()}
+              className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500"
+            >
+              {working === "update-all" ? "Updating…" : "Update all"}
+            </button>
+          )}
           <button
             type="button"
             onClick={refresh}
@@ -178,13 +204,6 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
                     )
                   }
                   onConfigure={() => setConfiguring(configuring === plugin.id ? null : plugin.id)}
-                  onUpdate={() =>
-                    act(
-                      `update:${plugin.id}`,
-                      () => updatePlugin(plugin.id, plugin.permissions, accessToken),
-                      `Updated ${plugin.name}`,
-                    )
-                  }
                   onRollback={() =>
                     act(
                       `rollback:${plugin.id}`,
@@ -258,13 +277,6 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
                         `Installed ${plugin.name}`,
                       )
                     }
-                    onUpdate={() =>
-                      act(
-                        `update:${plugin.id}`,
-                        () => updatePlugin(plugin.id, plugin.permissions, accessToken),
-                        `Updated ${plugin.name}`,
-                      )
-                    }
                   />
                 </div>
               ))}
@@ -312,7 +324,6 @@ function InstalledRow({
   working,
   onToggle,
   onConfigure,
-  onUpdate,
   onRollback,
   onUninstall,
   onSaveConfig,
@@ -323,7 +334,6 @@ function InstalledRow({
   working: string | null;
   onToggle: (checked: boolean) => void;
   onConfigure: () => void;
-  onUpdate: () => void;
   onRollback: () => void;
   onUninstall: () => void;
   onSaveConfig: (values: Record<string, unknown>) => void;
@@ -360,20 +370,6 @@ function InstalledRow({
               title="Configure"
             >
               <Settings2 size={15} />
-            </button>
-          )}
-          {plugin.user_managed && (
-            <button
-              type="button"
-              onClick={onUpdate}
-              disabled={working !== null || plugin.blocked}
-              className="rounded-lg bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700 transition-colors hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-blue-950/50 dark:text-blue-300 dark:hover:bg-blue-900/50"
-            >
-              {working === `update:${plugin.id}`
-                ? "Updating…"
-                : plugin.update_available
-                  ? "Update"
-                  : "Refresh"}
             </button>
           )}
           {plugin.user_managed && (
@@ -440,12 +436,10 @@ function StoreRow({
   plugin,
   working,
   onInstall,
-  onUpdate,
 }: {
   plugin: PluginStoreItem;
   working: string | null;
   onInstall: () => void;
-  onUpdate: () => void;
 }) {
   return (
     <div className="flex items-center gap-4 bg-white/65 px-4 py-3 dark:bg-slate-900/55">
@@ -494,24 +488,9 @@ function StoreRow({
           </button>
         )}
         {plugin.installed && plugin.update_available && (
-          <button
-            type="button"
-            disabled={working !== null || plugin.blocked}
-            onClick={onUpdate}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500"
-          >
-            {working === `update:${plugin.id}` ? "Updating…" : `Update to ${plugin.version}`}
-          </button>
-        )}
-        {plugin.installed && !plugin.update_available && (
-          <button
-            type="button"
-            disabled={working !== null || plugin.blocked}
-            onClick={onUpdate}
-            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50 dark:bg-indigo-500"
-          >
-            {working === `update:${plugin.id}` ? "Refreshing…" : "Refresh"}
-          </button>
+          <span className="rounded-full bg-blue-100 px-2 py-0.5 text-xs font-medium text-blue-700 dark:bg-blue-950 dark:text-blue-300">
+            Update available
+          </span>
         )}
       </div>
     </div>
