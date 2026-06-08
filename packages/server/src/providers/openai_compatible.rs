@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::collections::BTreeMap;
 
 use async_trait::async_trait;

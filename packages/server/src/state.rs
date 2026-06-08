@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{config::Config, db::DbPool, providers::registry::ProviderRegistry};

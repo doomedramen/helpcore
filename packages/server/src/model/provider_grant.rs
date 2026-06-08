@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::Connection;

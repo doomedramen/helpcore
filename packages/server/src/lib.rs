@@ -2,9 +2,6 @@
 //! plugin runtime, conversation management, and multi-user auth.
 
 #![warn(missing_docs)]
-// The remaining undocumented items are mostly config field defaults,
-// provider internals, and small utility types. Enable as progress allows:
-// #![deny(missing_docs)]
 
 pub mod api;
 pub mod auth;

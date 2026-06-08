@@ -2,6 +2,8 @@
 //!
 //! Endpoint: POST /api/tts
 
+#![allow(missing_docs)]
+
 use std::sync::Arc;
 
 use axum::{

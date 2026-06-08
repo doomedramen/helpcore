@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use async_trait::async_trait;
 use futures_util::TryStreamExt;
 use reqwest::Client;

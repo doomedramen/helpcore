@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use axum::{
     extract::FromRequestParts,
     http::{header, request::Parts},

@@ -1,3 +1,4 @@
+#![allow(missing_docs)]
 /// Errors that can occur during a provider call.
 #[derive(Debug, thiserror::Error)]
 pub enum ProviderError {

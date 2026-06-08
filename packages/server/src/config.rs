@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
