@@ -55,6 +55,7 @@ import {
   Search,
   Terminal,
   Trash2,
+  Shuffle,
   Sparkles,
 } from "lucide-react";
 
@@ -143,6 +144,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     });
   }, []);
   const [selectedProviderId, setSelectedProviderId] = useState("");
+  const [shuffleKey, setShuffleKey] = useState(0);
   const providerSelectionsRef = useRef<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const processingRef = useRef(false);
@@ -333,6 +335,18 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     [handleSend],
   );
 
+  const handleSuggestionClick = useCallback((text: string) => {
+    const textarea = document.querySelector(
+      'textarea[name="message"]',
+    ) as HTMLTextAreaElement | null;
+    if (textarea) {
+      const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, "value")?.set;
+      setter?.call(textarea, text);
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      textarea.focus();
+    }
+  }, []);
+
   const handleStop = useCallback(async () => {
     setError("");
     generationConvRef.current = null;
@@ -450,9 +464,11 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     [],
   );
 
+  // shuffleKey intentionally triggers a re-shuffle of suggestions
   const suggestions = useMemo(
     () => [...suggestionPool].sort(() => Math.random() - 0.5).slice(0, 3),
-    [suggestionPool],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [suggestionPool, shuffleKey],
   );
 
   const allToolCalls = useMemo(() => {
@@ -519,13 +535,24 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
               }
               description="Start with a rough thought. HelpCore can help you shape it, plan it, or move it forward."
             >
-              <Suggestions className="mt-6 justify-center">
-                {suggestions.map((s) => (
-                  <Suggestion key={s.label} suggestion={s.prompt} onClick={handleSend}>
-                    {s.label}
-                  </Suggestion>
-                ))}
-              </Suggestions>
+              <div className="mt-6 flex items-center justify-center gap-2">
+                <Suggestions className="justify-center">
+                  {suggestions.map((s) => (
+                    <Suggestion key={s.label} suggestion={s.prompt} onClick={handleSuggestionClick}>
+                      {s.label}
+                    </Suggestion>
+                  ))}
+                </Suggestions>
+                <button
+                  type="button"
+                  onClick={() => setShuffleKey((k) => k + 1)}
+                  className="inline-flex shrink-0 cursor-pointer items-center rounded-full border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-muted"
+                  aria-label="Shuffle suggestions"
+                >
+                  <Shuffle className="mr-1 size-3" />
+                  Shuffle
+                </button>
+              </div>
             </ConversationEmptyState>
           ) : (
             <div className="mx-auto w-full max-w-4xl space-y-5">
