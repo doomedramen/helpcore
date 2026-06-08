@@ -38,7 +38,7 @@ export default function ChangePasswordPage() {
     }
   }
 
-  if (isLoading || !ready || !accessToken) return null;
+  if (!accessToken) return null;
 
   return (
     <AuthShell
