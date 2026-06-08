@@ -23,6 +23,7 @@ use crate::{
     plugins::{
         package::{self, InstalledPackage},
         registry::{self, Manifest, PluginTools, StorePlugin},
+        runtime::is_builtin_tool,
         secrets, token as plugin_token,
     },
     state::AppState,
@@ -950,6 +951,11 @@ async fn ensure_no_tool_conflicts(
         .into_iter()
         .map(|tool| tool.name)
         .collect::<HashSet<_>>();
+    if let Some(builtin) = target_names.iter().find(|name| is_builtin_tool(name)) {
+        return Err(AppError::Conflict(format!(
+            "plugin tool name conflicts with a built-in tool: {builtin}"
+        )));
+    }
     let uid = user_id.to_string();
     let pid = plugin_id.to_string();
     let conflicts = state

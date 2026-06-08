@@ -36,6 +36,21 @@ Log out and clear stored credentials.
 hc logout
 ```
 
+### `hc completions <shell>`
+
+Print a shell completion script for `bash`, `zsh`, `fish`, `elvish`, or `powershell`. The script is keyed to whichever binary name you invoke it as (`hc` or `helpcore`).
+
+```bash
+# zsh — write to a directory on your $fpath
+hc completions zsh > ~/.zfunc/_hc
+
+# bash
+hc completions bash > /etc/bash_completion.d/hc
+
+# fish
+hc completions fish > ~/.config/fish/completions/hc.fish
+```
+
 ### `hc setup`
 
 First-admin wizard. Run once after a fresh server install to create the admin account.
@@ -51,12 +66,14 @@ Options:
 
 ### `hc status`
 
-Show the configured server URL and login state.
+Show the configured server URL and verify the session against the server (refreshing the access token if needed). Prints the signed-in user and role on success, or why the connection failed.
 
 ```bash
 hc status
 # → Server: http://your-server:3000
-# → Status: logged in
+# → Status: connected
+# → User:   Martin (martin@example.com)
+# → Role:   admin
 ```
 
 ---
@@ -91,6 +108,23 @@ hc ask -c 01jx5a2b3c4d "add a testing phase"
 ---
 
 ## Conversation management
+
+### `hc conversation ls`
+
+List your conversations, most recently updated first — useful for finding the ID of a conversation you want to continue or compact.
+
+```bash
+hc conversation ls
+# → 01jx5a2b3c4d    8     msgs  2026-06-08T10:32:01Z  Plan the testing phase
+```
+
+### `hc conversation show <id>`
+
+Print the messages in a conversation as a plain-text transcript.
+
+```bash
+hc conversation show 01jx5a2b3c4d
+```
 
 ### `hc compact`
 

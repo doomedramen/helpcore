@@ -4,12 +4,12 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 
 use helpcore_api::{
-    ApiKeyInfo, ChatRequest, CompactResponse, CreateApiKeyRequest, CreateApiKeyResponse,
-    ListApiKeysResponse, LoginRequest, LoginResponse, LogoutRequest, MemoryEntry,
-    MemoryListResponse, MemoryReadResponse, MemoryWriteRequest, PersonalityResponse,
-    PersonalityWriteRequest, PluginInfo, PluginListResponse, PluginTokenRequest,
-    PluginTokenResponse, RefreshRequest, RefreshResponse, SetupRequest, SetupStatusResponse,
-    SseChunk, SseDone,
+    ApiKeyInfo, ChatRequest, CompactResponse, ConversationSummary, CreateApiKeyRequest,
+    CreateApiKeyResponse, CurrentUserResponse, ListApiKeysResponse, LoginRequest, LoginResponse,
+    LogoutRequest, MemoryEntry, MemoryListResponse, MemoryReadResponse, MemoryWriteRequest,
+    MessageSummary, PersonalityResponse, PersonalityWriteRequest, PluginInfo, PluginListResponse,
+    PluginTokenRequest, PluginTokenResponse, RefreshRequest, RefreshResponse, SetupRequest,
+    SetupStatusResponse, SseChunk, SseDone,
 };
 
 /// Sentinel string returned by `chat()` on a 401 so callers can detect an
@@ -64,6 +64,24 @@ impl Client {
             .context("failed to reach server")?;
         require_success(resp).await?;
         Ok(())
+    }
+
+    pub async fn current_user(&self, access_token: &str) -> anyhow::Result<CurrentUserResponse> {
+        let resp = self
+            .inner
+            .get(format!("{}/api/auth/me", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            bail!(TOKEN_EXPIRED);
+        }
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid current-user response")
     }
 
     pub async fn refresh(&self, refresh_token: &str) -> anyhow::Result<RefreshResponse> {
@@ -156,6 +174,49 @@ impl Client {
     /// Use this to decide whether to attempt a token refresh and retry.
     pub fn is_token_expired(e: &anyhow::Error) -> bool {
         e.to_string() == TOKEN_EXPIRED
+    }
+
+    pub async fn list_conversations(
+        &self,
+        access_token: &str,
+    ) -> anyhow::Result<Vec<ConversationSummary>> {
+        let resp = self
+            .inner
+            .get(format!("{}/api/conversations", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid conversation list response")
+    }
+
+    pub async fn get_conversation_messages(
+        &self,
+        access_token: &str,
+        conversation_id: &str,
+    ) -> anyhow::Result<Vec<MessageSummary>> {
+        let resp = self
+            .inner
+            .get(format!(
+                "{}/api/conversations/{conversation_id}/messages",
+                self.server_url
+            ))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            bail!("conversation not found: {conversation_id}");
+        }
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid messages response")
     }
 
     // ── Memory ────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { LogOut, Menu, MessageSquarePlus, Settings, Shield, Trash2, X } from "lucide-react";
+import { LogOut, Menu, MessageSquarePlus, Search, Settings, Shield, Trash2, X } from "lucide-react";
 import useSWR, { useSWRConfig } from "swr";
 import { deleteConversation, listConversations } from "@/lib/api";
 import { useAuth } from "@/context/auth";
@@ -39,12 +39,19 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
   const { mutate } = useSWRConfig();
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [search, setSearch] = useState("");
 
   const { data: conversations = [] } = useSWR<ConversationSummary[]>(
     accessToken ? ["/api/conversations", accessToken] : null,
     ([, token]) => listConversations(token as string),
     { refreshInterval: 10_000 },
   );
+
+  const filteredConversations = search.trim()
+    ? conversations.filter((conv) =>
+        (conv.title || "Untitled").toLowerCase().includes(search.trim().toLowerCase()),
+      )
+    : conversations;
 
   async function handleDeleteConfirm() {
     if (!accessToken || !deleteTarget) return;
@@ -95,6 +102,22 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
         </button>
       </div>
 
+      {conversations.length > 0 && (
+        <div className="relative px-3 pb-2">
+          <Search
+            size={13}
+            className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-sidebar-foreground/35"
+          />
+          <input
+            type="search"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search conversations…"
+            className="w-full rounded-xl border border-sidebar-foreground/10 bg-sidebar-foreground/5 py-2 pr-3 pl-8 text-sm text-sidebar-foreground outline-none transition placeholder:text-sidebar-foreground/35 focus:border-sidebar-foreground/20 focus:bg-sidebar-foreground/10"
+          />
+        </div>
+      )}
+
       <div className="px-5 pb-2 pt-1">
         <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/40">
           Recent
@@ -107,7 +130,12 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
             Your recent conversations will appear here.
           </p>
         )}
-        {conversations.map((conv) => {
+        {conversations.length > 0 && filteredConversations.length === 0 && (
+          <p className="px-3 py-3 text-xs leading-5 text-sidebar-foreground/40">
+            No conversations match “{search.trim()}”.
+          </p>
+        )}
+        {filteredConversations.map((conv) => {
           const active = conv.id === conversationId;
           return (
             <div

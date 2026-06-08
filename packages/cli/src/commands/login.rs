@@ -1,5 +1,6 @@
 use anyhow::bail;
 
+use super::prompt::prompt;
 use crate::{client::Client, config::Credentials};
 
 pub async fn run(server_flag: Option<&str>, email_flag: Option<&str>) -> anyhow::Result<()> {
@@ -29,13 +30,4 @@ pub async fn run(server_flag: Option<&str>, email_flag: Option<&str>) -> anyhow:
 
     println!("✓ Logged in to {server}");
     Ok(())
-}
-
-fn prompt(label: &str) -> anyhow::Result<String> {
-    use std::io::Write;
-    print!("{label}");
-    std::io::stdout().flush()?;
-    let mut buf = String::new();
-    std::io::stdin().read_line(&mut buf)?;
-    Ok(buf.trim().to_string())
 }

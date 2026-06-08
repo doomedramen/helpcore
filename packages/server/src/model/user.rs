@@ -196,15 +196,16 @@ pub fn set_status(conn: &Connection, user_id: &str, status: UserStatus) -> anyho
     Ok(n > 0)
 }
 
-pub fn set_password(conn: &Connection, user_id: &str, password_hash: &str) -> anyhow::Result<()> {
+pub fn set_password(conn: &Connection, user_id: &str, password_hash: &str) -> anyhow::Result<bool> {
     let now = Utc::now().to_rfc3339();
-    conn.execute(
-        "UPDATE users SET password_hash = ?1, force_password_change = 0, updated_at = ?2
-         WHERE id = ?3",
-        rusqlite::params![password_hash, now, user_id],
-    )
-    .context("failed to update password")?;
-    Ok(())
+    let n = conn
+        .execute(
+            "UPDATE users SET password_hash = ?1, force_password_change = 0, updated_at = ?2
+             WHERE id = ?3 AND status != 'deleted'",
+            rusqlite::params![password_hash, now, user_id],
+        )
+        .context("failed to update password")?;
+    Ok(n > 0)
 }
 
 pub fn update_me(

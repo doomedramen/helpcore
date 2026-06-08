@@ -1,5 +1,6 @@
 use anyhow::{Context, bail};
 
+use super::prompt::{prompt, prompt_with_default};
 use crate::{client::Client, config::Credentials};
 
 /// Runs the first-admin setup wizard.
@@ -84,29 +85,6 @@ fn extract_server_and_token(url_str: &str) -> anyhow::Result<(String, String)> {
     }
 
     Ok((server, token))
-}
-
-fn prompt(label: &str) -> anyhow::Result<String> {
-    use std::io::Write;
-    print!("{label}");
-    std::io::stdout().flush()?;
-    let mut buf = String::new();
-    std::io::stdin().read_line(&mut buf)?;
-    Ok(buf.trim().to_string())
-}
-
-fn prompt_with_default(label: &str, default: &str) -> anyhow::Result<String> {
-    use std::io::Write;
-    print!("{label} [{default}]: ");
-    std::io::stdout().flush()?;
-    let mut buf = String::new();
-    std::io::stdin().read_line(&mut buf)?;
-    let trimmed = buf.trim();
-    Ok(if trimmed.is_empty() {
-        default.to_string()
-    } else {
-        trimmed.to_string()
-    })
 }
 
 #[cfg(test)]

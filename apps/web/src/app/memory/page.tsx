@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
+import { toast } from "sonner";
 import { FilePlus, Trash2 } from "lucide-react";
 import AppShell from "@/app/components/app-shell";
 import PageHeader from "@/app/components/page-header";
@@ -11,6 +12,14 @@ import StatusMessage from "@/app/components/status-message";
 import { useAuth } from "@/context/auth";
 import { deleteMemoryFile, getMemoryFile, listMemory, putMemoryFile, updateMe } from "@/lib/api";
 import type { MemoryEntry } from "@/lib/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/app/components/ui/dialog";
 
 const MEMORY_LEANING_OPTIONS = [
   {
@@ -41,6 +50,7 @@ export default function MemoryPage() {
   const [creating, setCreating] = useState(false);
   const [saving, setSaving] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [draft, setDraft] = useState("");
   const [isDirty, setIsDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +58,6 @@ export default function MemoryPage() {
 
   const [memoryLeaning, setMemoryLeaning] = useState(currentUser?.memory_leaning ?? "moderate");
   const [leaningSaving, setLeaningSaving] = useState(false);
-  const [leaningSaved, setLeaningSaved] = useState(false);
 
   useEffect(() => {
     if (currentUser?.memory_leaning) {
@@ -115,9 +124,9 @@ export default function MemoryPage() {
     }
   }
 
-  async function handleDelete() {
+  async function confirmDelete() {
     if (!accessToken || !selected) return;
-    if (!confirm(`Delete ${selected}? This cannot be undone.`)) return;
+    setDeleteConfirmOpen(false);
     setDeleting(true);
     try {
       await deleteMemoryFile(selected, accessToken);
@@ -156,14 +165,12 @@ export default function MemoryPage() {
     setMemoryLeaning(value);
     if (!accessToken) return;
     setLeaningSaving(true);
-    setLeaningSaved(false);
     try {
       await updateMe({ memory_leaning: value }, accessToken);
-      setLeaningSaved(true);
-      setTimeout(() => setLeaningSaved(false), 2000);
+      toast.success("Saved");
     } catch {
-      // revert on failure
       setMemoryLeaning(currentUser?.memory_leaning ?? "moderate");
+      toast.error("Could not save memory leaning");
     } finally {
       setLeaningSaving(false);
     }
@@ -218,9 +225,6 @@ export default function MemoryPage() {
               </button>
             ))}
           </div>
-          {leaningSaved && (
-            <p className="mt-2 text-xs text-green-600 dark:text-green-400">Saved.</p>
-          )}
         </div>
       </div>
 
@@ -329,7 +333,7 @@ export default function MemoryPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   <button
-                    onClick={handleDelete}
+                    onClick={() => setDeleteConfirmOpen(true)}
                     disabled={deleting}
                     className="icon-button size-9 hover:text-red-500 dark:hover:text-red-400"
                     title="Delete file"
@@ -367,6 +371,34 @@ export default function MemoryPage() {
           )}
         </div>
       </div>
+
+      <Dialog
+        open={deleteConfirmOpen}
+        onOpenChange={(open) => {
+          if (!open) setDeleteConfirmOpen(false);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete memory file</DialogTitle>
+            <DialogDescription>Delete {selected}? This cannot be undone.</DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setDeleteConfirmOpen(false)}
+              className="secondary-action min-h-9 px-3 py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmDelete}
+              className="inline-flex min-h-9 items-center justify-center rounded-xl bg-red-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-red-500"
+            >
+              Delete
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

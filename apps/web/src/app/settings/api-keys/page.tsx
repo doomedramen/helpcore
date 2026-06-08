@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
+import { toast } from "sonner";
 import { Copy, Trash2 } from "lucide-react";
 import AppShell from "@/app/components/app-shell";
 import PageHeader from "@/app/components/page-header";
@@ -11,6 +12,14 @@ import StatusMessage from "@/app/components/status-message";
 import { useAuth } from "@/context/auth";
 import { createApiKey, listApiKeys, revokeApiKey } from "@/lib/api";
 import type { ApiKeyInfo, CreateApiKeyResponse } from "@/lib/types";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/app/components/ui/dialog";
 
 export default function ApiKeysPage() {
   const { accessToken, isLoading } = useAuth();
@@ -20,8 +29,8 @@ export default function ApiKeysPage() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<CreateApiKeyResponse | null>(null);
-  const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [revokeTarget, setRevokeTarget] = useState<ApiKeyInfo | null>(null);
 
   const { data } = useSWR(
     accessToken ? ["/api/auth/api-keys", accessToken] : null,
@@ -59,9 +68,10 @@ export default function ApiKeysPage() {
     }
   }
 
-  async function handleRevoke(id: string) {
-    if (!accessToken) return;
-    if (!confirm("Revoke this API key? Any apps using it will stop working.")) return;
+  async function confirmRevoke() {
+    if (!accessToken || !revokeTarget) return;
+    const id = revokeTarget.id;
+    setRevokeTarget(null);
     try {
       await revokeApiKey(id, accessToken);
       await mutate(["/api/auth/api-keys", accessToken]);
@@ -73,8 +83,7 @@ export default function ApiKeysPage() {
   async function handleCopy() {
     if (!created) return;
     await navigator.clipboard.writeText(created.key);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    toast.success("Copied to clipboard");
   }
 
   return (
@@ -135,7 +144,6 @@ export default function ApiKeysPage() {
                   <Copy size={15} />
                 </button>
               </div>
-              {copied && <p className="mt-2 text-xs text-green-600 dark:text-green-400">Copied!</p>}
               <button
                 onClick={() => setCreated(null)}
                 className="mt-3 text-xs text-green-700 dark:text-green-400 underline"
@@ -178,7 +186,7 @@ export default function ApiKeysPage() {
                     </p>
                   </div>
                   <button
-                    onClick={() => handleRevoke(key.id)}
+                    onClick={() => setRevokeTarget(key)}
                     className="shrink-0 rounded-lg p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-950/30 transition-colors"
                     title="Revoke"
                   >
@@ -190,6 +198,36 @@ export default function ApiKeysPage() {
           </div>
         </div>
       </div>
+
+      <Dialog
+        open={revokeTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setRevokeTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Revoke API key</DialogTitle>
+            <DialogDescription>
+              Revoke {revokeTarget?.name}? Any apps using it will stop working.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setRevokeTarget(null)}
+              className="secondary-action min-h-9 px-3 py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmRevoke}
+              className="inline-flex min-h-9 items-center justify-center rounded-xl bg-red-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-red-500"
+            >
+              Revoke
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </AppShell>
   );
 }

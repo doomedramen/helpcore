@@ -93,6 +93,7 @@ The core enforces these — a plugin cannot exceed what it declared here.
 | `user_data_read` | Read the installing user's data |
 | `user_data_write` | Write to the installing user's data |
 | `conversations_read` | Read the user's conversation history |
+| `read_secrets` | Read the plugin's own decrypted secrets (e.g. API keys) |
 
 ### `setup_guide`
 

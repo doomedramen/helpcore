@@ -188,10 +188,14 @@ pub async fn reset_password(
 
     let hash = crate::auth::password::hash_password(&req.password)?;
     let uid = user_id.clone();
-    state
+    let changed = state
         .db
         .call(move |conn| crate::model::user::set_password(conn, &uid, &hash))
         .await?;
+
+    if !changed {
+        return Err(AppError::NotFound("user not found".into()));
+    }
 
     let actor_id = admin.0.id.clone();
     let payload = serde_json::json!({});

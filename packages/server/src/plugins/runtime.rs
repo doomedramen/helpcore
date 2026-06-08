@@ -35,6 +35,7 @@ wasmtime::component::bindgen!({
             data-read: func(path: string) -> result<string, string>;
             data-write: func(path: string, content: string) -> result<_, string>;
             config-read: func(key: string) -> result<string, string>;
+            secret-read: func(key: string) -> result<string, string>;
         }
 
         world plugin {
@@ -142,7 +143,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "skill_read",
 ];
 
-fn is_builtin_tool(name: &str) -> bool {
+pub(crate) fn is_builtin_tool(name: &str) -> bool {
     BUILTIN_TOOL_NAMES.contains(&name)
 }
 
@@ -547,6 +548,7 @@ struct WasmState {
     workspace: PathBuf,
     allowed_hosts: Vec<String>,
     config: serde_json::Value,
+    secrets: serde_json::Value,
 }
 
 impl HasData for WasmState {
@@ -569,11 +571,14 @@ async fn execute_wasm(
     let permissions = plugin.permissions.iter().cloned().collect();
     let allowed_hosts = plugin.manifest.allowed_hosts.clone();
 
-    // Build a merged config map: non-secret stored values + decrypted secrets.
+    // Non-secret stored config values, exposed via `config-read` without a permission check.
     let mut plugin_config = plugin.config.clone();
     if let Some(obj) = plugin_config.as_object_mut() {
         obj.remove("_secret_keys");
     }
+    // Decrypted secrets are kept separate from `plugin_config` and only reachable through
+    // `secret-read`, which is gated on the `read_secrets` permission.
+    let mut plugin_secrets = serde_json::Value::Object(serde_json::Map::new());
     if let Some(encrypted) = plugin.secrets.as_deref() {
         let data_dir = state.data_dir.clone();
         let uid = user_id.to_string();
@@ -584,11 +589,7 @@ async fn execute_wasm(
         })
         .await
         .map_err(|error| anyhow::anyhow!("WASM secret decrypt task failed: {error}"))??;
-        if let (Some(cfg), Some(sec)) = (plugin_config.as_object_mut(), decrypted.as_object()) {
-            for (key, value) in sec {
-                cfg.insert(key.clone(), value.clone());
-            }
-        }
+        plugin_secrets = decrypted;
     }
 
     tokio::task::spawn_blocking(move || {
@@ -600,6 +601,7 @@ async fn execute_wasm(
             permissions,
             allowed_hosts,
             plugin_config,
+            plugin_secrets,
         )
     })
     .await
@@ -614,6 +616,7 @@ fn run_wasm_component(
     permissions: HashSet<String>,
     allowed_hosts: Vec<String>,
     plugin_config: serde_json::Value,
+    plugin_secrets: serde_json::Value,
 ) -> anyhow::Result<String> {
     let mut engine_config = Config::new();
     engine_config.wasm_component_model(true);
@@ -641,6 +644,7 @@ fn run_wasm_component(
             workspace,
             allowed_hosts,
             config: plugin_config,
+            secrets: plugin_secrets,
         },
     );
     store.limiter(|state| &mut state.limits);
@@ -686,6 +690,7 @@ struct WasmHttpResponse {
 
 impl helpcore::plugin::host::Host for WasmState {
     fn http_request(&mut self, request_json: String) -> Result<String, String> {
+        self.require("outbound_http")?;
         let response = self.send_http_request(&request_json)?;
         let status = response.status().as_u16();
         let headers = response
@@ -711,6 +716,7 @@ impl helpcore::plugin::host::Host for WasmState {
     }
 
     fn http_request_binary(&mut self, request_json: String) -> Result<String, String> {
+        self.require("outbound_http")?;
         let response = self.send_http_request(&request_json)?;
         let status = response.status().as_u16();
         let headers = response
@@ -748,6 +754,15 @@ impl helpcore::plugin::host::Host for WasmState {
             Some(serde_json::Value::String(s)) => Ok(s.clone()),
             Some(v) => serde_json::to_string(v).map_err(|e| e.to_string()),
             None => Err(format!("config key '{key}' not found")),
+        }
+    }
+
+    fn secret_read(&mut self, key: String) -> Result<String, String> {
+        self.require("read_secrets")?;
+        match self.secrets.get(&key) {
+            Some(serde_json::Value::String(s)) => Ok(s.clone()),
+            Some(v) => serde_json::to_string(v).map_err(|e| e.to_string()),
+            None => Err(format!("secret '{key}' not found")),
         }
     }
 
@@ -1005,7 +1020,23 @@ fn set_private_file(_path: &Path) -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use super::helpcore::plugin::host::Host as _;
     use super::*;
+
+    fn wasm_state(
+        permissions: &[&str],
+        config: serde_json::Value,
+        secrets: serde_json::Value,
+    ) -> WasmState {
+        WasmState {
+            limits: StoreLimitsBuilder::new().build(),
+            permissions: permissions.iter().map(|p| p.to_string()).collect(),
+            workspace: PathBuf::new(),
+            allowed_hosts: Vec::new(),
+            config,
+            secrets,
+        }
+    }
 
     fn manifest(hosts: &[&str]) -> Manifest {
         Manifest {
@@ -1056,5 +1087,91 @@ mod tests {
         fs::create_dir(&workspace).unwrap();
         assert!(resolve_workspace_path(&workspace, "../secret", true).is_err());
         assert!(resolve_workspace_path(&workspace, "nested/file.txt", true).is_ok());
+    }
+
+    #[test]
+    fn http_request_requires_outbound_http_permission() {
+        let request =
+            serde_json::json!({"method": "GET", "url": "https://example.com"}).to_string();
+
+        let mut state = wasm_state(&[], serde_json::json!({}), serde_json::json!({}));
+        let error = state.http_request(request.clone()).unwrap_err();
+        assert!(error.contains("outbound_http"), "unexpected error: {error}");
+        let error = state.http_request_binary(request.clone()).unwrap_err();
+        assert!(error.contains("outbound_http"), "unexpected error: {error}");
+
+        // Declaring the permission clears the gate (the request itself may still fail,
+        // e.g. because the host is not in `allowed_hosts`, but not on a permission error).
+        let mut state = wasm_state(
+            &["outbound_http"],
+            serde_json::json!({}),
+            serde_json::json!({}),
+        );
+        let error = state.http_request(request).unwrap_err();
+        assert!(
+            !error.contains("outbound_http"),
+            "unexpected error: {error}"
+        );
+    }
+
+    #[test]
+    fn config_read_does_not_require_a_permission() {
+        let mut state = wasm_state(
+            &[],
+            serde_json::json!({"endpoint": "https://api.example.com"}),
+            serde_json::json!({"api_key": "sekret"}),
+        );
+        assert_eq!(
+            state.config_read("endpoint".into()).unwrap(),
+            "https://api.example.com"
+        );
+        // Secrets are not reachable through `config-read`, regardless of permissions.
+        assert!(state.config_read("api_key".into()).is_err());
+    }
+
+    #[test]
+    fn secret_read_requires_read_secrets_permission() {
+        let mut state = wasm_state(
+            &[],
+            serde_json::json!({}),
+            serde_json::json!({"api_key": "sekret"}),
+        );
+        let error = state.secret_read("api_key".into()).unwrap_err();
+        assert!(error.contains("read_secrets"), "unexpected error: {error}");
+
+        let mut state = wasm_state(
+            &["read_secrets"],
+            serde_json::json!({}),
+            serde_json::json!({"api_key": "sekret"}),
+        );
+        assert_eq!(state.secret_read("api_key".into()).unwrap(), "sekret");
+    }
+
+    #[test]
+    fn data_read_and_write_require_user_data_permissions() {
+        let directory = tempfile::tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        fs::create_dir(&workspace).unwrap();
+
+        let mut state = WasmState {
+            limits: StoreLimitsBuilder::new().build(),
+            permissions: HashSet::new(),
+            workspace,
+            allowed_hosts: Vec::new(),
+            config: serde_json::json!({}),
+            secrets: serde_json::json!({}),
+        };
+        let error = state.data_read("file.txt".into()).unwrap_err();
+        assert!(
+            error.contains("user_data_read"),
+            "unexpected error: {error}"
+        );
+        let error = state
+            .data_write("file.txt".into(), "content".into())
+            .unwrap_err();
+        assert!(
+            error.contains("user_data_write"),
+            "unexpected error: {error}"
+        );
     }
 }

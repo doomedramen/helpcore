@@ -21,7 +21,8 @@ path = "src/bin/hc.rs"
 [dependencies]
 helpcore-api = { workspace = true }
 anyhow       = { workspace = true }
-clap         = { workspace = true, features = ["derive"] }
+clap          = { workspace = true, features = ["derive"] }
+clap_complete = { workspace = true }
 directories  = { workspace = true }
 futures-util = { workspace = true, features = ["sink"] }
 reqwest      = { workspace = true, features = ["json", "rustls-tls", "stream"] }

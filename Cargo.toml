@@ -62,6 +62,7 @@ toml = "1.0"
 
 # CLI
 clap = { version = "4.5" }
+clap_complete = { version = "4.5" }
 mime_guess = "2.0"
 
 # Platform dirs

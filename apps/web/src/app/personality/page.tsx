@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
+import { toast } from "sonner";
 import AppShell from "@/app/components/app-shell";
 import PageHeader from "@/app/components/page-header";
 import SettingsNav from "@/app/components/settings-nav";
@@ -33,7 +34,6 @@ export default function PersonalityPage() {
   const [activeTab, setActiveTab] = useState<TabKey>("soul");
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
-  const [savedTab, setSavedTab] = useState<TabKey | null>(null);
 
   const key = (tab: TabKey) => (accessToken ? [`/api/personality/${tab}`, accessToken] : null);
 
@@ -84,7 +84,6 @@ export default function PersonalityPage() {
     setDraft((d) => ({ ...d, [tab]: value }));
     setEdited((e) => ({ ...e, [tab]: true }));
     setSaveError(null);
-    setSavedTab(null);
   }
 
   async function handleSave(tab: TabKey) {
@@ -95,7 +94,7 @@ export default function PersonalityPage() {
       await putPersonality(tab, currentContent(tab), accessToken);
       await mutate(key(tab));
       setEdited((e) => ({ ...e, [tab]: false }));
-      setSavedTab(tab);
+      toast.success("Saved");
     } catch (err) {
       setSaveError(err instanceof Error ? err.message : "Save failed");
     } finally {
@@ -152,11 +151,6 @@ export default function PersonalityPage() {
                   {saveError && (
                     <div className="mb-4">
                       <StatusMessage type="error" message={saveError} />
-                    </div>
-                  )}
-                  {savedTab === tab.key && !saveError && (
-                    <div className="mb-4">
-                      <StatusMessage type="success" message="Saved." />
                     </div>
                   )}
 

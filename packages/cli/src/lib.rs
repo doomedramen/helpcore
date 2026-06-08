@@ -2,7 +2,8 @@ mod client;
 mod commands;
 pub mod config;
 
-use clap::{Parser, Subcommand};
+use clap::{CommandFactory, Parser, Subcommand};
+use clap_complete::Shell;
 
 #[derive(Parser)]
 #[command(name = "helpcore", version, about = "helpcore — personal AI assistant")]
@@ -45,6 +46,14 @@ enum Commands {
     /// Log out of the current server
     Logout,
 
+    /// Print a shell completion script to stdout
+    ///
+    /// Example (zsh): helpcore completions zsh > ~/.zfunc/_helpcore
+    Completions {
+        /// Shell to generate completions for
+        shell: Shell,
+    },
+
     /// First-admin setup wizard
     Setup {
         /// Full setup URL printed by the server on first start
@@ -56,8 +65,12 @@ enum Commands {
         server: Option<String>,
     },
 
-    /// Show connection status
-    Status,
+    /// Show connection status (verifies the session against the server)
+    Status {
+        /// Server URL (overrides stored credentials)
+        #[arg(long)]
+        server: Option<String>,
+    },
 
     // ── Compact ───────────────────────────────────────────────────────────────
     /// Compact a conversation by summarising its oldest messages
@@ -69,6 +82,11 @@ enum Commands {
         #[arg(long)]
         server: Option<String>,
     },
+
+    // ── Conversations ─────────────────────────────────────────────────────────
+    /// Browse your conversation history
+    #[command(subcommand)]
+    Conversation(ConversationCommands),
 
     // ── Personality ───────────────────────────────────────────────────────────
     /// Show or update the assistant's soul (tone, values, communication style)
@@ -144,6 +162,24 @@ enum ApiKeyCommands {
     Revoke {
         /// Key ID (shown in `hc api-keys ls`)
         id: String,
+        #[arg(long)]
+        server: Option<String>,
+    },
+}
+
+#[derive(Subcommand)]
+enum ConversationCommands {
+    /// List your conversations (most recently updated first)
+    Ls {
+        /// Server URL (overrides stored credentials)
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Print the messages in a conversation
+    Show {
+        /// Conversation ID (shown by `hc conversation ls` or after `hc ask`)
+        id: String,
+        /// Server URL (overrides stored credentials)
         #[arg(long)]
         server: Option<String>,
     },
@@ -246,26 +282,27 @@ pub async fn run() -> anyhow::Result<()> {
 
         Commands::Logout => commands::logout::run().await,
 
+        Commands::Completions { shell } => {
+            let mut cmd = Cli::command();
+            // Key the script to whichever binary name was actually invoked
+            // (`hc` or `helpcore`), not the `Cli` struct's declared name.
+            let bin_name = std::env::args()
+                .next()
+                .and_then(|arg0| {
+                    std::path::Path::new(&arg0)
+                        .file_name()
+                        .map(|f| f.to_string_lossy().into_owned())
+                })
+                .unwrap_or_else(|| cmd.get_name().to_string());
+            clap_complete::generate(shell, &mut cmd, bin_name, &mut std::io::stdout());
+            Ok(())
+        }
+
         Commands::Setup { url, server } => {
             commands::setup::run(url.as_deref(), server.as_deref()).await
         }
 
-        Commands::Status => {
-            let creds = config::Credentials::load()?;
-            match creds.server_url.as_deref() {
-                Some(url) => {
-                    let status = if creds.is_logged_in() {
-                        "logged in"
-                    } else {
-                        "not logged in"
-                    };
-                    println!("Server: {url}");
-                    println!("Status: {status}");
-                }
-                None => println!("Not configured. Run 'helpcore login' to connect to a server."),
-            }
-            Ok(())
-        }
+        Commands::Status { server } => commands::status::run(server.as_deref()).await,
 
         Commands::Soul { set, edit, server } => {
             commands::memory::personality("soul", set.as_deref(), edit, server.as_deref()).await
@@ -304,6 +341,15 @@ pub async fn run() -> anyhow::Result<()> {
             }
             Ok(())
         }
+
+        Commands::Conversation(sub) => match sub {
+            ConversationCommands::Ls { server } => {
+                commands::conversation::list(server.as_deref()).await
+            }
+            ConversationCommands::Show { id, server } => {
+                commands::conversation::show(&id, server.as_deref()).await
+            }
+        },
 
         Commands::Plugin(sub) => match sub {
             PluginCommands::Ls { server } => commands::plugin::list(server.as_deref()).await,

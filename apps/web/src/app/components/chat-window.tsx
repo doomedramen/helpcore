@@ -521,14 +521,20 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
               }
               description="Start with a rough thought. HelpCore can help you shape it, plan it, or move it forward."
             >
-              <div className="mt-6 flex items-center justify-center gap-2">
-                <Suggestions className="justify-center">
-                  {suggestions.map((s) => (
-                    <Suggestion key={s.label} suggestion={s.prompt} onClick={handleSuggestionClick}>
-                      {s.label}
-                    </Suggestion>
-                  ))}
-                </Suggestions>
+              <div className="mt-6 flex w-full min-w-0 items-center justify-center gap-2">
+                <div className="min-w-0 flex-1">
+                  <Suggestions>
+                    {suggestions.map((s) => (
+                      <Suggestion
+                        key={s.label}
+                        suggestion={s.prompt}
+                        onClick={handleSuggestionClick}
+                      >
+                        {s.label}
+                      </Suggestion>
+                    ))}
+                  </Suggestions>
+                </div>
                 <button
                   type="button"
                   onClick={() => setShuffleKey((k) => k + 1)}

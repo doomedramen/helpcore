@@ -44,7 +44,9 @@ This document describes the security measures currently implemented in helpcore.
 
 - Plugins declare required permissions in their manifest.
 - Permissions are presented to the user at install time for approval.
-- WASM plugins cannot exceed their declared permissions.
+- WASM plugins cannot exceed their declared permissions: every host function that
+  reaches outside the plugin's sandbox (`http-request`, `data-read`, `data-write`,
+  `secret-read`, ...) checks the plugin's approved permission set before acting.
 - Bridge plugins are further constrained by `allowed_hosts` in their manifest.
 
 ### Plugin secrets
@@ -52,6 +54,10 @@ This document describes the security measures currently implemented in helpcore.
 - Plugin secrets are encrypted at rest using XChaCha20-Poly1305 (via the `crypto_secretbox`
   construction from libsodium through the `aes-gcm` crate-equivalent API).
 - Secrets are decrypted on read and never stored in plaintext in the database.
+- Decrypted secrets are kept separate from the plugin's regular configuration inside
+  the WASM sandbox and are only reachable through `secret-read`, which requires the
+  `read_secrets` permission — a plugin cannot read its own secrets unless the user
+  approved that permission at install time.
 
 ---
 

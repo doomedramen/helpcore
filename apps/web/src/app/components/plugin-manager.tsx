@@ -11,7 +11,22 @@ import {
   Undo2,
 } from "lucide-react";
 import useSWR from "swr";
+import { toast } from "sonner";
 import StatusMessage from "@/app/components/status-message";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/app/components/ui/dialog";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/app/components/ui/dropdown-menu";
 import {
   configurePlugin,
   installPlugin,
@@ -38,6 +53,7 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
   const [actionError, setActionError] = useState("");
   const [configuring, setConfiguring] = useState<string | null>(null);
   const [storeSearch, setStoreSearch] = useState("");
+  const [uninstallTarget, setUninstallTarget] = useState<PluginInfo | null>(null);
 
   const {
     data: installed = [],
@@ -62,17 +78,29 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
     await Promise.all([refreshInstalled(), refreshStore()]);
   }
 
-  async function act(key: string, operation: () => Promise<void>) {
+  async function act(key: string, operation: () => Promise<void>, successMessage?: string) {
     setWorking(key);
     setActionError("");
     try {
       await operation();
       await Promise.all([refreshInstalled(), refreshStore()]);
+      if (successMessage) toast.success(successMessage);
     } catch (error) {
       setActionError(error instanceof Error ? error.message : "Could not update the plugin.");
     } finally {
       setWorking(null);
     }
+  }
+
+  async function confirmUninstall() {
+    if (!uninstallTarget) return;
+    const plugin = uninstallTarget;
+    setUninstallTarget(null);
+    await act(
+      `uninstall:${plugin.id}`,
+      () => uninstallPlugin(plugin.id, accessToken),
+      `Uninstalled ${plugin.name}`,
+    );
   }
 
   const attentionCount = installed.filter(
@@ -143,33 +171,37 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
                   configuring={configuring === plugin.id}
                   working={working}
                   onToggle={(checked) =>
-                    act(`enable:${plugin.id}`, () =>
-                      setPluginEnabled(plugin.id, checked, accessToken),
+                    act(
+                      `enable:${plugin.id}`,
+                      () => setPluginEnabled(plugin.id, checked, accessToken),
+                      checked ? `Enabled ${plugin.name}` : `Disabled ${plugin.name}`,
                     )
                   }
                   onConfigure={() => setConfiguring(configuring === plugin.id ? null : plugin.id)}
                   onUpdate={() =>
-                    act(`update:${plugin.id}`, () =>
-                      updatePlugin(plugin.id, plugin.permissions, accessToken),
+                    act(
+                      `update:${plugin.id}`,
+                      () => updatePlugin(plugin.id, plugin.permissions, accessToken),
+                      `Updated ${plugin.name}`,
                     )
                   }
                   onRollback={() =>
-                    act(`rollback:${plugin.id}`, () => rollbackPlugin(plugin.id, accessToken))
+                    act(
+                      `rollback:${plugin.id}`,
+                      () => rollbackPlugin(plugin.id, accessToken),
+                      `Rolled back ${plugin.name}`,
+                    )
                   }
-                  onUninstall={() => {
-                    if (
-                      window.confirm(`Uninstall ${plugin.name} and remove your saved versions?`)
-                    ) {
-                      void act(`uninstall:${plugin.id}`, () =>
-                        uninstallPlugin(plugin.id, accessToken),
-                      );
-                    }
-                  }}
+                  onUninstall={() => setUninstallTarget(plugin)}
                   onSaveConfig={(values) =>
-                    act(`configure:${plugin.id}`, async () => {
-                      await configurePlugin(plugin.id, values, accessToken);
-                      setConfiguring(null);
-                    })
+                    act(
+                      `configure:${plugin.id}`,
+                      async () => {
+                        await configurePlugin(plugin.id, values, accessToken);
+                        setConfiguring(null);
+                      },
+                      "Configuration saved",
+                    )
                   }
                   onCancelConfig={() => setConfiguring(null)}
                 />
@@ -220,13 +252,17 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
                     plugin={plugin}
                     working={working}
                     onInstall={() =>
-                      act(`install:${plugin.id}`, () =>
-                        installPlugin(plugin.id, plugin.permissions, accessToken),
+                      act(
+                        `install:${plugin.id}`,
+                        () => installPlugin(plugin.id, plugin.permissions, accessToken),
+                        `Installed ${plugin.name}`,
                       )
                     }
                     onUpdate={() =>
-                      act(`update:${plugin.id}`, () =>
-                        updatePlugin(plugin.id, plugin.permissions, accessToken),
+                      act(
+                        `update:${plugin.id}`,
+                        () => updatePlugin(plugin.id, plugin.permissions, accessToken),
+                        `Updated ${plugin.name}`,
                       )
                     }
                   />
@@ -236,6 +272,36 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
           )}
         </div>
       )}
+
+      <Dialog
+        open={uninstallTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setUninstallTarget(null);
+        }}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Uninstall plugin</DialogTitle>
+            <DialogDescription>
+              Uninstall {uninstallTarget?.name} and remove your saved versions?
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <button
+              onClick={() => setUninstallTarget(null)}
+              className="secondary-action min-h-9 px-3 py-1.5"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={confirmUninstall}
+              className="inline-flex min-h-9 items-center justify-center rounded-xl bg-red-600 px-3 py-1.5 text-sm font-semibold text-white transition hover:bg-red-500"
+            >
+              Uninstall
+            </button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
@@ -263,7 +329,6 @@ function InstalledRow({
   onSaveConfig: (values: Record<string, unknown>) => void;
   onCancelConfig: () => void;
 }) {
-  const [menuOpen, setMenuOpen] = useState(false);
   const needsConfig = !plugin.configured && plugin.config_schema.length > 0;
 
   return (
@@ -308,49 +373,33 @@ function InstalledRow({
             </button>
           )}
           {plugin.user_managed && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setMenuOpen((v) => !v)}
+            <DropdownMenu>
+              <DropdownMenuTrigger
                 className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-900 dark:hover:bg-slate-800 dark:hover:text-white"
                 title="More options"
               >
                 <MoreHorizontal size={15} />
-              </button>
-              {menuOpen && (
-                <>
-                  <div className="fixed inset-0 z-10" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute right-0 top-full z-20 mt-1 min-w-[160px] overflow-hidden rounded-lg border border-slate-200 bg-white py-1 shadow-lg dark:border-slate-700 dark:bg-slate-900">
-                    {plugin.previous_version && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setMenuOpen(false);
-                          onRollback();
-                        }}
-                        disabled={working !== null || plugin.blocked}
-                        className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-slate-600 hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-300 dark:hover:bg-slate-800"
-                      >
-                        <Undo2 size={12} />
-                        Roll back to v{plugin.previous_version}
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setMenuOpen(false);
-                        onUninstall();
-                      }}
-                      disabled={working !== null}
-                      className="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-600 hover:bg-red-50 disabled:cursor-not-allowed disabled:opacity-50 dark:text-red-400 dark:hover:bg-red-950/30"
-                    >
-                      <Trash2 size={12} />
-                      Uninstall
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                {plugin.previous_version && (
+                  <DropdownMenuItem
+                    onClick={onRollback}
+                    disabled={working !== null || plugin.blocked}
+                  >
+                    <Undo2 size={12} />
+                    Roll back to v{plugin.previous_version}
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuItem
+                  variant="destructive"
+                  onClick={onUninstall}
+                  disabled={working !== null}
+                >
+                  <Trash2 size={12} />
+                  Uninstall
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           )}
           <label className="relative ml-1 inline-flex shrink-0 cursor-pointer items-center">
             <input
