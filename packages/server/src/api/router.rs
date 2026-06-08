@@ -65,7 +65,7 @@ pub fn create(state: Arc<AppState>, web_ui: bool) -> Router {
         )
         .route(
             "/conversations/{id}",
-            delete(handlers::chat::delete_conversation),
+            delete(handlers::chat::delete_conversation).patch(handlers::chat::rename_conversation),
         )
         .route(
             "/conversations/{id}/compact",

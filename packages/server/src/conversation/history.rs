@@ -553,6 +553,23 @@ pub fn insert_summary_message(
     Ok(id)
 }
 
+pub fn update_conversation_title(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+    user_id: &str,
+    title: &str,
+) -> anyhow::Result<()> {
+    let now = Utc::now().to_rfc3339();
+    let changed = conn.execute(
+        "UPDATE conversations SET title = ?1, updated_at = ?2 WHERE id = ?3 AND user_id = ?4",
+        rusqlite::params![title, now, conversation_id, user_id],
+    )?;
+    if changed == 0 {
+        anyhow::bail!("conversation not found or access denied");
+    }
+    Ok(())
+}
+
 /// Lists conversations for a user, newest first.
 pub fn list_conversations(
     conn: &Connection,
@@ -768,6 +785,20 @@ mod tests {
             let conv = create_conversation(conn, &uid)?;
             let result = get_conversation(conn, &conv.id, "other-user-id")?;
             assert!(result.is_none());
+            Ok(())
+        })
+        .unwrap();
+    }
+
+    #[test]
+    fn update_title() {
+        let pool = open_test_db();
+        let uid = insert_user(&pool);
+        pool.call_sync(|conn| {
+            let conv = create_conversation(conn, &uid)?;
+            update_conversation_title(conn, &conv.id, &uid, "New Title")?;
+            let updated = get_conversation(conn, &conv.id, &uid)?.unwrap();
+            assert_eq!(updated.title, "New Title");
             Ok(())
         })
         .unwrap();

@@ -136,7 +136,8 @@ pub fn set_personality(
     user_id: &str,
     name: &str,
     content: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<String>> {
+    let old = get_personality(conn, user_id, name)?.map(|(c, _)| c);
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "INSERT INTO user_personality (user_id, name, content, updated_at)
@@ -146,25 +147,27 @@ pub fn set_personality(
         params![user_id, name, content, now],
     )
     .context("failed to upsert personality")?;
-    Ok(())
+    Ok(old)
 }
 
 /// Append content to the end of a personality file (soul, identity, or user).
 ///
 /// Reads the current content, joins it with new content on a newline, and
 /// saves the result. Creates the file if it doesn't exist yet.
+/// Returns (old_content, new_content).
 pub fn append_personality(
     conn: &Connection,
     user_id: &str,
     name: &str,
     content: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<(Option<String>, String)> {
     let existing = get_personality(conn, user_id, name)?.map(|(c, _)| c);
     let combined = match existing {
-        Some(existing) if !existing.is_empty() => format!("{existing}\n{content}"),
+        Some(ref existing) if !existing.is_empty() => format!("{existing}\n{content}"),
         _ => content.to_string(),
     };
-    set_personality(conn, user_id, name, &combined)
+    set_personality(conn, user_id, name, &combined)?;
+    Ok((existing, combined))
 }
 
 // ── Memory CRUD ───────────────────────────────────────────────────────────────
@@ -205,7 +208,8 @@ pub fn write_memory(
     user_id: &str,
     path: &str,
     content: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<Option<String>> {
+    let old = read_memory(conn, user_id, path)?;
     let now = Utc::now().to_rfc3339();
     // INSERT OR REPLACE fires AFTER DELETE + AFTER INSERT triggers on conflict,
     // which keeps the FTS index correctly maintained.
@@ -215,25 +219,27 @@ pub fn write_memory(
         params![user_id, path, content, now],
     )
     .context("failed to write memory file")?;
-    Ok(())
+    Ok(old)
 }
 
 /// Append content to a memory file, creating it if it does not exist yet.
 ///
 /// Joins existing and new content with a newline so appended notes don't run
 /// together with what was already there.
+/// Returns (old_content, new_content).
 pub fn append_memory(
     conn: &Connection,
     user_id: &str,
     path: &str,
     content: &str,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<(Option<String>, String)> {
     let existing = read_memory(conn, user_id, path)?;
     let combined = match existing {
-        Some(existing) if !existing.is_empty() => format!("{existing}\n{content}"),
+        Some(ref existing) if !existing.is_empty() => format!("{existing}\n{content}"),
         _ => content.to_string(),
     };
-    write_memory(conn, user_id, path, &combined)
+    write_memory(conn, user_id, path, &combined)?;
+    Ok((existing, combined))
 }
 
 /// Rename or move a memory file. Returns `true` if a row was moved, `false`

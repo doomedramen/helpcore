@@ -98,10 +98,11 @@ impl ToolCatalog {
         &self,
         state: &AppState,
         user_id: &str,
+        conversation_id: Option<&str>,
         call: &ToolCall,
     ) -> anyhow::Result<String> {
         if is_builtin_tool(&call.name) {
-            return execute_builtin(state, user_id, call).await;
+            return execute_builtin(state, user_id, conversation_id, call).await;
         }
         let runtime = self
             .tools
@@ -137,6 +138,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "memory_search",
     "personality_write",
     "personality_append",
+    "conversation_rename",
     "skill_read",
 ];
 
@@ -293,6 +295,25 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "conversation_rename".into(),
+            description: "Rename the current conversation. Use this when the \
+                conversation's main topic has clearly shifted from its current title. \
+                Don't rename for minor tangents — only when the central subject has \
+                changed significantly."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                        "description": "The new title for the conversation"
+                    }
+                },
+                "required": ["title"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
             name: "skill_read".into(),
             description: "Read the full instructions for an enabled plugin skill by name. \
                 Use this when you need detailed guidance on how to use a plugin's tools \
@@ -326,6 +347,7 @@ fn require_str_arg<'a>(arguments: &'a serde_json::Value, key: &str) -> anyhow::R
 async fn execute_builtin(
     state: &AppState,
     user_id: &str,
+    conversation_id: Option<&str>,
     call: &ToolCall,
 ) -> anyhow::Result<String> {
     let uid = user_id.to_string();
@@ -352,20 +374,36 @@ async fn execute_builtin(
         "memory_write" => {
             let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
             let content = require_str_arg(&call.arguments, "content")?.to_string();
-            state
+            let path_for_db = path.clone();
+            let content_for_db = content.clone();
+            let old_content = state
                 .db
-                .call(move |conn| memory::write_memory(conn, &uid, &path, &content))
+                .call(move |conn| memory::write_memory(conn, &uid, &path_for_db, &content_for_db))
                 .await?;
-            Ok("saved".to_string())
+            Ok(serde_json::json!({
+                "action": "write",
+                "path": path,
+                "content": content,
+                "old_content": old_content
+            })
+            .to_string())
         }
         "memory_append" => {
             let path = memory::sanitize_path(require_str_arg(&call.arguments, "path")?)?;
             let content = require_str_arg(&call.arguments, "content")?.to_string();
-            state
+            let path_for_db = path.clone();
+            let content_for_db = content.clone();
+            let (old_content, combined) = state
                 .db
-                .call(move |conn| memory::append_memory(conn, &uid, &path, &content))
+                .call(move |conn| memory::append_memory(conn, &uid, &path_for_db, &content_for_db))
                 .await?;
-            Ok("appended".to_string())
+            Ok(serde_json::json!({
+                "action": "append",
+                "path": path,
+                "content": combined,
+                "old_content": old_content
+            })
+            .to_string())
         }
         "memory_move" => {
             let from = memory::sanitize_path(require_str_arg(&call.arguments, "from")?)?;
@@ -419,11 +457,21 @@ async fn execute_builtin(
                 anyhow::bail!("personality name must be one of 'soul', 'identity', 'user'");
             }
             let content = require_str_arg(&call.arguments, "content")?.to_string();
-            state
+            let name_for_db = name.clone();
+            let content_for_db = content.clone();
+            let old_content = state
                 .db
-                .call(move |conn| memory::set_personality(conn, &uid, &name, &content))
+                .call(move |conn| {
+                    memory::set_personality(conn, &uid, &name_for_db, &content_for_db)
+                })
                 .await?;
-            Ok("saved".to_string())
+            Ok(serde_json::json!({
+                "action": "personality_write",
+                "name": name,
+                "content": content,
+                "old_content": old_content
+            })
+            .to_string())
         }
         "personality_append" => {
             let name = require_str_arg(&call.arguments, "name")?.to_string();
@@ -431,11 +479,36 @@ async fn execute_builtin(
                 anyhow::bail!("personality name must be one of 'soul', 'identity', 'user'");
             }
             let content = require_str_arg(&call.arguments, "content")?.to_string();
+            let name_for_db = name.clone();
+            let content_for_db = content.clone();
+            let (old_content, combined) = state
+                .db
+                .call(move |conn| {
+                    memory::append_personality(conn, &uid, &name_for_db, &content_for_db)
+                })
+                .await?;
+            Ok(serde_json::json!({
+                "action": "personality_append",
+                "name": name,
+                "content": combined,
+                "old_content": old_content
+            })
+            .to_string())
+        }
+        "conversation_rename" => {
+            let cid = conversation_id
+                .context("conversation_rename can only be called from within a conversation")?
+                .to_string();
+            let title = require_str_arg(&call.arguments, "title")?.to_string();
             state
                 .db
-                .call(move |conn| memory::append_personality(conn, &uid, &name, &content))
+                .call(move |conn| {
+                    crate::conversation::history::update_conversation_title(
+                        conn, &cid, &uid, &title,
+                    )
+                })
                 .await?;
-            Ok("appended".to_string())
+            Ok("renamed".to_string())
         }
         "skill_read" => {
             let name = require_str_arg(&call.arguments, "name")?.to_string();

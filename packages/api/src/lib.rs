@@ -176,6 +176,11 @@ pub struct SseToolResult {
 // ── Conversations ─────────────────────────────────────────────────────────────
 
 #[derive(Debug, Serialize, Deserialize)]
+pub struct RenameConversationRequest {
+    pub title: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
 pub struct ConversationSummary {
     pub id: String,
     pub title: String,

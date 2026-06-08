@@ -10,11 +10,9 @@ use futures_util::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 
 use helpcore_api::{
-    ChatRequest, ConversationSummary, MessageSummary, RetryRequest, SseChunk, SseDone, SseStarted,
-    SseToolCall, SseToolResult,
+    ChatRequest, CompactResponse, ConversationSummary, MessageSummary, RenameConversationRequest,
+    RetryRequest, SseChunk, SseDone, SseStarted, SseToolCall, SseToolResult,
 };
-
-use helpcore_api::CompactResponse;
 
 use crate::{
     api::{error::AppError, extractor::AuthUser},
@@ -417,7 +415,10 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
                 })
                 .unwrap_or_else(|_| Event::default());
             let _ = job.tx.send(Ok(call_event)).await;
-            let result = match tool_catalog.execute(&job.state, &job.user_id, call).await {
+            let result = match tool_catalog
+                .execute(&job.state, &job.user_id, Some(&job.conversation_id), call)
+                .await
+            {
                 Ok(result) => serde_json::json!({"ok": true, "result": result}).to_string(),
                 Err(error) => {
                     let msg = error.to_string();
@@ -595,6 +596,30 @@ pub async fn get_messages(
         .await?;
 
     Ok(Json(msgs))
+}
+
+// ── PATCH /conversations/:id ─────────────────────────────────────────────────
+
+pub async fn rename_conversation(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Path(conv_id): Path<String>,
+    Json(req): Json<RenameConversationRequest>,
+) -> Result<StatusCode, AppError> {
+    let user_id = auth_user.id.clone();
+    let cid = conv_id.clone();
+    let title = req.title.trim().to_string();
+
+    if title.is_empty() {
+        return Err(AppError::BadRequest("title cannot be empty".into()));
+    }
+
+    state
+        .db
+        .call(move |conn| history::update_conversation_title(conn, &cid, &user_id, &title))
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT)
 }
 
 // ── DELETE /conversations/:id ─────────────────────────────────────────────────

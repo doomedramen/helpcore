@@ -77,11 +77,37 @@ function toolArgsPreview(name: string, args: Record<string, unknown>): string {
   return "";
 }
 
-function inferToolResultType(content: string): { kind: string } | null {
+function inferToolResultType(content: string): { kind: string; data?: any } | null {
+  let resultValue: any = content;
+
   try {
     const parsed = JSON.parse(content);
-    if (Array.isArray(parsed) && parsed.length > 0) {
-      const first = parsed[0] as Record<string, unknown>;
+    if (parsed && typeof parsed === "object" && "ok" in parsed) {
+      if (parsed.ok === false) return { kind: "error" };
+      resultValue = parsed.result;
+      // Result might be a JSON string itself
+      if (typeof resultValue === "string") {
+        try {
+          const nested = JSON.parse(resultValue);
+          resultValue = nested;
+        } catch {
+          // not nested JSON
+        }
+      }
+    } else {
+      resultValue = parsed;
+    }
+  } catch {
+    // not JSON
+  }
+
+  if (typeof resultValue === "object" && resultValue !== null && "action" in resultValue) {
+    return { kind: resultValue.action, data: resultValue };
+  }
+
+  if (Array.isArray(resultValue) && resultValue.length > 0) {
+    const first = resultValue[0] as Record<string, unknown>;
+    if (first && typeof first === "object") {
       if ("path" in first && "updated_at" in first && !("content" in first)) {
         return { kind: "memory_list" };
       }
@@ -89,17 +115,16 @@ function inferToolResultType(content: string): { kind: string } | null {
         return { kind: "memory_search" };
       }
     }
-    if (typeof parsed === "object" && parsed !== null && "ok" in parsed && parsed.ok === false) {
-      return { kind: "error" };
-    }
-  } catch {
-    // not JSON
   }
-  if (content === "saved") return { kind: "write" };
-  if (content === "appended") return { kind: "append" };
-  if (content === "deleted") return { kind: "delete" };
-  if (content === "moved") return { kind: "move" };
-  if (content.startsWith("(no memory file")) return { kind: "not_found" };
+
+  if (resultValue === "saved") return { kind: "write" };
+  if (resultValue === "appended") return { kind: "append" };
+  if (resultValue === "deleted") return { kind: "delete" };
+  if (resultValue === "moved") return { kind: "move" };
+  if (typeof resultValue === "string" && resultValue.startsWith("(no memory file")) {
+    return { kind: "not_found" };
+  }
+
   return { kind: "generic" };
 }
 
@@ -133,48 +158,74 @@ export default function ToolMessageBubble({
     : undefined;
 
   function resultSummary(): string {
-    if (inferred?.kind === "write" && matchingCall) {
-      const path = matchingCall.arguments.path as string;
-      if (matchingCall.name === "personality_write") {
-        return `Updated ${matchingCall.arguments.name as string} personality`;
-      }
+    const kind = inferred?.kind;
+    const data = inferred?.data;
+
+    if ((kind === "write" || kind === "memory_write") && matchingCall) {
+      const path = (data?.path as string) ?? (matchingCall.arguments.path as string);
       return `Saved ${path ?? "file"}`;
     }
-    if (inferred?.kind === "append" && matchingCall) {
-      return `Appended to ${(matchingCall.arguments.path as string) ?? "file"}`;
+    if ((kind === "personality_write" || kind === "personality_append") && data) {
+      return `Updated ${data.name} personality`;
     }
-    if (inferred?.kind === "delete" && matchingCall) {
+    if ((kind === "append" || kind === "memory_append") && matchingCall) {
+      const path = (data?.path as string) ?? (matchingCall.arguments.path as string);
+      return `Appended to ${path ?? "file"}`;
+    }
+    if (kind === "delete" && matchingCall) {
       return `Deleted ${(matchingCall.arguments.path as string) ?? "file"}`;
     }
-    if (inferred?.kind === "move" && matchingCall) {
+    if (kind === "move" && matchingCall) {
       return `Moved ${(matchingCall.arguments.from as string) ?? "?"} → ${(matchingCall.arguments.to as string) ?? "?"}`;
     }
-    if (inferred?.kind === "memory_list") {
+    if (kind === "memory_list") {
       try {
-        const files = JSON.parse(message.content) as { path: string }[];
+        const content = unwrapResult(message.content);
+        const files = (typeof content === "string" ? JSON.parse(content) : content) as {
+          path: string;
+        }[];
         return `Found ${files.length} memory file${files.length === 1 ? "" : "s"}`;
       } catch {
         return "Listed memory files";
       }
     }
-    if (inferred?.kind === "memory_search") {
+    if (kind === "memory_search") {
       try {
-        const results = JSON.parse(message.content) as { path: string }[];
+        const content = unwrapResult(message.content);
+        const results = (typeof content === "string" ? JSON.parse(content) : content) as {
+          path: string;
+        }[];
         return `Search: ${results.length} result${results.length === 1 ? "" : "s"}`;
       } catch {
         return "Search results";
       }
     }
-    if (inferred?.kind === "not_found") return "Not found";
-    if (inferred?.kind === "generic" && matchingCall) {
+    if (kind === "not_found") return "Not found";
+    if (kind === "generic" && matchingCall) {
       if (matchingCall.name === "memory_read") {
-        const lines = message.content.split("\n");
+        const content = unwrapResult(message.content);
+        const lines = typeof content === "string" ? content.split("\n") : [];
         if (lines.length <= 3) return `Read ${matchingCall.arguments.path ?? "file"}`;
         return `Read ${matchingCall.arguments.path ?? "file"} (${lines.length} lines)`;
       }
     }
-    if (message.content.length < 60) return message.content;
-    return `${message.content.slice(0, 60)}…`;
+    const finalContent = unwrapResult(message.content);
+    const displayContent =
+      typeof finalContent === "string" ? finalContent : JSON.stringify(finalContent);
+    if (displayContent.length < 60) return displayContent;
+    return `${displayContent.slice(0, 60)}…`;
+  }
+
+  function unwrapResult(content: string): any {
+    try {
+      const parsed = JSON.parse(content);
+      if (parsed && typeof parsed === "object" && "ok" in parsed) {
+        return parsed.result;
+      }
+      return parsed;
+    } catch {
+      return content;
+    }
   }
 
   return (
@@ -200,9 +251,34 @@ export default function ToolMessageBubble({
           )}
         </button>
         {expanded && (
-          <pre className="overflow-x-auto border-t border-border px-3 py-2 font-mono text-foreground max-h-[300px] overflow-y-auto">
-            {message.content}
-          </pre>
+          <div className="overflow-x-auto border-t border-border px-3 py-2 font-mono text-foreground max-h-[400px] overflow-y-auto">
+            {inferred?.data?.content !== undefined ? (
+              <div className="flex flex-col gap-2">
+                {inferred.data.old_content && (
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[10px] uppercase text-muted-foreground">Before</span>
+                    <pre className="whitespace-pre-wrap rounded bg-red-500/5 p-2 text-red-200/70 line-through">
+                      {inferred.data.old_content}
+                    </pre>
+                  </div>
+                )}
+                <div className="flex flex-col gap-1">
+                  <span className="text-[10px] uppercase text-muted-foreground">
+                    {inferred.data.old_content ? "After" : "Content"}
+                  </span>
+                  <pre className="whitespace-pre-wrap rounded bg-emerald-500/5 p-2 text-emerald-200/90">
+                    {inferred.data.content}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <pre className="whitespace-pre-wrap">
+                {typeof unwrapResult(message.content) === "string"
+                  ? unwrapResult(message.content)
+                  : JSON.stringify(unwrapResult(message.content), null, 2)}
+              </pre>
+            )}
+          </div>
         )}
       </div>
     </div>
