@@ -136,6 +136,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "memory_delete",
     "memory_search",
     "personality_write",
+    "personality_append",
     "skill_read",
 ];
 
@@ -253,8 +254,8 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
             description: "Replace the content of one of your own personality files: \
                 'soul' (your tone and personality), 'identity' (your name and \
                 background), or 'user' (facts about the person you're talking to). This \
-                replaces the whole file, so re-read its current contents from the system \
-                prompt first and fold them into the new version rather than losing them."
+                replaces the whole file — use personality_append for small additions \
+                that don't need to rewrite everything."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -263,6 +264,27 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                         "type": "string",
                         "enum": ["soul", "identity", "user"],
                         "description": "Which personality file to replace"
+                    },
+                    "content": content_property
+                },
+                "required": ["name", "content"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "personality_append".into(),
+            description: "Append content to the end of one of your own personality \
+                files ('soul', 'identity', or 'user'). Use this to add a single fact \
+                or preference without rewriting the whole file. Creates the file if \
+                it doesn't exist yet."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "enum": ["soul", "identity", "user"],
+                        "description": "Which personality file to append to"
                     },
                     "content": content_property
                 },
@@ -402,6 +424,18 @@ async fn execute_builtin(
                 .call(move |conn| memory::set_personality(conn, &uid, &name, &content))
                 .await?;
             Ok("saved".to_string())
+        }
+        "personality_append" => {
+            let name = require_str_arg(&call.arguments, "name")?.to_string();
+            if !["soul", "identity", "user"].contains(&name.as_str()) {
+                anyhow::bail!("personality name must be one of 'soul', 'identity', 'user'");
+            }
+            let content = require_str_arg(&call.arguments, "content")?.to_string();
+            state
+                .db
+                .call(move |conn| memory::append_personality(conn, &uid, &name, &content))
+                .await?;
+            Ok("appended".to_string())
         }
         "skill_read" => {
             let name = require_str_arg(&call.arguments, "name")?.to_string();

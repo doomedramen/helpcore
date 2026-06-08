@@ -289,7 +289,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         .await?;
     let tool_catalog = ToolCatalog::load(&job.state, &job.user_id).await?;
 
-    let make_opts = || ContextOptions {
+    let make_opts = |est: usize| ContextOptions {
         soul: personality.soul.as_deref(),
         identity: personality.identity.as_deref(),
         user_profile: personality.user_profile.as_deref(),
@@ -297,9 +297,21 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         plugin_skills: &plugin_skills,
         timezone: Some(job.user_timezone.as_str()),
         memory_leaning: Some(job.user_memory_leaning.as_str()),
+        context_limit: Some(job.provider.context_limit()),
+        estimated_tokens: Some(est),
     };
 
-    let probe = context::assemble(&job.history, &job.user_content, make_opts());
+    // Rough token estimate from history + user message before assembly.
+    // Matches compact::estimate_tokens() heuristic (content.len() / 4 + 4 per msg).
+    let initial_est = job
+        .history
+        .iter()
+        .map(|m| m.content.len() / 4 + 4)
+        .sum::<usize>()
+        + job.user_content.len() / 4
+        + 4;
+
+    let probe = context::assemble(&job.history, &job.user_content, make_opts(initial_est));
     if compact::needs_compaction(&probe, job.provider.context_limit()) {
         tracing::info!(
             conversation_id = %job.conversation_id,
@@ -323,7 +335,16 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         }
     }
 
-    let mut messages = context::assemble(&job.history, &job.user_content, make_opts());
+    // Re-estimate after possible compaction.
+    let est = job
+        .history
+        .iter()
+        .map(|m| m.content.len() / 4 + 4)
+        .sum::<usize>()
+        + job.user_content.len() / 4
+        + 4;
+
+    let mut messages = context::assemble(&job.history, &job.user_content, make_opts(est));
     for round in 0..=8 {
         let (assistant_content, tool_calls) =
             complete_provider_round(job, &messages, tool_catalog.definitions()).await?;

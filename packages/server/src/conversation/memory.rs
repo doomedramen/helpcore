@@ -149,6 +149,24 @@ pub fn set_personality(
     Ok(())
 }
 
+/// Append content to the end of a personality file (soul, identity, or user).
+///
+/// Reads the current content, joins it with new content on a newline, and
+/// saves the result. Creates the file if it doesn't exist yet.
+pub fn append_personality(
+    conn: &Connection,
+    user_id: &str,
+    name: &str,
+    content: &str,
+) -> anyhow::Result<()> {
+    let existing = get_personality(conn, user_id, name)?.map(|(c, _)| c);
+    let combined = match existing {
+        Some(existing) if !existing.is_empty() => format!("{existing}\n{content}"),
+        _ => content.to_string(),
+    };
+    set_personality(conn, user_id, name, &combined)
+}
+
 // ── Memory CRUD ───────────────────────────────────────────────────────────────
 
 /// List all memory files for a user (path + timestamp, no content).

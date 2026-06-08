@@ -1,6 +1,6 @@
 use chrono_tz::Tz;
 use helpcore_api::MessageSummary;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     conversation::memory::MemoryResult,
@@ -37,6 +37,10 @@ pub struct ContextOptions<'a> {
     /// How heavily the assistant should lean on memory. One of: "off", "light", "moderate", "heavy".
     /// Defaults to "moderate" when absent.
     pub memory_leaning: Option<&'a str>,
+    /// The provider's context window limit in tokens.
+    pub context_limit: Option<u32>,
+    /// Estimated token count of the assembled message list.
+    pub estimated_tokens: Option<usize>,
 }
 
 /// Assembles the full message list sent to the provider.
@@ -145,9 +149,10 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
             out.push_str(
                 "Memory is extremely important. Actively look for useful facts, preferences, \
                  and context worth remembering. Proactively write memory files whenever you \
-                 learn something meaningful about the user, their projects, or their preferences. \
-                 When in doubt, write it down — the user wants you to build a rich understanding \
-                 over time. Search memory aggressively for relevant context before responding.\n",
+                 learn something durable about the user, their projects, or their preferences. \
+                 Save preferences and meaningful facts, but skip one-off details or passing \
+                 comments — the user wants rich context, not noise. Search memory aggressively \
+                 for relevant context before responding.\n",
             );
         }
         _ => {
@@ -180,8 +185,26 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
              calling its tools for the first time), use the `skill_read` tool with the \
              plugin name exactly as shown.\n\n",
         );
+
+        // Group skills by prefix (category). Multi-tool plugins share a prefix
+        // separated by _ or -; single-tool plugins go under "Other".
+        let mut groups: BTreeMap<String, Vec<&PluginSkill>> = BTreeMap::new();
         for skill in opts.plugin_skills {
-            out.push_str(&format!("- **{}**: {}\n", skill.name, skill.brief));
+            let category = skill
+                .name
+                .split_once('_')
+                .or_else(|| skill.name.split_once('-'))
+                .map(|(prefix, _)| capitalize(prefix))
+                .unwrap_or_else(|| "Other".to_string());
+            groups.entry(category).or_default().push(skill);
+        }
+
+        for (category, skills) in &groups {
+            out.push_str(&format!("**{}**\n", category));
+            for skill in skills {
+                out.push_str(&format!("- `{}`: {}\n", skill.name, skill.brief));
+            }
+            out.push('\n');
         }
     }
 
@@ -195,7 +218,24 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
         .format("%A, %B %-d, %Y");
     out.push_str(&format!("\n\n## Current date\n{today}"));
 
+    if let (Some(limit), Some(tokens)) = (opts.context_limit, opts.estimated_tokens) {
+        let pct = (tokens as f64 / limit as f64 * 100.0) as u32;
+        if pct > 60 {
+            out.push_str(&format!(
+                "\n\n## Context budget\n~{pct}% used (limit {limit} tokens)."
+            ));
+        }
+    }
+
     out
+}
+
+fn capitalize(s: &str) -> String {
+    let mut c = s.chars();
+    match c.next() {
+        None => String::new(),
+        Some(f) => f.to_uppercase().collect::<String>() + c.as_str(),
+    }
 }
 
 #[cfg(test)]
