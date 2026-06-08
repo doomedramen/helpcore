@@ -78,7 +78,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
         <BrandMark compact inverse />
         <button
           onClick={() => setMobileOpen(false)}
-          className="rounded-xl p-2 text-slate-500 transition hover:bg-white/5 hover:text-white md:hidden"
+          className="rounded-xl p-2 text-sidebar-foreground/50 transition hover:bg-sidebar-foreground/5 hover:text-sidebar-foreground md:hidden"
           aria-label="Close menu"
         >
           <X size={18} />
@@ -88,7 +88,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
       <div className="px-3 pb-4">
         <button
           onClick={handleNew}
-          className="flex w-full items-center justify-center gap-2 rounded-xl bg-white px-3 py-2.5 text-sm font-semibold text-slate-950 shadow-lg shadow-black/10 transition hover:bg-indigo-50"
+          className="flex w-full items-center justify-center gap-2 rounded-xl bg-sidebar-foreground px-3 py-2.5 text-sm font-semibold text-sidebar shadow-lg shadow-black/10 transition hover:bg-sidebar-foreground/90"
         >
           <MessageSquarePlus size={16} className="shrink-0" />
           New chat
@@ -96,14 +96,14 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
       </div>
 
       <div className="px-5 pb-2 pt-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-slate-600">
+        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/40">
           Recent
         </p>
       </div>
 
       <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-3">
         {conversations.length === 0 && (
-          <p className="px-3 py-3 text-xs leading-5 text-slate-600">
+          <p className="px-3 py-3 text-xs leading-5 text-sidebar-foreground/40">
             Your recent conversations will appear here.
           </p>
         )}
@@ -114,8 +114,8 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
               key={conv.id}
               className={`group flex items-center rounded-xl transition ${
                 active
-                  ? "bg-white/10 text-white"
-                  : "text-slate-400 hover:bg-white/[0.055] hover:text-slate-200"
+                  ? "bg-sidebar-foreground/10 text-sidebar-foreground"
+                  : "text-sidebar-foreground/60 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground/85"
               }`}
             >
               <button
@@ -129,7 +129,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
               </button>
               <button
                 onClick={() => setDeleteTarget(conv.id)}
-                className="mr-1.5 shrink-0 rounded-lg p-1.5 text-slate-600 opacity-70 transition hover:bg-red-500/10 hover:text-red-300 md:opacity-0 md:group-hover:opacity-100"
+                className="mr-1.5 shrink-0 rounded-lg p-1.5 text-sidebar-foreground/40 opacity-70 transition hover:bg-red-500/10 hover:text-red-300 md:opacity-0 md:group-hover:opacity-100"
                 aria-label="Delete conversation"
               >
                 <Trash2 size={13} />
@@ -139,16 +139,16 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
         })}
       </nav>
 
-      <div className="mx-3 border-t border-white/[0.08] px-1 pb-3 pt-3">
+      <div className="mx-3 border-t border-sidebar-foreground/[0.08] px-1 pb-3 pt-3">
         <div className="mb-2 flex items-center gap-2.5 px-2">
-          <div className="grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-400/30 to-teal-400/20 text-xs font-semibold text-indigo-100 ring-1 ring-white/10">
+          <div className="grid size-8 shrink-0 place-items-center rounded-full bg-gradient-to-br from-indigo-400/30 to-teal-400/20 text-xs font-semibold text-sidebar-foreground ring-1 ring-sidebar-foreground/10">
             {(currentUser?.display_name ?? currentUser?.email ?? "H").charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
-            <p className="truncate text-xs font-medium text-slate-200">
+            <p className="truncate text-xs font-medium text-sidebar-foreground/85">
               {currentUser?.display_name ?? "Your workspace"}
             </p>
-            <p className="truncate text-[11px] text-slate-600">{currentUser?.email}</p>
+            <p className="truncate text-[11px] text-sidebar-foreground/40">{currentUser?.email}</p>
           </div>
         </div>
 
@@ -156,8 +156,8 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
           onClick={() => handleNavigate("/settings/")}
           className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${
             isSettingsPath(pathname)
-              ? "bg-white/10 text-white"
-              : "text-slate-500 hover:bg-white/[0.055] hover:text-slate-200"
+              ? "bg-sidebar-foreground/10 text-sidebar-foreground"
+              : "text-sidebar-foreground/50 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground/85"
           }`}
         >
           <Settings size={15} className="shrink-0" />
@@ -168,8 +168,8 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
             onClick={() => handleNavigate("/admin/")}
             className={`flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm transition ${
               pathname.startsWith("/admin")
-                ? "bg-white/10 text-white"
-                : "text-slate-500 hover:bg-white/[0.055] hover:text-slate-200"
+                ? "bg-sidebar-foreground/10 text-sidebar-foreground"
+                : "text-sidebar-foreground/50 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground/85"
             }`}
           >
             <Shield size={15} className="shrink-0" />
@@ -179,7 +179,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
         <ThemeToggle variant="segmented" className="px-3 py-2" />
         <button
           onClick={handleLogout}
-          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-slate-500 transition hover:bg-white/[0.055] hover:text-slate-200"
+          className="flex w-full items-center gap-2 rounded-xl px-3 py-2 text-sm text-sidebar-foreground/50 transition hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground/85"
         >
           <LogOut size={15} className="shrink-0" />
           Sign out
@@ -209,7 +209,7 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
       )}
 
       <aside
-        className={`h-full w-[17rem] shrink-0 flex-col border-r border-white/[0.06] bg-[#11131d] text-slate-300 shadow-2xl shadow-slate-950/10 ${
+        className={`h-full w-[17rem] shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground shadow-2xl shadow-slate-950/10 ${
           mobileOpen ? "fixed inset-y-0 left-0 z-50 flex" : "hidden"
         } md:relative md:flex`}
       >
