@@ -11,6 +11,10 @@ use crate::{
 /// Baseline system prompt — edit `prompts/core.md` to change behaviour.
 const CORE_INSTRUCTIONS: &str = include_str!("../../../../prompts/core.md");
 
+/// Chart and diagram capabilities — injected as a non-negotiable capability section,
+/// not personality. Edit `prompts/charts.md` to add or change rendering formats.
+const CHARTS_CAPABILITIES: &str = include_str!("../../../../prompts/charts.md");
+
 /// Rules injected when the user has memory files — edit `prompts/memory_rules.md`.
 const MEMORY_RULES: &str = include_str!("../../../../prompts/memory_rules.md");
 
@@ -106,6 +110,10 @@ pub fn assemble(
 
 fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
     let mut out = CORE_INSTRUCTIONS.to_string();
+
+    // Capabilities — non-negotiable, always present regardless of personality
+    out.push_str("\n\n");
+    out.push_str(CHARTS_CAPABILITIES);
 
     if let Some(soul) = opts.soul {
         out.push_str("\n\n## Soul\n");

@@ -11,9 +11,17 @@ import {
   listConversations,
   listProviders,
   retryMessage,
+  submitFeedback,
 } from "@/lib/api";
 import { useAuth } from "@/context/auth";
-import type { ConversationSummary, Message, SseDone, SseStarted } from "@/lib/types";
+import type {
+  ConversationSummary,
+  Message,
+  SseDone,
+  SseStarted,
+  SseToolCall,
+  SseToolResult,
+} from "@/lib/types";
 import {
   Conversation,
   ConversationContent,
@@ -30,31 +38,31 @@ import {
   PromptInputFooter,
   PromptInputTools,
 } from "@/components/ai-elements/prompt-input";
+import {
+  ModelSelector,
+  ModelSelectorTrigger,
+  ModelSelectorContent,
+  ModelSelectorInput,
+  ModelSelectorItem,
+  ModelSelectorList,
+  ModelSelectorName,
+} from "@/components/ai-elements/model-selector";
+import {
+  Queue,
+  QueueItem,
+  QueueItemContent,
+  QueueItemActions,
+  QueueItemAction,
+} from "@/components/ai-elements/queue";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { Shimmer } from "@/components/ai-elements/shimmer";
 import BrandMark from "./brand-mark";
-import ToolMessageBubble from "./tool-message-bubble";
+import ToolMessageAdapter, { getToolLabel, getToolColor, getToolIcon } from "./tool-adapter";
 import { MessageContentWithAssets } from "./asset-renderer";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/app/components/ui/select";
+import PromptAttachments from "./prompt-attachments";
+import CodeBlockInjector from "./code-copy-button";
 import { Badge } from "@/app/components/ui/badge";
-import {
-  FileText,
-  FolderOpen,
-  MoveRight,
-  Pencil,
-  Plus,
-  Search,
-  Terminal,
-  Trash2,
-  Shuffle,
-  Sparkles,
-} from "lucide-react";
+import { Shuffle, Sparkles, Terminal } from "lucide-react";
 
 interface QueueItem {
   id: string;
@@ -71,56 +79,6 @@ const isActive = (message: Message) =>
   message.status === "pending" || message.status === "streaming";
 
 let nextQueueId = 1;
-
-// Tool meta for inline badges
-const TOOL_META: Record<string, { icon: React.ReactNode; label: string; color: string }> = {
-  memory_list: {
-    icon: <FolderOpen size={11} />,
-    label: "List memory",
-    color: "text-slate-500 dark:text-slate-400",
-  },
-  memory_read: {
-    icon: <FileText size={11} />,
-    label: "Read",
-    color: "text-blue-500 dark:text-blue-400",
-  },
-  memory_write: {
-    icon: <Pencil size={11} />,
-    label: "Write",
-    color: "text-emerald-500 dark:text-emerald-400",
-  },
-  memory_append: {
-    icon: <Plus size={11} />,
-    label: "Append",
-    color: "text-emerald-500 dark:text-emerald-400",
-  },
-  memory_move: {
-    icon: <MoveRight size={11} />,
-    label: "Move",
-    color: "text-amber-500 dark:text-amber-400",
-  },
-  memory_delete: {
-    icon: <Trash2 size={11} />,
-    label: "Delete",
-    color: "text-red-500 dark:text-red-400",
-  },
-  memory_search: {
-    icon: <Search size={11} />,
-    label: "Search",
-    color: "text-violet-500 dark:text-violet-400",
-  },
-};
-
-function toolArgsPreview(name: string, args: Record<string, unknown>): string {
-  if (name === "personality_write") return `/${(args.name as string) ?? "?"}`;
-  const path = args.path ?? args.from ?? null;
-  if (path && typeof path === "string") {
-    const label = path.split("/").pop() ?? path;
-    if (name === "memory_move") return `${label} → ${(args.to as string) ?? "?"}`;
-    return label;
-  }
-  return "";
-}
 
 export default function ChatWindow({ conversationId, onConversationCreated }: Props) {
   const { accessToken, currentUser, refreshAccessToken } = useAuth();
@@ -142,6 +100,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   }, []);
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [shuffleKey, setShuffleKey] = useState(0);
+  const [liveToolCalls, setLiveToolCalls] = useState<Record<string, string>>({});
   const providerSelectionsRef = useRef<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const processingRef = useRef(false);
@@ -204,6 +163,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       generationConvRef.current = null;
       prevConvRef.current = conversationId;
       setQueue([]);
+      setLiveToolCalls({});
     }
   }, [conversationId]);
 
@@ -216,6 +176,16 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       ]);
     },
     [accessToken, mutateGlobal],
+  );
+
+  const handleContentError = useCallback(
+    (type: string, message: string) => {
+      if (!conversationId || !accessToken) return;
+      submitFeedback(conversationId, accessToken, type, message).catch(() => {
+        // best-effort — no user-facing feedback needed
+      });
+    },
+    [conversationId, accessToken],
   );
 
   const streamHandlers = useCallback(
@@ -236,7 +206,18 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           const id = activeConversationId;
           if (id) void refreshConversation(id);
         },
+        onToolCall: (call: SseToolCall) => {
+          setLiveToolCalls((prev) => ({ ...prev, [call.id]: call.name }));
+        },
+        onToolResult: (result: SseToolResult) => {
+          setLiveToolCalls((prev) => {
+            const next = { ...prev };
+            delete next[result.id];
+            return next;
+          });
+        },
         onDone: (done: SseDone) => {
+          setLiveToolCalls({});
           void refreshConversation(done.conversation_id);
         },
       };
@@ -498,6 +479,14 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
             {providers.find((p) => p.id === selectedProviderId)?.name || "Choose a provider below"}
           </p>
         </div>
+        {Object.keys(liveToolCalls).length > 0 && (
+          <span className="flex items-center gap-1.5 text-[11px] text-indigo-600 dark:text-indigo-400">
+            <span className="size-1.5 rounded-full bg-current animate-pulse" />
+            {Object.values(liveToolCalls)
+              .map((n) => getToolLabel(n))
+              .join(", ")}
+          </span>
+        )}
         {toolCount > 0 && (
           <button
             type="button"
@@ -555,8 +544,11 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
             <div className="mx-auto w-full max-w-4xl space-y-5">
               {visibleMessages.map((message) => {
                 if (message.role === "tool") {
+                  const matchingCall = message.tool_call_id
+                    ? allToolCalls.find((c) => c.id === message.tool_call_id)
+                    : undefined;
                   return (
-                    <ToolMessageBubble key={message.id} message={message} calls={allToolCalls} />
+                    <ToolMessageAdapter key={message.id} message={message} call={matchingCall} />
                   );
                 }
 
@@ -564,7 +556,9 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                   return (
                     <AIMessage key={message.id} from="user">
                       <MessageContent>
-                        <MessageContentWithAssets>{message.content}</MessageContentWithAssets>
+                        <CodeBlockInjector>
+                          <MessageContentWithAssets>{message.content}</MessageContentWithAssets>
+                        </CodeBlockInjector>
                       </MessageContent>
                     </AIMessage>
                   );
@@ -603,22 +597,17 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                       {calls.length > 0 && (
                         <div className="flex flex-wrap gap-1 pb-2 mb-2 border-b border-border">
                           {calls.map((call) => {
-                            const meta = TOOL_META[call.name];
-                            const preview = toolArgsPreview(call.name, call.arguments);
-                            if (!meta) return null;
+                            const label = getToolLabel(call.name);
+                            const color = getToolColor(call.name);
+                            const icon = getToolIcon(call.name);
                             return (
                               <Badge
                                 key={call.id}
                                 variant="secondary"
                                 className="gap-1 text-[11px] font-medium"
                               >
-                                <span className={meta.color}>{meta.icon}</span>
-                                {meta.label}
-                                {preview && (
-                                  <span className="font-mono text-muted-foreground">
-                                    · {preview}
-                                  </span>
-                                )}
+                                <span className={color}>{icon}</span>
+                                {label}
                               </Badge>
                             );
                           })}
@@ -628,7 +617,11 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                       {msgActive && !message.content ? (
                         <Shimmer duration={1}>Thinking…</Shimmer>
                       ) : (
-                        <MessageContentWithAssets>{message.content}</MessageContentWithAssets>
+                        <CodeBlockInjector>
+                          <MessageContentWithAssets onContentError={handleContentError}>
+                            {message.content}
+                          </MessageContentWithAssets>
+                        </CodeBlockInjector>
                       )}
 
                       {msgActive && message.content && (
@@ -670,31 +663,39 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
 
       {/* Queue */}
       {queue.length > 0 && (
-        <div className="mx-auto w-full max-w-4xl space-y-2 px-3 pb-2 sm:px-5">
-          {queue.map((item) => (
-            <div
-              key={item.id}
-              className="flex items-start gap-2 rounded-2xl border border-dashed border-indigo-200 bg-indigo-50/45 px-4 py-3 text-sm text-slate-600 dark:border-indigo-900 dark:bg-indigo-950/20 dark:text-slate-400"
-            >
-              <div className="flex-1">
-                <div className="whitespace-pre-wrap leading-relaxed">{item.text}</div>
-                <div className="mt-1 text-xs text-slate-400 dark:text-slate-500">
-                  {providers.find((p) => p.id === item.providerId)?.name ??
-                    `Provider ${item.providerId.slice(0, 8)}…`}
-                </div>
-              </div>
-              <div className="flex shrink-0 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setQueue((prev) => prev.filter((q) => q.id !== item.id))}
-                  className="rounded-lg p-1.5 text-slate-400 transition-colors hover:bg-red-100 hover:text-red-600 dark:hover:bg-red-900/30 dark:hover:text-red-400"
-                  aria-label="Remove from queue"
-                >
-                  <Trash2 size={14} />
-                </button>
-              </div>
-            </div>
-          ))}
+        <div className="mx-auto w-full max-w-4xl px-3 pb-2 sm:px-5">
+          <Queue>
+            <ul className="flex flex-col gap-1">
+              {queue.map((item) => (
+                <QueueItem key={item.id}>
+                  <QueueItemContent>{item.text}</QueueItemContent>
+                  <QueueItemActions>
+                    <QueueItemAction
+                      onClick={() => setQueue((prev) => prev.filter((q) => q.id !== item.id))}
+                      aria-label="Remove from queue"
+                    >
+                      <svg
+                        width="14"
+                        height="14"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="2"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M3 6h18" />
+                        <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                        <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                        <line x1="10" y1="11" x2="10" y2="17" />
+                        <line x1="14" y1="11" x2="14" y2="17" />
+                      </svg>
+                    </QueueItemAction>
+                  </QueueItemActions>
+                </QueueItem>
+              ))}
+            </ul>
+          </Queue>
         </div>
       )}
 
@@ -708,30 +709,43 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
               }
             />
           </PromptInputBody>
+          <PromptAttachments />
           <PromptInputFooter>
             <PromptInputTools>
               <Sparkles size={13} className="shrink-0 text-indigo-500 dark:text-indigo-400" />
-              <Select
-                value={selectedProviderId}
-                onValueChange={(v) => handleProviderChange(v ?? "")}
-                disabled={providers.length === 0}
-              >
-                <SelectTrigger
-                  size="sm"
-                  className="h-7 max-w-[13rem] border-border/30 px-1.5 text-xs shadow-none hover:bg-muted data-[popup-open]:bg-muted"
-                >
-                  <SelectValue placeholder="No chat provider">
-                    {providers.find((p) => p.id === selectedProviderId)?.name ?? selectedProviderId}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent side="top" className="!min-w-[14rem]">
-                  {providers.map((p) => (
-                    <SelectItem key={p.id} value={p.id}>
-                      {p.name} · {p.default_model}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ModelSelector>
+                <ModelSelectorTrigger className="h-7 max-w-[13rem] border-border/30 px-1.5 text-xs shadow-none hover:bg-muted data-[popup-open]:bg-muted">
+                  {(() => {
+                    const p = providers.find((p) => p.id === selectedProviderId);
+                    return p ? (
+                      <span className="flex items-center gap-1.5 truncate">
+                        <ModelSelectorName>{p.name}</ModelSelectorName>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">
+                        {providers.length === 0 ? "No chat provider" : "Select provider"}
+                      </span>
+                    );
+                  })()}
+                </ModelSelectorTrigger>
+                <ModelSelectorContent>
+                  <ModelSelectorInput placeholder="Search providers..." />
+                  <ModelSelectorList>
+                    {providers.map((p) => (
+                      <ModelSelectorItem
+                        key={p.id}
+                        value={p.id}
+                        onSelect={() => handleProviderChange(p.id)}
+                      >
+                        <ModelSelectorName>{p.name}</ModelSelectorName>
+                        <span className="ml-auto text-muted-foreground text-xs">
+                          {p.default_model}
+                        </span>
+                      </ModelSelectorItem>
+                    ))}
+                  </ModelSelectorList>
+                </ModelSelectorContent>
+              </ModelSelector>
             </PromptInputTools>
             <div className="flex items-center gap-2">
               <span className="hidden text-[11px] text-muted-foreground sm:block">

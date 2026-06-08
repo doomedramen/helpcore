@@ -557,6 +557,32 @@ pub fn insert_summary_message(
     Ok(id)
 }
 
+/// Inserts a user-role message for rendering error feedback.
+/// The AI sees it as a user message and can self-correct.
+pub fn append_user_feedback(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+    content: &str,
+) -> anyhow::Result<String> {
+    let id = Uuid::new_v4().to_string();
+    let now = Utc::now().to_rfc3339();
+    let next_seq: i64 = conn.query_row(
+        "SELECT COALESCE(MAX(sequence), 0) + 1 FROM messages WHERE conversation_id = ?1",
+        [conversation_id],
+        |r| r.get(0),
+    )?;
+    conn.execute(
+        "INSERT INTO messages (id, conversation_id, role, content, sequence, created_at)
+         VALUES (?1, ?2, 'user', ?3, ?4, ?5)",
+        rusqlite::params![id, conversation_id, content, next_seq, now],
+    )?;
+    conn.execute(
+        "UPDATE conversations SET message_count = message_count + 1, updated_at = ?1 WHERE id = ?2",
+        rusqlite::params![now, conversation_id],
+    )?;
+    Ok(id)
+}
+
 pub fn update_conversation_title(
     conn: &rusqlite::Connection,
     conversation_id: &str,

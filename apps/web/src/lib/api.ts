@@ -20,6 +20,8 @@ import type {
   SetupStatusResponse,
   SseDone,
   SseStarted,
+  SseToolCall,
+  SseToolResult,
 } from "./types";
 
 class ApiError extends Error {
@@ -131,6 +133,8 @@ export function retryMessage(args: {
   token: string;
   onStarted: (started: SseStarted) => void;
   onChunk: (delta: string) => void;
+  onToolCall?: (call: SseToolCall) => void;
+  onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
   signal?: AbortSignal;
 }): Promise<void> {
@@ -141,6 +145,8 @@ export function retryMessage(args: {
     body: JSON.stringify({ provider_id: args.providerId ?? null }),
     onStarted: args.onStarted,
     onChunk: args.onChunk,
+    onToolCall: args.onToolCall,
+    onToolResult: args.onToolResult,
     onDone: args.onDone,
     signal: args.signal,
   });
@@ -365,6 +371,29 @@ export async function tts(text: string, token: string, voice?: string): Promise<
   return resp.blob();
 }
 
+// ── Content rendering feedback ─────────────────────────────────────────────────
+
+export async function submitFeedback(
+  conversationId: string,
+  token: string,
+  type: string,
+  message: string,
+): Promise<void> {
+  const resp = await fetch(`/api/conversations/${conversationId}/feedback`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    body: JSON.stringify({ type, message }),
+  });
+
+  if (!resp.ok) {
+    // Silently ignore — feedback is best-effort
+    console.warn("Failed to submit rendering feedback:", resp.status);
+  }
+}
+
 // ── Chat (SSE) ────────────────────────────────────────────────────────────────
 
 export async function chat(args: {
@@ -374,10 +403,23 @@ export async function chat(args: {
   token: string;
   onStarted: (started: SseStarted) => void;
   onChunk: (delta: string) => void;
+  onToolCall?: (call: SseToolCall) => void;
+  onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
   signal?: AbortSignal;
 }): Promise<void> {
-  const { message, conversation_id, provider_id, token, onStarted, onChunk, onDone, signal } = args;
+  const {
+    message,
+    conversation_id,
+    provider_id,
+    token,
+    onStarted,
+    onChunk,
+    onToolCall,
+    onToolResult,
+    onDone,
+    signal,
+  } = args;
   return consumeChatStream({
     url: "/api/chat",
     token,
@@ -385,6 +427,8 @@ export async function chat(args: {
     body: JSON.stringify({ message, conversation_id, provider_id }),
     onStarted,
     onChunk,
+    onToolCall,
+    onToolResult,
     onDone,
     signal,
   });
@@ -397,6 +441,8 @@ async function consumeChatStream(args: {
   body?: string;
   onStarted: (started: SseStarted) => void;
   onChunk: (delta: string) => void;
+  onToolCall?: (call: SseToolCall) => void;
+  onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
   signal?: AbortSignal;
 }): Promise<void> {
@@ -461,6 +507,8 @@ function processChatEvent(
   handlers: {
     onStarted: (started: SseStarted) => void;
     onChunk: (delta: string) => void;
+    onToolCall?: (call: SseToolCall) => void;
+    onToolResult?: (result: SseToolResult) => void;
     onDone: (done: SseDone) => void;
   },
 ): boolean {
@@ -476,6 +524,10 @@ function processChatEvent(
     handlers.onStarted(JSON.parse(eventData) as SseStarted);
   } else if (eventName === "chunk") {
     handlers.onChunk((JSON.parse(eventData) as { delta: string }).delta);
+  } else if (eventName === "tool_call") {
+    handlers.onToolCall?.(JSON.parse(eventData) as SseToolCall);
+  } else if (eventName === "tool_result") {
+    handlers.onToolResult?.(JSON.parse(eventData) as SseToolResult);
   } else if (eventName === "done") {
     handlers.onDone(JSON.parse(eventData) as SseDone);
     return true;

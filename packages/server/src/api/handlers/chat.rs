@@ -9,6 +9,8 @@ use axum::{
 use futures_util::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 
+use serde::Deserialize;
+
 use helpcore_api::{
     ChatRequest, CompactResponse, ConversationSummary, MessageSummary, RenameConversationRequest,
     RetryRequest, SseChunk, SseDone, SseStarted, SseToolCall, SseToolResult,
@@ -647,6 +649,45 @@ pub async fn delete_conversation(
     } else {
         Err(AppError::NotFound("conversation not found".into()))
     }
+}
+
+// ── POST /conversations/:id/feedback ──────────────────────────────────────────
+//
+// Injected by the frontend when chart/mermaid rendering errors are detected.
+// Stored as a "user" message so the AI sees the error and can self-correct.
+
+#[derive(Deserialize)]
+pub struct FeedbackBody {
+    #[serde(rename = "type")]
+    type_: String,
+    message: String,
+}
+
+pub async fn submit_feedback(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Path(conv_id): Path<String>,
+    Json(body): Json<FeedbackBody>,
+) -> Result<Json<serde_json::Value>, AppError> {
+    let user_id = auth_user.id.clone();
+    let content = format!("[Rendering error: {}]\n{}", body.type_, body.message);
+    let cid1 = conv_id.clone();
+    let cid2 = conv_id.clone();
+    let exists = state
+        .db
+        .call(move |conn| {
+            let c: Option<ConversationSummary> = history::get_conversation(conn, &cid1, &user_id)?;
+            Ok(c.is_some())
+        })
+        .await?;
+    if !exists {
+        return Err(AppError::NotFound("conversation not found".into()));
+    }
+    state
+        .db
+        .call(move |conn| history::append_user_feedback(conn, &cid2, &content))
+        .await?;
+    Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
 // ── POST /conversations/:id/cancel ───────────────────────────────────────────

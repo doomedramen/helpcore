@@ -121,6 +121,18 @@ export interface SseStarted {
   message_id: string;
 }
 
+export interface SseToolCall {
+  id: string;
+  name: string;
+  arguments: Record<string, unknown>;
+}
+
+export interface SseToolResult {
+  id: string;
+  name: string;
+  result: string;
+}
+
 export interface SseDone {
   conversation_id: string;
   message_id: string;

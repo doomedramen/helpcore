@@ -75,6 +75,10 @@ pub fn create(state: Arc<AppState>, web_ui: bool) -> Router {
             "/conversations/{id}/cancel",
             post(handlers::chat::cancel_conversation),
         )
+        .route(
+            "/conversations/{id}/feedback",
+            post(handlers::chat::submit_feedback),
+        )
         // Personality
         .route(
             "/personality/{name}",

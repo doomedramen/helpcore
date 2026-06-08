@@ -2,6 +2,8 @@
 
 import { memo, useMemo } from "react";
 import { MessageResponse } from "@/components/ai-elements/message";
+import { findContentBlocks, RENDERERS } from "./content-renderers";
+import type { ContentBlock } from "./content-renderers";
 
 const DATA_IMAGE_REGEX = /!\[([^\]]*)\]\((data:image\/[^)]+)\)/g;
 const DATA_AUDIO_REGEX = /!\[([^\]]*)\]\((data:audio\/[^)]+)\)/g;
@@ -59,25 +61,54 @@ function findAssets(content: string): AssetMatch[] {
 }
 
 interface Segment {
-  type: "text" | "image" | "audio" | "video";
+  type: "text" | "image" | "audio" | "video" | "content";
   content: string;
   alt?: string;
+  block?: ContentBlock;
 }
 
-function splitContent(content: string, assets: AssetMatch[]): Segment[] {
+function splitContent(
+  content: string,
+  assets: AssetMatch[],
+  contentBlocks: ContentBlock[],
+): Segment[] {
+  // Merge asset matches and content blocks by index, then build segments
+  const allMatches = [
+    ...assets.map((a) => ({
+      index: a.index,
+      endIndex: a.endIndex,
+      kind: "asset" as const,
+      asset: a,
+    })),
+    ...contentBlocks.map((b) => ({
+      index: b.index,
+      endIndex: b.endIndex,
+      kind: "block" as const,
+      block: b,
+    })),
+  ].sort((a, b) => a.index - b.index);
+
   const segments: Segment[] = [];
   let lastEnd = 0;
 
-  for (const asset of assets) {
-    if (asset.index > lastEnd) {
-      segments.push({ type: "text", content: content.slice(lastEnd, asset.index) });
+  for (const match of allMatches) {
+    if (match.index > lastEnd) {
+      segments.push({ type: "text", content: content.slice(lastEnd, match.index) });
     }
-    segments.push({
-      type: asset.kind,
-      content: asset.uri,
-      alt: asset.alt || undefined,
-    });
-    lastEnd = asset.endIndex;
+    if (match.kind === "block") {
+      segments.push({
+        type: "content",
+        content: match.block!.content,
+        block: match.block,
+      });
+    } else if (match.kind === "asset") {
+      segments.push({
+        type: match.asset!.kind,
+        content: match.asset!.uri,
+        alt: match.asset!.alt || undefined,
+      });
+    }
+    lastEnd = match.endIndex;
   }
 
   if (lastEnd < content.length) {
@@ -90,18 +121,20 @@ function splitContent(content: string, assets: AssetMatch[]): Segment[] {
 interface MessageContentWithAssetsProps {
   children: string;
   className?: string;
+  onContentError?: (type: string, message: string) => void;
 }
 
 export const MessageContentWithAssets = memo(
-  ({ className, children }: MessageContentWithAssetsProps) => {
+  ({ className, children, onContentError }: MessageContentWithAssetsProps) => {
     const segments = useMemo(() => {
-      if (!children.includes("data:")) return null;
-      const assets = findAssets(children);
-      if (assets.length === 0) return null;
-      return splitContent(children, assets);
+      const blocks = findContentBlocks(children);
+      const hasDataUri = children.includes("data:");
+      if (blocks.length === 0 && !hasDataUri) return null;
+      const assets = hasDataUri ? findAssets(children) : [];
+      if (blocks.length === 0 && assets.length === 0) return null;
+      return splitContent(children, assets, blocks);
     }, [children]);
 
-    // Fast path: no data URIs, just render markdown
     if (!segments) {
       return <MessageResponse className={className}>{children}</MessageResponse>;
     }
@@ -113,6 +146,24 @@ export const MessageContentWithAssets = memo(
             return (
               <MessageResponse key={i} className={className}>
                 {segment.content}
+              </MessageResponse>
+            );
+          }
+          if (segment.type === "content" && segment.block) {
+            const Renderer = RENDERERS[segment.block.type];
+            if (Renderer) {
+              return (
+                <Renderer
+                  key={i}
+                  variant={segment.block.variant}
+                  content={segment.block.content}
+                  onError={(msg: string) => onContentError?.(segment.block!.type, msg)}
+                />
+              );
+            }
+            return (
+              <MessageResponse key={i} className={className}>
+                {"```" + segment.block.type + "\n" + segment.block.content + "\n```"}
               </MessageResponse>
             );
           }
