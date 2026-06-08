@@ -139,6 +139,8 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "personality_write",
     "personality_append",
     "conversation_rename",
+    "chart_generate",
+    "mermaid_render",
     "skill_read",
 ];
 
@@ -310,6 +312,93 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     }
                 },
                 "required": ["title"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "chart_generate".into(),
+            description: "Generate a chart (pie, bar, line, or donut) from raw data. \
+                Returns JSON with an 'action' of 'chart', the 'chart_type', an optional \
+                'title', and a 'data_uri' (base64 SVG). To display the chart, extract \
+                the data_uri and emit it in markdown as ![title](data_uri). Use this \
+                when the user needs to visualize numbers, trends, or proportions."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "type": {
+                        "type": "string",
+                        "enum": ["pie", "bar", "line", "donut"],
+                        "description": "The type of chart to generate"
+                    },
+                    "labels": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Category labels for the data points"
+                    },
+                    "values": {
+                        "type": "array",
+                        "items": { "type": "number" },
+                        "description": "Numerical values corresponding to each label"
+                    },
+                    "title": {
+                        "type": "string",
+                        "description": "Optional title for the chart"
+                    },
+                    "colors": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Optional list of CSS colors for the data series"
+                    },
+                    "width": {
+                        "type": "integer",
+                        "default": 600,
+                        "description": "Chart width in pixels"
+                    },
+                    "height": {
+                        "type": "integer",
+                        "default": 400,
+                        "description": "Chart height in pixels"
+                    }
+                },
+                "required": ["type", "labels", "values"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "mermaid_render".into(),
+            description: "Render a Mermaid diagram definition. Returns JSON with an \
+                'action' of 'mermaid', the 'theme', and a 'data_uri' (base64 PNG). To \
+                display the diagram, extract the data_uri and emit it in markdown as \
+                ![diagram](data_uri). Supports flowcharts, sequence diagrams, gantt \
+                charts, and more. Use this when the user needs to visualize processes, \
+                architectures, or relationships."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "definition": {
+                        "type": "string",
+                        "description": "The raw Mermaid diagram definition string (e.g. 'graph TD...')"
+                    },
+                    "theme": {
+                        "type": "string",
+                        "enum": ["default", "dark", "neutral"],
+                        "default": "default",
+                        "description": "The visual theme for the diagram"
+                    },
+                    "width": {
+                        "type": "integer",
+                        "default": 800,
+                        "description": "Target width in pixels"
+                    },
+                    "height": {
+                        "type": "integer",
+                        "default": 600,
+                        "description": "Target height in pixels"
+                    }
+                },
+                "required": ["definition"],
                 "additionalProperties": false
             }),
         },
@@ -521,6 +610,95 @@ async fn execute_builtin(
                 })
                 .await?;
             Ok("renamed".to_string())
+        }
+        "chart_generate" => {
+            let chart_type = require_str_arg(&call.arguments, "type")?;
+            let labels: Vec<String> = call
+                .arguments
+                .get("labels")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|v| v.as_str().unwrap_or("").to_string())
+                        .collect()
+                })
+                .unwrap_or_default();
+            let values: Vec<f64> = call
+                .arguments
+                .get("values")
+                .and_then(|v| v.as_array())
+                .map(|arr| arr.iter().map(|v| v.as_f64().unwrap_or(0.0)).collect())
+                .unwrap_or_default();
+            let title = call.arguments.get("title").and_then(|v| v.as_str());
+            let colors = call
+                .arguments
+                .get("colors")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .map(|v| v.as_str().unwrap_or("").to_string())
+                        .collect()
+                });
+            let width = call
+                .arguments
+                .get("width")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(600) as u32;
+            let height = call
+                .arguments
+                .get("height")
+                .and_then(|v| v.as_u64())
+                .unwrap_or(400) as u32;
+
+            let svg = crate::plugins::chart::generate_svg(
+                chart_type, &labels, &values, title, colors, width, height,
+            );
+            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, svg);
+            let data_uri = format!("data:image/svg+xml;base64,{}", b64);
+            Ok(serde_json::json!({
+                "action": "chart",
+                "chart_type": chart_type,
+                "title": title,
+                "data_uri": data_uri,
+                "width": width,
+                "height": height
+            })
+            .to_string())
+        }
+        "mermaid_render" => {
+            let definition = require_str_arg(&call.arguments, "definition")?;
+            let theme = call
+                .arguments
+                .get("theme")
+                .and_then(|v| v.as_str())
+                .unwrap_or("default");
+
+            // Build mermaid.ink URL
+            let json = serde_json::json!({
+                "code": definition,
+                "mermaid": { "theme": theme }
+            });
+            let bytes = serde_json::to_vec(&json)?;
+            let encoded =
+                base64::Engine::encode(&base64::engine::general_purpose::STANDARD_NO_PAD, bytes);
+            let url = format!("https://mermaid.ink/img/{}", encoded);
+
+            let client = reqwest::Client::builder().timeout(BRIDGE_TIMEOUT).build()?;
+            let resp = client.get(url).send().await?;
+            if !resp.status().is_success() {
+                anyhow::bail!("failed to render mermaid diagram: {}", resp.status());
+            }
+            let bytes = resp.bytes().await?;
+            if bytes.len() > MAX_TOOL_RESULT_BYTES {
+                anyhow::bail!("mermaid render result exceeds the 1 MiB limit");
+            }
+            let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes);
+            Ok(serde_json::json!({
+                "action": "mermaid",
+                "theme": theme,
+                "data_uri": format!("data:image/png;base64,{}", b64)
+            })
+            .to_string())
         }
         "skill_read" => {
             let name = require_str_arg(&call.arguments, "name")?.to_string();

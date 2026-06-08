@@ -3,9 +3,11 @@
 import { useState } from "react";
 import {
   AlertTriangle,
+  BarChart3,
   ChevronDown,
   ChevronRight,
   FileText,
+  GitGraph,
   Pencil,
   Plug,
   Plus,
@@ -64,10 +66,26 @@ const TOOL_META: Record<string, { icon: React.ReactNode; label: string; color: s
     label: "Personality",
     color: "text-fuchsia-500 dark:text-fuchsia-400",
   },
+  chart_generate: {
+    icon: <BarChart3 size={11} />,
+    label: "Chart",
+    color: "text-cyan-500 dark:text-cyan-400",
+  },
+  mermaid_render: {
+    icon: <GitGraph size={11} />,
+    label: "Diagram",
+    color: "text-orange-500 dark:text-orange-400",
+  },
 };
 
 function toolArgsPreview(name: string, args: Record<string, unknown>): string {
   if (name === "personality_write") return `/${(args.name as string) ?? "?"}`;
+  if (name === "chart_generate") return (args.type as string) ?? "chart";
+  if (name === "mermaid_render") {
+    const def = (args.definition as string) ?? "";
+    const firstLine = def.split("\n")[0]?.trim() ?? "";
+    return firstLine.length > 50 ? `${firstLine.slice(0, 47)}…` : firstLine;
+  }
   const path = args.path ?? args.from ?? null;
   if (path && typeof path === "string") {
     const label = path.split("/").pop() ?? path;
@@ -163,6 +181,13 @@ export default function ToolMessageBubble({
   function resultSummary(): string {
     const kind = inferred?.kind;
     const data = inferred?.data;
+
+    if (kind === "chart" && data) {
+      const ct = data.chart_type as string;
+      const t = data.title ? ` "${data.title}"` : "";
+      return `Chart: ${ct ?? "?"}${t}`;
+    }
+    if (kind === "mermaid") return "Mermaid diagram";
 
     if ((kind === "write" || kind === "memory_write") && matchingCall) {
       const path = (data?.path as string) ?? (matchingCall.arguments.path as string);
@@ -305,6 +330,19 @@ export default function ToolMessageBubble({
                     {inferred?.data?.content ?? unwrapResult(message.content)}
                   </pre>
                 </div>
+              </div>
+            ) : kind === "chart" || kind === "mermaid" ? (
+              <div className="flex flex-col gap-2 py-1">
+                {data?.title && (
+                  <span className="text-[10px] uppercase text-muted-foreground">{data.title}</span>
+                )}
+                <img
+                  src={data?.data_uri as string}
+                  alt={
+                    kind === "chart" ? ((data?.chart_type as string) ?? "chart") : "mermaid diagram"
+                  }
+                  className="max-w-full h-auto rounded"
+                />
               </div>
             ) : (
               <pre className="whitespace-pre-wrap">
