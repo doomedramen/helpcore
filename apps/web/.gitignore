@@ -3,3 +3,6 @@ out/
 node_modules/
 *.tsbuildinfo
 .env*.local
+
+public/sw*
+public/swe-worker*

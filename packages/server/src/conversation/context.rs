@@ -120,17 +120,23 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
     match leaning {
         "off" => {
             out.push_str(
-                "Do NOT store or recall any memories, facts, or personal information about the \
-                 user. Do not use the memory_* tools. Treat every conversation as if you know \
-                 nothing about the user and will forget everything after. The user has explicitly \
-                 disabled memory.\n",
+                "Memory is DISABLED. You MUST NOT call any memory_* or personality_write tools \
+                 under any circumstances — not even if the user asks you to remember something. \
+                 If the user says \"remember this\", acknowledge the request but explain that \
+                 memory is turned off. If any memory results appear in the context below, \
+                 ignore them entirely — they are stale and should not influence your responses. \
+                 Treat every conversation as a blank slate with no knowledge of the user.\n",
             );
         }
         "light" => {
             out.push_str(
-                "Use memory sparingly. Only write things down when the user explicitly asks you \
-                 to remember something. Recall is fine when relevant, but err on the side of \
-                 not storing — the user prefers a light touch with memory.\n",
+                "Use memory only when the user explicitly asks you to remember or recall \
+                 something (e.g. \"remember that\", \"what do you know about me\", \
+                 \"save this for later\"). Do NOT proactively write memory files — even if \
+                 you learn something interesting about the user, do not save it unless they \
+                 explicitly tell you to. You may search memory and use existing memories to \
+                 answer questions, but never create or update memory files on your own \
+                 initiative.\n",
             );
         }
         "heavy" => {

@@ -7,6 +7,28 @@ interface BrandMarkProps {
   markOnly?: boolean;
 }
 
+function Mark() {
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={2}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+      className="size-full"
+    >
+      <path d="M12 6V2H8" />
+      <path d="M15 11v2" />
+      <path d="M2 12h2" />
+      <path d="M20 12h2" />
+      <path d="M20 16a2 2 0 0 1-2 2H8.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 4 20.286V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z" />
+      <path d="M9 11v2" />
+    </svg>
+  );
+}
+
 export default function BrandMark({
   className,
   compact = false,
@@ -16,21 +38,13 @@ export default function BrandMark({
   return (
     <div className={cn("inline-flex items-center gap-2.5", className)}>
       <span
-        aria-hidden="true"
         className={cn(
-          "relative grid shrink-0 place-items-center overflow-hidden rounded-[0.85rem] bg-gradient-to-br from-indigo-500 via-indigo-500 to-teal-400 shadow-[0_8px_24px_-10px_rgba(79,70,229,0.9)]",
-          compact ? "size-8" : "size-10",
+          "shrink-0",
+          compact ? "size-[18px]" : "size-[22px]",
+          inverse ? "text-white" : "text-slate-950 dark:text-white",
         )}
       >
-        <span className="absolute -right-2 -top-2 size-6 rounded-full bg-white/20 blur-sm" />
-        <span
-          className={cn(
-            "relative rounded-full border-2 border-white/90",
-            compact ? "size-3.5" : "size-4",
-          )}
-        >
-          <span className="absolute left-1/2 top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white" />
-        </span>
+        <Mark />
       </span>
       {!markOnly && (
         <span

@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { withSerwist } from "@serwist/turbopack";
 
 const config: NextConfig = {
   trailingSlash: true,
@@ -18,4 +19,4 @@ if (process.env.NEXT_EXPORT === "true") {
   ];
 }
 
-export default config;
+export default withSerwist(config);

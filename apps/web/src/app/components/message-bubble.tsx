@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypeHighlight from "rehype-highlight";
+import rehypePrettyCode from "rehype-pretty-code";
 import {
   ChevronDown,
   ChevronRight,
@@ -21,8 +21,6 @@ import {
 import { tts } from "@/lib/api";
 import type { Message } from "@/lib/types";
 import BrandMark from "./brand-mark";
-
-import "highlight.js/styles/github.css";
 
 function stripMarkdown(text: string): string {
   return text
@@ -404,7 +402,21 @@ export default function MessageBubble({
           </span>
         ) : (
           <div className="prose prose-sm max-w-none">
-            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              rehypePlugins={[
+                [
+                  rehypePrettyCode,
+                  {
+                    theme: {
+                      light: "github-light",
+                      dark: "github-dark",
+                    },
+                    keepBackground: false,
+                  },
+                ],
+              ]}
+            >
               {message.content}
             </ReactMarkdown>
           </div>

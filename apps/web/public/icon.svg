@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none">
+  <style>
+    path { stroke: #0f172a; }
+    @media (prefers-color-scheme: dark) {
+      path { stroke: white; }
+    }
+  </style>
+  <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M12 6V2H8"/>
+  <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M15 11v2"/>
+  <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M2 12h2"/>
+  <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 12h2"/>
+  <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M20 16a2 2 0 0 1-2 2H8.828a2 2 0 0 0-1.414.586l-2.202 2.202A.71.71 0 0 1 4 20.286V8a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2z"/>
+  <path stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M9 11v2"/>
+</svg>
