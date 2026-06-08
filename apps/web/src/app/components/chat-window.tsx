@@ -335,20 +335,187 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     (conversation) => conversation.id === conversationId,
   );
   const firstName = currentUser?.display_name?.split(/\s+/)[0];
-  const suggestions = [
+  const suggestionPool = [
     {
-      label: "Make a clear plan",
-      prompt: "Help me turn an idea into a clear, practical plan.",
+      label: "Refactor code",
+      prompt:
+        "Review this codebase and suggest refactoring improvements for readability and maintainability.",
     },
     {
-      label: "Think through a decision",
-      prompt: "Help me think through an important decision and the tradeoffs.",
+      label: "Debug an issue",
+      prompt:
+        "I'm running into a bug. Help me trace the root cause, understand why it's happening, and fix it.",
     },
     {
-      label: "Draft and refine",
-      prompt: "Help me draft something concise, thoughtful, and clear.",
+      label: "Write tests",
+      prompt:
+        "Generate thorough unit and integration tests for the following code, covering edge cases and error paths.",
+    },
+    {
+      label: "Design an API",
+      prompt:
+        "Help me design a REST API for this feature. Think through the endpoints, request/response shapes, error handling, and auth.",
+    },
+    {
+      label: "Optimize performance",
+      prompt:
+        "Profile this code and suggest concrete performance optimizations. Identify bottlenecks and propose solutions.",
+    },
+    {
+      label: "Review changes",
+      prompt:
+        "Review these changes for correctness, security concerns, edge cases, and code style issues.",
+    },
+    {
+      label: "Explain code",
+      prompt:
+        "Walk me through what this code does in detail — architecture, control flow, and key decisions.",
+    },
+    {
+      label: "Database schema",
+      prompt:
+        "Design a database schema for these requirements. Consider indexing, relationships, and migration strategy.",
+    },
+    {
+      label: "Architecture decision",
+      prompt:
+        "Help me evaluate tradeoffs between different approaches for this system design. Consider scalability, complexity, and maintainability.",
+    },
+    {
+      label: "Draft documentation",
+      prompt:
+        "Write clear, concise documentation for this module — include usage examples, API reference, and gotchas.",
+    },
+    {
+      label: "Fix type errors",
+      prompt:
+        "I have a tricky TypeScript type error. Help me understand it and resolve it properly without resorting to `any`.",
+    },
+    {
+      label: "Plan a feature",
+      prompt:
+        "Help me break down this feature into concrete, shippable steps. Start with the core logic and iterate outward.",
+    },
+    {
+      label: "Code migration",
+      prompt:
+        "Help me plan and execute a migration to a newer library version or framework, minimizing risk and regressions.",
+    },
+    {
+      label: "Security audit",
+      prompt:
+        "Review this code for security vulnerabilities — injection, auth issues, data exposure, and unsafe defaults.",
+    },
+    {
+      label: "Improve error handling",
+      prompt:
+        "Audit the error handling in this code. Identify unhandled paths and suggest a consistent error handling strategy.",
+    },
+    {
+      label: "Write an essay",
+      prompt:
+        "Help me write a clear, well-structured essay. Start by outlining the key arguments and flow.",
+    },
+    {
+      label: "Brainstorm ideas",
+      prompt:
+        "Help me brainstorm creative ideas for this topic. Push beyond the obvious and explore unusual angles.",
+    },
+    {
+      label: "Make a decision",
+      prompt:
+        "Help me think through a difficult decision. Weigh the pros, cons, risks, and what matters most.",
+    },
+    {
+      label: "Learn something new",
+      prompt:
+        "Explain this concept to me from first principles. Assume I'm smart but know nothing about the topic.",
+    },
+    {
+      label: "Improve my writing",
+      prompt: "Review this text and suggest improvements for clarity, tone, flow, and impact.",
+    },
+    {
+      label: "Summarize a document",
+      prompt:
+        "Read through this and give me a concise summary with the key takeaways and action items.",
+    },
+    {
+      label: "Prepare for a meeting",
+      prompt:
+        "Help me prepare for an upcoming meeting. Think through the agenda, key points, and likely questions.",
+    },
+    {
+      label: "Create a workout plan",
+      prompt: "Design a fitness plan tailored to my goals, available equipment, and schedule.",
+    },
+    {
+      label: "Plan a trip",
+      prompt:
+        "Help me plan a trip — suggest an itinerary, logistics, budget estimate, and things I might overlook.",
+    },
+    {
+      label: "Write a speech",
+      prompt:
+        "Help me draft a speech or presentation. Keep it engaging, structured, and appropriate for the audience.",
+    },
+    {
+      label: "Analyze a contract",
+      prompt:
+        "Review this contract or terms document. Flag unusual clauses, risks, and what I should negotiate.",
+    },
+    {
+      label: "Build a habit",
+      prompt:
+        "Help me design a system to build or break a habit. Focus on practical, sustainable strategies.",
+    },
+    {
+      label: "Negotiate better",
+      prompt:
+        "Help me prepare for a negotiation. Role-play scenarios, suggest tactics, and identify my leverage.",
+    },
+    {
+      label: "Structure my thinking",
+      prompt:
+        "I have scattered thoughts on a complex topic. Help me organize them into a clear framework.",
+    },
+    {
+      label: "Give career advice",
+      prompt:
+        "Act as a career coach. Help me think through my next move, growth areas, and how to position myself.",
+    },
+    {
+      label: "Solve a math problem",
+      prompt:
+        "Walk me through this math or logic problem step by step. Explain the intuition, not just the mechanics.",
+    },
+    {
+      label: "Write a story",
+      prompt:
+        "Help me develop a story — characters, plot, setting, and voice. Let's start with the core conflict.",
+    },
+    {
+      label: "Cook something great",
+      prompt:
+        "Suggest recipes based on the ingredients I have. Focus on flavor, technique, and minimal waste.",
+    },
+    {
+      label: "Research a topic",
+      prompt:
+        "Help me research this topic deeply. Identify the best sources, key debates, and what's worth reading.",
+    },
+    {
+      label: "Manage my time",
+      prompt:
+        "Help me structure my week for deep focus. Balance urgent tasks with long-term priorities.",
     },
   ];
+
+  const suggestions = useMemo(
+    () => [...suggestionPool].sort(() => Math.random() - 0.5).slice(0, 3),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
 
   // Build a map of all tool calls from assistant messages for pairing with tool results.
   const allToolCalls = useMemo(() => {

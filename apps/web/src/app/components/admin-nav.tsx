@@ -13,7 +13,11 @@ export default function AdminNav() {
   return (
     <nav className="flex w-full gap-1 overflow-x-auto rounded-xl border border-slate-200/80 bg-white/60 p-1 shadow-sm backdrop-blur dark:border-slate-800 dark:bg-slate-900/60 sm:w-fit">
       {LINKS.map((link) => {
-        const active = pathname.startsWith(link.href.replace(/\/$/, ""));
+        const stripped = link.href.replace(/\/$/, "");
+        const active =
+          stripped === "/admin"
+            ? pathname.replace(/\/$/, "") === stripped
+            : pathname.startsWith(stripped);
         return (
           <Link
             key={link.href}
