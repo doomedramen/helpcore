@@ -1,0 +1,1 @@
+ALTER TABLE plugin_installs ADD COLUMN brief TEXT NOT NULL DEFAULT '';

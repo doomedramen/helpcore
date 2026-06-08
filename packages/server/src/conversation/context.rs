@@ -4,6 +4,7 @@ use std::collections::HashMap;
 
 use crate::{
     conversation::memory::MemoryResult,
+    plugins::registry::PluginSkill,
     providers::types::{ChatMessage, ToolCall},
 };
 
@@ -27,8 +28,9 @@ pub struct ContextOptions<'a> {
     pub user_profile: Option<&'a str>,
     /// Memory search results to inject under a `## Memories` section.
     pub memories: &'a [MemoryResult],
-    /// Skill fragments from enabled plugins (each plugin's skill.md content).
-    pub plugin_skills: &'a [String],
+    /// Plugin skill metadata — brief index injected into prompt, full skill.md
+    /// loaded on demand via the `skill_read` tool.
+    pub plugin_skills: &'a [PluginSkill],
     /// IANA timezone for the current user (e.g. "America/New_York").
     /// Defaults to UTC when absent or unrecognised.
     pub timezone: Option<&'a str>,
@@ -171,10 +173,15 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
     }
 
     if !opts.plugin_skills.is_empty() {
-        out.push_str("\n\n## Skills\n");
+        out.push_str("\n\n## Skills\n\n");
+        out.push_str(
+            "The following plugins are installed and enabled. Each has a one-line summary \
+             of when to use it. To get full instructions for a plugin (required before \
+             calling its tools for the first time), use the `skill_read` tool with the \
+             plugin name exactly as shown.\n\n",
+        );
         for skill in opts.plugin_skills {
-            out.push_str(skill.trim_end());
-            out.push('\n');
+            out.push_str(&format!("- **{}**: {}\n", skill.name, skill.brief));
         }
     }
 

@@ -1,8 +1,7 @@
 references/zeroclaw/
 .DS_Store
 /target/
+**/target/
 *.db
 /data/
 .env
-/plugins/homeassistant/target
-/plugins/voice/bridge/target

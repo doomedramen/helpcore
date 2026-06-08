@@ -1,0 +1,10 @@
+[package]
+name = "skill-validate"
+version = "0.1.0"
+edition = "2021"
+description = "Validate skill briefs for discriminability and routing confidence"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+anyhow = "1.0"

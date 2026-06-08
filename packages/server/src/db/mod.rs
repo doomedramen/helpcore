@@ -21,6 +21,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (12, include_str!("migrations/0012_user_timezone.sql")),
     (13, include_str!("migrations/0013_provider_grants.sql")),
     (14, include_str!("migrations/0014_memory_leaning.sql")),
+    (15, include_str!("migrations/0015_skill_brief.sql")),
 ];
 
 pub struct DbPool {

@@ -53,5 +53,8 @@
     "sharp": "^0.34.5",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "overrides": {
+    "@swc/helpers": "0.5.23"
   }
 }

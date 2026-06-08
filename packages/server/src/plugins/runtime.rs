@@ -136,6 +136,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "memory_delete",
     "memory_search",
     "personality_write",
+    "skill_read",
 ];
 
 fn is_builtin_tool(name: &str) -> bool {
@@ -269,6 +270,27 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         },
+        ToolDefinition {
+            name: "skill_read".into(),
+            description: "Read the full instructions for an enabled plugin skill by name. \
+                Use this when you need detailed guidance on how to use a plugin's tools \
+                — the skill index above gives you a one-line summary for each plugin; \
+                call skill_read to get the complete instructions before invoking a \
+                plugin's tools for the first time or when you need detailed parameter \
+                information."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "description": "The plugin name as shown in the skill index (e.g. 'Weather', 'Calculator', 'Home Assistant')"
+                    }
+                },
+                "required": ["name"],
+                "additionalProperties": false
+            }),
+        },
     ]
 }
 
@@ -380,6 +402,21 @@ async fn execute_builtin(
                 .call(move |conn| memory::set_personality(conn, &uid, &name, &content))
                 .await?;
             Ok("saved".to_string())
+        }
+        "skill_read" => {
+            let name = require_str_arg(&call.arguments, "name")?.to_string();
+            let name_for_error = name.clone();
+            let content = state
+                .db
+                .call(move |conn| crate::plugins::registry::read_plugin_skill(conn, &uid, &name))
+                .await?;
+            match content {
+                Some(skill_md) => Ok(skill_md),
+                None => Ok(format!(
+                    "No enabled plugin named '{name_for_error}' is installed. \
+                     Check the skill index above for exact plugin names."
+                )),
+            }
         }
         other => anyhow::bail!("unknown built-in tool {other}"),
     }
@@ -864,6 +901,7 @@ mod tests {
             bridge: None,
             allowed_hosts: hosts.iter().map(|host| host.to_string()).collect(),
             config_schema: Vec::new(),
+            brief: "Use when testing.".to_string(),
         }
     }
 

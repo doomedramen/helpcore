@@ -305,6 +305,13 @@ fn validate_manifest(
             anyhow::bail!("plugin requires helpcore {minimum} or newer");
         }
     }
+    if manifest.brief.trim().is_empty() {
+        anyhow::bail!(
+            "package manifest for '{}' is missing a `brief` field. \
+             Add: brief = \"Use when the user asks to...\"",
+            manifest.id
+        );
+    }
     Ok(())
 }
 
@@ -400,6 +407,7 @@ description = "Test"
 tier = "bridge"
 permissions = ["outbound_http"]
 allowed_hosts = ["api.example.com"]
+brief = "Use when testing package installation."
 "#
                 .as_slice(),
             ),

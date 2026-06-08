@@ -125,6 +125,7 @@ mod tests {
             bridge: None,
             allowed_hosts: Vec::new(),
             config_schema: Vec::new(),
+            brief: "Use when testing.".to_string(),
         }
     }
 

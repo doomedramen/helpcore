@@ -32,6 +32,11 @@ pub struct Manifest {
     /// Features this plugin provides (e.g. "audio").
     #[serde(default)]
     pub provides: Vec<String>,
+    /// Short routing description for the skill index. Required in manifest.toml,
+    /// but defaults to empty for backwards-compatible DB deserialization.
+    /// Validation happens at `load_manifest` time, not at the serde layer.
+    #[serde(default)]
+    pub brief: String,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -52,12 +57,22 @@ pub struct InstalledPlugin {
     pub tier: String,
     pub enabled: bool,
     pub skill_md: Option<String>,
+    pub brief: String,
     pub permissions: Vec<String>,
     pub manifest: Manifest,
     pub tools: PluginTools,
     pub config: serde_json::Value,
     pub secrets: Option<String>,
     pub source_url: Option<String>,
+}
+
+/// Skill info injected into the system prompt — name, routing brief, and
+/// the full skill.md loaded on demand via the `skill_read` tool.
+#[derive(Debug, Clone)]
+pub struct PluginSkill {
+    pub name: String,
+    pub brief: String,
+    pub skill_md: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -194,12 +209,26 @@ pub fn config_values(schema: &[ConfigField], config: &serde_json::Value) -> serd
 
 /// Reads a plugin directory, parses `manifest.toml`, and optionally reads
 /// `skill.md`. Returns `(manifest, skill_content)`.
+///
+/// Rejects manifests that are missing the required `brief` field (the
+/// routing sentence injected into the skill index). Provides a clear
+/// error message so plugin authors know exactly what to add.
 pub fn load_manifest(plugin_dir: &Path) -> anyhow::Result<(Manifest, Option<String>)> {
     let manifest_path = plugin_dir.join("manifest.toml");
     let raw = std::fs::read_to_string(&manifest_path)
         .with_context(|| format!("failed to read {}", manifest_path.display()))?;
     let manifest: Manifest = toml::from_str(&raw)
         .with_context(|| format!("failed to parse {}", manifest_path.display()))?;
+
+    if manifest.brief.trim().is_empty() {
+        anyhow::bail!(
+            "Plugin '{}' is missing a `brief` field in manifest.toml.\n\
+             Add a one-sentence routing description, e.g.:\n\
+             brief = \"Use when the user asks to...\"\n\
+             See docs/plugins.md for the brief format specification.",
+            manifest.id
+        );
+    }
 
     let skill_path = plugin_dir.join("skill.md");
     let skill = if skill_path.exists() {
@@ -250,6 +279,14 @@ pub fn ensure_installed(
     skill_md: Option<&str>,
     enabled: bool,
 ) -> anyhow::Result<String> {
+    if manifest.brief.trim().is_empty() {
+        anyhow::bail!(
+            "Plugin '{}' is missing a `brief` field in its manifest. \
+             Add: brief = \"Use when the user asks to...\"",
+            manifest.id
+        );
+    }
+
     let permissions_json = serde_json::to_string(&manifest.permissions)?;
     let now = Utc::now().to_rfc3339();
 
@@ -267,13 +304,14 @@ pub fn ensure_installed(
         conn.execute(
             "UPDATE plugin_installs
              SET skill_md = ?1, enabled = ?2, version = ?3, manifest = ?4,
-                 updated_at = ?5
-              WHERE user_id = ?6 AND plugin_id = ?7",
+                 brief = ?5, updated_at = ?6
+               WHERE user_id = ?7 AND plugin_id = ?8",
             params![
                 skill_md,
                 enabled as i32,
                 manifest.version,
                 serde_json::to_string(manifest)?,
+                manifest.brief,
                 now,
                 user_id,
                 manifest.id
@@ -286,8 +324,8 @@ pub fn ensure_installed(
     conn.execute(
         "INSERT INTO plugin_installs
            (id, user_id, plugin_id, version, permissions, enabled, skill_md,
-            manifest, installed_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?9)",
+            brief, manifest, installed_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?10)",
         params![
             id,
             user_id,
@@ -296,6 +334,7 @@ pub fn ensure_installed(
             permissions_json,
             enabled as i32,
             skill_md,
+            manifest.brief,
             serde_json::to_string(manifest)?,
             now
         ],
@@ -308,7 +347,7 @@ pub fn ensure_installed(
 pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<InstalledPlugin>> {
     let mut stmt = conn.prepare_cached(
         "SELECT pi.id, pi.plugin_id, p.name, COALESCE(pi.manifest, p.manifest),
-                pi.version, p.tier, pi.enabled, pi.skill_md, pi.permissions,
+                pi.version, p.tier, pi.enabled, pi.skill_md, pi.brief, pi.permissions,
                 pi.previous_version, pi.tools, pi.config, pi.secrets, p.source_url
            FROM plugin_installs pi
            JOIN plugins p ON p.id = pi.plugin_id
@@ -319,7 +358,7 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
         .query_map(params![user_id], |row| {
             let manifest_json: String = row.get(3)?;
             let manifest: Option<Manifest> = serde_json::from_str(&manifest_json).ok();
-            let permissions_json: String = row.get(8)?;
+            let permissions_json: String = row.get(9)?;
             let manifest = manifest.unwrap_or_else(|| Manifest {
                 id: row.get(1).unwrap_or_default(),
                 name: row.get(2).unwrap_or_default(),
@@ -332,25 +371,27 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
                 allowed_hosts: Vec::new(),
                 config_schema: Vec::new(),
                 provides: Vec::new(),
+                brief: String::new(),
             });
-            let tools_json: String = row.get(10)?;
-            let config_json: String = row.get(11)?;
+            let tools_json: String = row.get(11)?;
+            let config_json: String = row.get(12)?;
             Ok(InstalledPlugin {
                 install_id: row.get(0)?,
                 plugin_id: row.get(1)?,
                 name: row.get(2)?,
                 description: manifest.description.clone(),
                 version: row.get(4)?,
-                previous_version: row.get(9)?,
+                previous_version: row.get(10)?,
                 tier: row.get(5)?,
                 enabled: row.get::<_, i32>(6)? != 0,
                 skill_md: row.get(7)?,
+                brief: row.get(8)?,
                 permissions: serde_json::from_str(&permissions_json).unwrap_or_default(),
                 manifest,
                 tools: serde_json::from_str(&tools_json).unwrap_or_default(),
                 config: serde_json::from_str(&config_json).unwrap_or_default(),
-                secrets: row.get(12)?,
-                source_url: row.get(13)?,
+                secrets: row.get(13)?,
+                source_url: row.get(14)?,
             })
         })?
         .collect::<Result<Vec<_>, _>>()?;
@@ -412,15 +453,41 @@ pub async fn fetch_store(registry_url: &str) -> anyhow::Result<StoreRegistry> {
         .context("plugin registry returned invalid JSON")
 }
 
-/// Returns only the skill_md fragments for enabled plugins (used in context assembly).
-pub fn enabled_skills(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<String>> {
+/// Returns skill metadata for all enabled plugins (used in context assembly).
+///
+/// Each entry carries a `brief` (injected into the system prompt) and the
+/// full `skill.md` content (loaded on demand via the `skill_read` tool).
+pub fn enabled_skills(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<PluginSkill>> {
     let plugins = list_enabled(conn, user_id)?;
     Ok(plugins
         .into_iter()
         .filter(|p| p.enabled)
-        .filter_map(|p| p.skill_md)
-        .filter(|s| !s.trim().is_empty())
+        .map(|p| PluginSkill {
+            name: p.manifest.name.clone(),
+            brief: p.brief.clone(),
+            skill_md: p.skill_md.clone(),
+        })
         .collect())
+}
+
+/// Read the full skill.md for an enabled plugin by name. Returns `None`
+/// if no enabled plugin with that name is installed for the user.
+pub fn read_plugin_skill(
+    conn: &Connection,
+    user_id: &str,
+    name: &str,
+) -> anyhow::Result<Option<String>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT pi.skill_md
+           FROM plugin_installs pi
+           JOIN plugins p ON p.id = pi.plugin_id
+          WHERE pi.user_id = ?1 AND p.name = ?2 AND pi.enabled = 1",
+    )?;
+    match stmt.query_row(params![user_id, name], |row| row.get(0)) {
+        Ok(content) => Ok(Some(content)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }
 
 // ── Startup loader ─────────────────────────────────────────────────────────────
@@ -514,6 +581,7 @@ mod tests {
             bridge: None,
             allowed_hosts: Vec::new(),
             config_schema: Vec::new(),
+            brief: "Use when testing plugins.".to_string(),
         }
     }
 
@@ -554,7 +622,8 @@ mod tests {
 
             let skills = enabled_skills(conn, &uid)?;
             assert_eq!(skills.len(), 1);
-            assert_eq!(skills[0], "skill a");
+            assert_eq!(skills[0].skill_md.as_deref(), Some("skill a"));
+            assert!(!skills[0].brief.is_empty());
             Ok(())
         })
         .unwrap();
@@ -570,6 +639,7 @@ version = "0.1.0"
 description = "A test bridge plugin"
 tier = "bridge"
 permissions = ["outbound_http"]
+brief = "Use when testing bridge plugins."
 "#;
         std::fs::write(dir.path().join("manifest.toml"), manifest_content).unwrap();
         let mut skill_file = std::fs::File::create(dir.path().join("skill.md")).unwrap();
