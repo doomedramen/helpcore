@@ -46,12 +46,14 @@ pub struct CurrentUserResponse {
     pub display_name: Option<String>,
     pub role: String,
     pub timezone: String,
+    pub memory_leaning: String,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct UpdateMeRequest {
     pub display_name: Option<String>,
     pub timezone: Option<String>,
+    pub memory_leaning: Option<String>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -73,14 +73,16 @@ pub async fn chat(
         return Err(AppError::Forbidden);
     }
 
-    // Load user timezone.
-    let uid_tz = user_id.clone();
-    let user_timezone = state
+    // Load user preferences.
+    let uid_prefs = user_id.clone();
+    let (user_timezone, user_memory_leaning) = state
         .db
         .call(move |conn| {
-            Ok(crate::model::user::find_by_id(conn, &uid_tz)?
-                .map(|u| u.timezone)
-                .unwrap_or_else(|| "UTC".to_string()))
+            let user = crate::model::user::find_by_id(conn, &uid_prefs)?;
+            match user {
+                Some(u) => Ok((u.timezone, u.memory_leaning)),
+                None => Ok(("UTC".to_string(), "moderate".to_string())),
+            }
         })
         .await?;
 
@@ -133,6 +135,7 @@ pub async fn chat(
         user_content,
         user_sequence,
         user_timezone,
+        user_memory_leaning,
         history,
         model_used,
         tx,
@@ -183,13 +186,15 @@ pub async fn retry_message(
         .find_for_role(Some(&provider_id), ProviderRole::Chat)
         .ok_or_else(|| AppError::BadRequest(format!("provider {provider_id} is not available")))?;
 
-    let uid_tz = auth_user.id.clone();
-    let user_timezone = state
+    let uid_prefs = auth_user.id.clone();
+    let (user_timezone, user_memory_leaning) = state
         .db
         .call(move |conn| {
-            Ok(crate::model::user::find_by_id(conn, &uid_tz)?
-                .map(|u| u.timezone)
-                .unwrap_or_else(|| "UTC".to_string()))
+            let user = crate::model::user::find_by_id(conn, &uid_prefs)?;
+            match user {
+                Some(u) => Ok((u.timezone, u.memory_leaning)),
+                None => Ok(("UTC".to_string(), "moderate".to_string())),
+            }
         })
         .await?;
 
@@ -213,6 +218,7 @@ pub async fn retry_message(
         user_content: user_message.content,
         user_sequence: user_message.sequence,
         user_timezone,
+        user_memory_leaning,
         history,
         model_used,
         tx,
@@ -230,6 +236,7 @@ struct GenerationJob {
     user_content: String,
     user_sequence: i64,
     user_timezone: String,
+    user_memory_leaning: String,
     history: Vec<MessageSummary>,
     model_used: String,
     tx: EventSender,
@@ -289,6 +296,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         memories: &mem_results,
         plugin_skills: &plugin_skills,
         timezone: Some(job.user_timezone.as_str()),
+        memory_leaning: Some(job.user_memory_leaning.as_str()),
     };
 
     let probe = context::assemble(&job.history, &job.user_content, make_opts());

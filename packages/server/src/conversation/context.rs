@@ -32,6 +32,9 @@ pub struct ContextOptions<'a> {
     /// IANA timezone for the current user (e.g. "America/New_York").
     /// Defaults to UTC when absent or unrecognised.
     pub timezone: Option<&'a str>,
+    /// How heavily the assistant should lean on memory. One of: "off", "light", "moderate", "heavy".
+    /// Defaults to "moderate" when absent.
+    pub memory_leaning: Option<&'a str>,
 }
 
 /// Assembles the full message list sent to the provider.
@@ -110,6 +113,45 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
         out.push_str("\n\n## User\n");
         out.push_str(user_profile);
     }
+
+    // Memory leaning — tells the AI how aggressively to use memories.
+    let leaning = opts.memory_leaning.unwrap_or("moderate");
+    out.push_str("\n\n## Memory leaning\n");
+    match leaning {
+        "off" => {
+            out.push_str(
+                "Do NOT store or recall any memories, facts, or personal information about the \
+                 user. Do not use the memory_* tools. Treat every conversation as if you know \
+                 nothing about the user and will forget everything after. The user has explicitly \
+                 disabled memory.\n",
+            );
+        }
+        "light" => {
+            out.push_str(
+                "Use memory sparingly. Only write things down when the user explicitly asks you \
+                 to remember something. Recall is fine when relevant, but err on the side of \
+                 not storing — the user prefers a light touch with memory.\n",
+            );
+        }
+        "heavy" => {
+            out.push_str(
+                "Memory is extremely important. Actively look for useful facts, preferences, \
+                 and context worth remembering. Proactively write memory files whenever you \
+                 learn something meaningful about the user, their projects, or their preferences. \
+                 When in doubt, write it down — the user wants you to build a rich understanding \
+                 over time. Search memory aggressively for relevant context before responding.\n",
+            );
+        }
+        _ => {
+            out.push_str(
+                "Use memory thoughtfully. Write down useful facts, preferences, and project \
+                 context when they seem durable and worth keeping. Recall relevant memories \
+                 before responding. Strike a balance — don't save trivia, but don't let \
+                 useful context slip.\n",
+            );
+        }
+    }
+
     // Always inject the memory rules — the memory_* and personality_write
     // tools are available to every user regardless of whether they have any
     // memory files yet (e.g. the very first thing they say may be worth saving).

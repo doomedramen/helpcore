@@ -56,6 +56,7 @@ pub struct User {
     pub status: UserStatus,
     pub force_password_change: bool,
     pub timezone: String,
+    pub memory_leaning: String,
 }
 
 #[derive(Debug, Clone)]
@@ -86,6 +87,9 @@ fn row_to_user(row: &rusqlite::Row<'_>) -> rusqlite::Result<User> {
         timezone: row
             .get::<_, Option<String>>(7)?
             .unwrap_or_else(|| "UTC".into()),
+        memory_leaning: row
+            .get::<_, Option<String>>(8)?
+            .unwrap_or_else(|| "moderate".into()),
     })
 }
 
@@ -108,7 +112,7 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserSummary> {
 
 pub fn find_by_email(conn: &Connection, email: &str) -> anyhow::Result<Option<User>> {
     match conn.query_row(
-        "SELECT id, email, password_hash, display_name, role, status, force_password_change, timezone
+        "SELECT id, email, password_hash, display_name, role, status, force_password_change, timezone, memory_leaning
          FROM users WHERE email = ?1 AND status != 'deleted'",
         [email],
         row_to_user,
@@ -121,7 +125,7 @@ pub fn find_by_email(conn: &Connection, email: &str) -> anyhow::Result<Option<Us
 
 pub fn find_by_id(conn: &Connection, id: &str) -> anyhow::Result<Option<User>> {
     match conn.query_row(
-        "SELECT id, email, password_hash, display_name, role, status, force_password_change, timezone
+        "SELECT id, email, password_hash, display_name, role, status, force_password_change, timezone, memory_leaning
          FROM users WHERE id = ?1 AND status = 'active'",
         [id],
         row_to_user,
@@ -208,15 +212,17 @@ pub fn update_me(
     user_id: &str,
     display_name: Option<&str>,
     timezone: Option<&str>,
+    memory_leaning: Option<&str>,
 ) -> anyhow::Result<()> {
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "UPDATE users SET
-             display_name = COALESCE(?1, display_name),
-             timezone     = COALESCE(?2, timezone),
-             updated_at   = ?3
-         WHERE id = ?4",
-        rusqlite::params![display_name, timezone, now, user_id],
+             display_name   = COALESCE(?1, display_name),
+             timezone       = COALESCE(?2, timezone),
+             memory_leaning = COALESCE(?3, memory_leaning),
+             updated_at     = ?4
+         WHERE id = ?5",
+        rusqlite::params![display_name, timezone, memory_leaning, now, user_id],
     )
     .context("failed to update user profile")?;
     Ok(())
@@ -286,7 +292,7 @@ mod tests {
         let pool = open_test_db();
         pool.call_sync(|conn| {
             let id = create_admin(conn, "tz@example.com", "hash", None)?;
-            update_me(conn, &id, None, Some("America/New_York"))?;
+            update_me(conn, &id, None, Some("America/New_York"), None)?;
             let user = find_by_id(conn, &id)?.unwrap();
             assert_eq!(user.timezone, "America/New_York");
             Ok(())

@@ -17,6 +17,7 @@ export interface CurrentUser {
   display_name: string | null;
   role: "admin" | "member";
   timezone: string;
+  memory_leaning: string;
 }
 
 // ── Personality ────────────────────────────────────────────────────────────────

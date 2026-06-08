@@ -149,7 +149,7 @@ export function retryMessage(args: {
 // ── Profile / me ─────────────────────────────────────────────────────────────
 
 export function updateMe(
-  data: { display_name?: string | null; timezone?: string },
+  data: { display_name?: string | null; timezone?: string; memory_leaning?: string },
   token: string,
 ): Promise<void> {
   return req("/auth/me", { method: "PATCH", body: JSON.stringify(data) }, token);

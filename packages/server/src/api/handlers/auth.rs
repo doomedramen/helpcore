@@ -11,6 +11,19 @@ use crate::{
     state::AppState,
 };
 
+const VALID_MEMORY_LEANING: &[&str] = &["off", "light", "moderate", "heavy"];
+
+fn validate_memory_leaning(value: &str) -> Result<(), AppError> {
+    if VALID_MEMORY_LEANING.contains(&value) {
+        Ok(())
+    } else {
+        Err(AppError::BadRequest(format!(
+            "invalid memory_leaning value: {value}. Must be one of: {}",
+            VALID_MEMORY_LEANING.join(", ")
+        )))
+    }
+}
+
 pub async fn current_user(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -28,6 +41,7 @@ pub async fn current_user(
         display_name: user.display_name,
         role: user.role.as_str().to_string(),
         timezone: user.timezone,
+        memory_leaning: user.memory_leaning,
     }))
 }
 
@@ -41,13 +55,24 @@ pub async fn update_me(
             .map_err(|_| AppError::BadRequest(format!("unknown timezone: {tz}")))?;
     }
 
+    if let Some(ml) = &req.memory_leaning {
+        validate_memory_leaning(ml)?;
+    }
+
     let user_id = auth_user.id;
     let dn = req.display_name.clone();
     let tz = req.timezone.clone();
+    let ml = req.memory_leaning.clone();
     state
         .db
         .call(move |conn| {
-            crate::model::user::update_me(conn, &user_id, dn.as_deref(), tz.as_deref())
+            crate::model::user::update_me(
+                conn,
+                &user_id,
+                dn.as_deref(),
+                tz.as_deref(),
+                ml.as_deref(),
+            )
         })
         .await?;
 
