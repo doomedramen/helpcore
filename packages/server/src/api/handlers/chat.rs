@@ -486,7 +486,7 @@ fn turn_error(error: anyhow::Error) -> AppError {
     if message.contains("already in progress") {
         AppError::Conflict(message)
     } else if message.contains("not found") {
-        AppError::NotFound
+        AppError::NotFound(message)
     } else {
         AppError::BadRequest(message)
     }
@@ -525,7 +525,7 @@ pub async fn get_messages(
         .await?;
 
     if !exists {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("conversation not found".into()));
     }
 
     let msgs = state
@@ -559,7 +559,7 @@ pub async fn delete_conversation(
     if deleted {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(AppError::NotFound)
+        Err(AppError::NotFound("conversation not found".into()))
     }
 }
 
@@ -583,7 +583,7 @@ pub async fn cancel_conversation(
         .await?;
 
     if !exists {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("conversation not found".into()));
     }
 
     let interrupted = state
@@ -608,7 +608,7 @@ pub async fn compact_conversation(
         .db
         .call(move |conn| history::get_conversation(conn, &cid, &user_id))
         .await?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound("conversation not found".into()))?;
 
     // Use the conversation's last provider, falling back to the first available.
     let provider = conv

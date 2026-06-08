@@ -26,7 +26,7 @@ pub async fn get_personality(
     Path(name): Path<String>,
 ) -> Result<Json<PersonalityResponse>, AppError> {
     if !VALID_PERSONALITY_NAMES.contains(&name.as_str()) {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("unknown personality name".into()));
     }
     let uid = auth_user.id.clone();
     let n = name.clone();
@@ -34,7 +34,7 @@ pub async fn get_personality(
         .db
         .call(move |conn| memory::get_personality(conn, &uid, &n))
         .await?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound("personality not found".into()))?;
     Ok(Json(PersonalityResponse {
         name,
         content,
@@ -49,7 +49,7 @@ pub async fn put_personality(
     Json(req): Json<PersonalityWriteRequest>,
 ) -> Result<StatusCode, AppError> {
     if !VALID_PERSONALITY_NAMES.contains(&name.as_str()) {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("unknown personality name".into()));
     }
     let uid = auth_user.id.clone();
     state
@@ -94,7 +94,7 @@ pub async fn get_memory(
         .db
         .call(move |conn| memory::read_memory(conn, &uid, &path))
         .await?
-        .ok_or(AppError::NotFound)?;
+        .ok_or(AppError::NotFound("memory file not found".into()))?;
     Ok(Json(MemoryReadResponse {
         path: file_path,
         content,
@@ -132,6 +132,6 @@ pub async fn delete_memory(
     if deleted {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(AppError::NotFound)
+        Err(AppError::NotFound("memory file not found".into()))
     }
 }

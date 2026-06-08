@@ -5,10 +5,36 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypePrettyCode from "rehype-pretty-code";
 import {
+  createHighlighterCoreSync,
+  createJavaScriptRegexEngine,
+  type HighlighterCore,
+} from "shiki";
+import githubLight from "@shikijs/themes/github-light";
+import githubDark from "@shikijs/themes/github-dark";
+import javascript from "@shikijs/langs/javascript";
+import typescript from "@shikijs/langs/typescript";
+import tsx from "@shikijs/langs/tsx";
+import jsx from "@shikijs/langs/jsx";
+import json from "@shikijs/langs/json";
+import bash from "@shikijs/langs/bash";
+import rust from "@shikijs/langs/rust";
+import python from "@shikijs/langs/python";
+import html from "@shikijs/langs/html";
+import css from "@shikijs/langs/css";
+import markdown from "@shikijs/langs/markdown";
+import yaml from "@shikijs/langs/yaml";
+import toml from "@shikijs/langs/toml";
+import sql from "@shikijs/langs/sql";
+import diff from "@shikijs/langs/diff";
+import graphql from "@shikijs/langs/graphql";
+import dockerfile from "@shikijs/langs/dockerfile";
+import {
+  AlertTriangle,
   ChevronDown,
   ChevronRight,
   FileText,
   Pencil,
+  Plug,
   Plus,
   Search,
   Trash2,
@@ -21,6 +47,30 @@ import {
 import { tts } from "@/lib/api";
 import type { Message } from "@/lib/types";
 import BrandMark from "./brand-mark";
+
+const syncHighlighter: HighlighterCore = createHighlighterCoreSync({
+  themes: [githubLight, githubDark],
+  langs: [
+    javascript,
+    typescript,
+    tsx,
+    jsx,
+    json,
+    bash,
+    rust,
+    python,
+    html,
+    css,
+    markdown,
+    yaml,
+    toml,
+    sql,
+    diff,
+    graphql,
+    dockerfile,
+  ],
+  engine: createJavaScriptRegexEngine(),
+});
 
 function stripMarkdown(text: string): string {
   return text
@@ -162,17 +212,20 @@ function ToolMessage({ message, calls }: { message: Message; calls: ToolCallInfo
   const inferred = inferToolResultType(message.content);
   const isError = inferred?.kind === "error" || message.content.startsWith("(no memory");
 
-  // Try to find the matching tool call by tool_call_id
   const matchingCall = message.tool_call_id
     ? calls.find((c) => c.id === message.tool_call_id)
     : undefined;
 
   const meta = matchingCall ? TOOL_META[matchingCall.name] : undefined;
-  const label = matchingCall
+  const toolIcon = meta?.icon ?? (isError ? <AlertTriangle size={11} /> : <Plug size={11} />);
+  const toolName = matchingCall
     ? (TOOL_META[matchingCall.name]?.label ?? matchingCall.name)
     : isError
-      ? "error"
-      : "tool result";
+      ? "Error"
+      : "Tool";
+  const toolColor = isError
+    ? "text-red-500 dark:text-red-400"
+    : (meta?.color ?? "text-indigo-500 dark:text-indigo-400");
   const preview = matchingCall
     ? toolArgsPreview(matchingCall.name, matchingCall.arguments)
     : undefined;
@@ -238,18 +291,10 @@ function ToolMessage({ message, calls }: { message: Message; calls: ToolCallInfo
           className="flex w-full items-center gap-1.5 px-3 py-2 text-left hover:text-slate-700 dark:hover:text-slate-200"
         >
           {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-          {meta ? (
-            <span className={`flex items-center gap-1 ${meta.color}`}>
-              {meta.icon}
-              <span className="font-medium">{label}</span>
-            </span>
-          ) : (
-            <span
-              className={`font-mono font-medium ${isError ? "text-red-500 dark:text-red-400" : "text-slate-500 dark:text-slate-400"}`}
-            >
-              {isError ? "error" : "tool result"}
-            </span>
-          )}
+          <span className={`flex items-center gap-1 ${toolColor}`}>
+            {toolIcon}
+            <span className="font-medium">{toolName}</span>
+          </span>
           {preview && (
             <span className="truncate text-slate-400 dark:text-slate-500">· {preview}</span>
           )}
@@ -413,6 +458,7 @@ export default function MessageBubble({
                       dark: "github-dark",
                     },
                     keepBackground: false,
+                    getHighlighter: () => syncHighlighter,
                   },
                 ],
               ]}

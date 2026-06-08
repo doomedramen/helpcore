@@ -125,6 +125,6 @@ pub async fn revoke_api_key(
     if revoked {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(AppError::NotFound)
+        Err(AppError::NotFound("api key not found".into()))
     }
 }

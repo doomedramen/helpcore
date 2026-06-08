@@ -227,7 +227,7 @@ pub async fn update_plugin(
         })
         .await?;
     let Some((current_version, older_previous)) = current else {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("plugin not installed".into()));
     };
     if !is_newer(&plugin.version, &current_version) {
         return Err(AppError::Conflict(
@@ -395,7 +395,7 @@ pub async fn uninstall_plugin(
             if trash.exists() {
                 let _ = std::fs::rename(trash, root);
             }
-            Err(AppError::NotFound)
+            Err(AppError::NotFound("plugin not installed".into()))
         }
         Err(error) => {
             if trash.exists() {
@@ -441,7 +441,7 @@ pub async fn configure_plugin(
         })
         .await?;
     let Some((manifest, existing_config, existing_secrets)) = install else {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("plugin not installed".into()));
     };
 
     let values = request
@@ -578,7 +578,7 @@ pub async fn set_enabled(
         })
         .await?;
     let Some((manifest_raw, config_raw, tools_raw, encrypted_secrets)) = install else {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("plugin not installed".into()));
     };
     let manifest: Manifest = serde_json::from_str(&manifest_raw)?;
     let plugin_config: serde_json::Value = serde_json::from_str(&config_raw)?;
@@ -635,7 +635,7 @@ pub async fn set_enabled(
     if updated {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(AppError::NotFound)
+        Err(AppError::NotFound("plugin not installed".into()))
     }
 }
 
@@ -659,7 +659,7 @@ pub async fn create_token(
         })
         .await?;
     if !installed {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("plugin not installed".into()));
     }
 
     let uid = auth_user.id;
@@ -689,7 +689,7 @@ pub async fn revoke_token(
     if revoked {
         Ok(StatusCode::NO_CONTENT)
     } else {
-        Err(AppError::NotFound)
+        Err(AppError::NotFound("token not found".into()))
     }
 }
 
@@ -767,7 +767,7 @@ async fn ensure_user_managed(
     match source_url {
         Some(Some(_)) => Ok(()),
         Some(None) => Err(AppError::Forbidden),
-        None => Err(AppError::NotFound),
+        None => Err(AppError::NotFound("plugin not installed".into())),
     }
 }
 
@@ -793,7 +793,7 @@ async fn fetch_store_plugin(config: &Config, plugin_id: &str) -> Result<StorePlu
         .plugins
         .into_iter()
         .find(|plugin| plugin.id == plugin_id)
-        .ok_or(AppError::NotFound)
+        .ok_or(AppError::NotFound("plugin not found in store".into()))
 }
 
 fn ensure_not_blocked(config: &Config, plugin_id: &str) -> Result<(), AppError> {

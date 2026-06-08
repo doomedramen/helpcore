@@ -158,7 +158,7 @@ pub async fn update_user(
         .await?;
 
     if !changed {
-        return Err(AppError::NotFound);
+        return Err(AppError::NotFound("user not found".into()));
     }
 
     let actor_id = admin.0.id.clone();

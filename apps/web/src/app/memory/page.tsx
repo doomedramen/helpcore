@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useSWR, { useSWRConfig } from "swr";
 import { FilePlus, Trash2 } from "lucide-react";
@@ -9,11 +9,30 @@ import PageHeader from "@/app/components/page-header";
 import SettingsNav from "@/app/components/settings-nav";
 import StatusMessage from "@/app/components/status-message";
 import { useAuth } from "@/context/auth";
-import { deleteMemoryFile, getMemoryFile, listMemory, putMemoryFile } from "@/lib/api";
+import { deleteMemoryFile, getMemoryFile, listMemory, putMemoryFile, updateMe } from "@/lib/api";
 import type { MemoryEntry } from "@/lib/types";
 
+const MEMORY_LEANING_OPTIONS = [
+  {
+    value: "off",
+    label: "Don't use memory",
+    description: "The AI will not store or recall anything about you.",
+  },
+  { value: "light", label: "Light", description: "Only save things when you explicitly ask." },
+  {
+    value: "moderate",
+    label: "Moderate",
+    description: "Balance — save useful context, skip trivia.",
+  },
+  {
+    value: "heavy",
+    label: "Heavy",
+    description: "Proactively remember everything it learns about you.",
+  },
+];
+
 export default function MemoryPage() {
-  const { accessToken, isLoading } = useAuth();
+  const { accessToken, isLoading, currentUser } = useAuth();
   const router = useRouter();
   const { mutate } = useSWRConfig();
 
@@ -26,6 +45,16 @@ export default function MemoryPage() {
   const [isDirty, setIsDirty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [savedAt, setSavedAt] = useState<string | null>(null);
+
+  const [memoryLeaning, setMemoryLeaning] = useState(currentUser?.memory_leaning ?? "moderate");
+  const [leaningSaving, setLeaningSaving] = useState(false);
+  const [leaningSaved, setLeaningSaved] = useState(false);
+
+  useEffect(() => {
+    if (currentUser?.memory_leaning) {
+      setMemoryLeaning(currentUser.memory_leaning);
+    }
+  }, [currentUser?.memory_leaning]);
 
   const { data: fileList } = useSWR<MemoryEntry[]>(
     accessToken ? ["/api/memory", accessToken] : null,
@@ -123,6 +152,23 @@ export default function MemoryPage() {
     }
   }
 
+  async function handleLeaningChange(value: string) {
+    setMemoryLeaning(value);
+    if (!accessToken) return;
+    setLeaningSaving(true);
+    setLeaningSaved(false);
+    try {
+      await updateMe({ memory_leaning: value }, accessToken);
+      setLeaningSaved(true);
+      setTimeout(() => setLeaningSaved(false), 2000);
+    } catch {
+      // revert on failure
+      setMemoryLeaning(currentUser?.memory_leaning ?? "moderate");
+    } finally {
+      setLeaningSaving(false);
+    }
+  }
+
   return (
     <AppShell
       conversationId={null}
@@ -139,6 +185,42 @@ export default function MemoryPage() {
         </div>
         <div className="px-4 pb-4 sm:px-6">
           <SettingsNav />
+        </div>
+      </div>
+
+      <div className="mx-auto w-full max-w-5xl px-4 sm:px-6">
+        <div className="surface-card p-4 sm:p-5">
+          <h3 className="text-sm font-semibold text-slate-900 dark:text-white mb-2">
+            Memory leaning
+          </h3>
+          <p className="mb-4 text-xs leading-5 text-slate-500 dark:text-slate-400">
+            Controls how heavily the AI leans into storing and recalling information it learns about
+            you.
+          </p>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {MEMORY_LEANING_OPTIONS.map((opt) => (
+              <button
+                key={opt.value}
+                onClick={() => handleLeaningChange(opt.value)}
+                disabled={leaningSaving}
+                className={`rounded-xl border px-3 py-3 text-left transition ${
+                  memoryLeaning === opt.value
+                    ? "border-indigo-200 bg-indigo-50 ring-1 ring-indigo-200 dark:border-indigo-800 dark:bg-indigo-950/40 dark:ring-indigo-800"
+                    : "border-slate-200/80 bg-white/60 hover:border-slate-300 dark:border-slate-800 dark:bg-slate-900/60 dark:hover:border-slate-700"
+                }`}
+              >
+                <span className="block text-sm font-medium text-slate-900 dark:text-white">
+                  {opt.label}
+                </span>
+                <span className="mt-0.5 block text-xs leading-4 text-slate-400 dark:text-slate-500">
+                  {opt.description}
+                </span>
+              </button>
+            ))}
+          </div>
+          {leaningSaved && (
+            <p className="mt-2 text-xs text-green-600 dark:text-green-400">Saved.</p>
+          )}
         </div>
       </div>
 
