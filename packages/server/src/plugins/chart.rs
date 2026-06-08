@@ -7,7 +7,10 @@ pub fn generate_svg(
     width: u32,
     height: u32,
 ) -> String {
-    // Basic SVG boilerplate
+    if labels.len() != values.len() {
+        return String::new();
+    }
+
     let mut svg = format!(
         r#"<svg width="{}" height="{}" viewBox="0 0 {} {}" xmlns="http://www.w3.org/2000/svg" style="background: white; font-family: sans-serif;">"#,
         width, height, width, height
@@ -28,10 +31,11 @@ pub fn generate_svg(
 
     // Title
     if let Some(t) = title {
+        let escaped = xml_escape(t);
         svg.push_str(&format!(
             r##"<text x="{}" y="35" text-anchor="middle" font-size="20" font-weight="bold" fill="#333">{}</text>"##,
             width / 2,
-            t
+            escaped
         ));
     }
 
@@ -93,7 +97,7 @@ fn render_bar(
             height as f64 - margin as f64 + 15.0,
             x + bar_width / 2.0,
             height as f64 - margin as f64 + 15.0,
-            label
+            xml_escape(label)
         ));
     }
 }
@@ -148,7 +152,7 @@ fn render_pie(
             tx,
             ty,
             anchor,
-            label,
+            xml_escape(label),
             (val / total) * 100.0
         ));
 
@@ -207,13 +211,21 @@ fn render_line(
             height as f64 - margin as f64 + 15.0,
             x,
             height as f64 - margin as f64 + 15.0,
-            labels[i]
+            xml_escape(&labels[i])
         ));
     }
     svg.push_str(&format!(
         r#"<path d="{}" fill="none" stroke="{}" stroke-width="3" />"#,
         path_data, color
     ));
+}
+
+fn xml_escape(s: &str) -> String {
+    s.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+        .replace('\'', "&apos;")
 }
 
 #[cfg(test)]
@@ -248,5 +260,85 @@ mod tests {
             400,
         );
         assert!(svg.contains("path"));
+    }
+
+    #[test]
+    fn test_generate_line_svg() {
+        let svg = generate_svg(
+            "line",
+            &["Jan".to_string(), "Feb".to_string(), "Mar".to_string()],
+            &[10.0, 20.0, 15.0],
+            Some("Growth"),
+            None,
+            600,
+            400,
+        );
+        assert!(svg.contains("svg"));
+        assert!(svg.contains("Growth"));
+        assert!(svg.contains("path"));
+        assert!(svg.contains("circle"));
+    }
+
+    #[test]
+    fn test_generate_donut_svg() {
+        let svg = generate_svg(
+            "donut",
+            &["A".to_string(), "B".to_string()],
+            &[10.0, 20.0],
+            None,
+            None,
+            600,
+            400,
+        );
+        assert!(svg.contains("svg"));
+        assert!(svg.contains("path"));
+        assert!(svg.contains("circle"));
+    }
+
+    #[test]
+    fn test_escapes_label_xml() {
+        let svg = generate_svg(
+            "pie",
+            &["A < B".to_string(), "C & D".to_string()],
+            &[10.0, 20.0],
+            Some("Title < & >"),
+            None,
+            600,
+            400,
+        );
+        assert!(svg.contains("A &lt; B"));
+        assert!(svg.contains("C &amp; D"));
+        assert!(svg.contains("Title &lt; &amp; &gt;"));
+    }
+
+    #[test]
+    fn test_mismatched_lengths_returns_empty() {
+        let svg = generate_svg(
+            "bar",
+            &["A".to_string()],
+            &[10.0, 20.0],
+            None,
+            None,
+            600,
+            400,
+        );
+        assert!(svg.is_empty());
+    }
+
+    #[test]
+    fn test_empty_data() {
+        let svg = generate_svg("bar", &[] as &[String], &[] as &[f64], None, None, 600, 400);
+        assert!(svg.contains("svg"));
+        assert!(!svg.contains("<rect"));
+    }
+
+    #[test]
+    fn test_xml_escape() {
+        assert_eq!(
+            xml_escape("a < b & c > d \"e'f"),
+            "a &lt; b &amp; c &gt; d &quot;e&apos;f"
+        );
+        assert_eq!(xml_escape("plain text"), "plain text");
+        assert_eq!(xml_escape(""), "");
     }
 }

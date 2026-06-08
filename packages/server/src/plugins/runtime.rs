@@ -688,7 +688,21 @@ async fn execute_builtin(
             if !resp.status().is_success() {
                 anyhow::bail!("failed to render mermaid diagram: {}", resp.status());
             }
+            let content_type = resp
+                .headers()
+                .get(reqwest::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok())
+                .unwrap_or("")
+                .to_string();
             let bytes = resp.bytes().await?;
+            if !content_type.starts_with("image/") {
+                let preview = String::from_utf8_lossy(&bytes);
+                anyhow::bail!(
+                    "mermaid.ink returned non-image response ({}): {}",
+                    content_type,
+                    preview.chars().take(200).collect::<String>()
+                );
+            }
             if bytes.len() > MAX_TOOL_RESULT_BYTES {
                 anyhow::bail!("mermaid render result exceeds the 1 MiB limit");
             }
