@@ -28,6 +28,7 @@ import {
 import {
   PromptInput,
   type PromptInputMessage,
+  PromptInputBody,
   PromptInputTextarea,
   PromptInputSubmit,
   PromptInputFooter,
@@ -676,12 +677,13 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       {/* Input */}
       <div className="mx-auto w-full max-w-4xl px-3 pb-3 pt-2 sm:px-5 sm:pb-5">
         <PromptInput onSubmit={handlePromptSubmit} globalDrop>
-          <PromptInputTextarea
-            placeholder={
-              providers.length === 0 ? "Configure a chat provider to begin." : "Message helpcore…"
-            }
-          />
-          <PromptInputSubmit status={active ? "streaming" : "ready"} onStop={handleStop} />
+          <PromptInputBody>
+            <PromptInputTextarea
+              placeholder={
+                providers.length === 0 ? "Configure a chat provider to begin." : "Message helpcore…"
+              }
+            />
+          </PromptInputBody>
           <PromptInputFooter>
             <PromptInputTools>
               <Sparkles size={13} className="shrink-0 text-indigo-500 dark:text-indigo-400" />
@@ -707,9 +709,12 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                 </SelectContent>
               </Select>
             </PromptInputTools>
-            <span className="hidden text-[11px] text-muted-foreground sm:block">
-              Enter to send · Shift + Enter for new line
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="hidden text-[11px] text-muted-foreground sm:block">
+                Enter to send · Shift + Enter for new line
+              </span>
+              <PromptInputSubmit status={active ? "streaming" : "ready"} onStop={handleStop} />
+            </div>
           </PromptInputFooter>
         </PromptInput>
       </div>
