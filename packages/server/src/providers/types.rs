@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use serde::{Deserialize, Serialize};
 
 /// A tool (function) definition that can be sent to a model to enable tool use.

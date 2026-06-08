@@ -1,3 +1,5 @@
+#![allow(missing_docs)]
+
 use std::pin::Pin;
 
 use async_trait::async_trait;

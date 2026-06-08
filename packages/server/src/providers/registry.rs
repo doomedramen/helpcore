@@ -3,6 +3,8 @@
 //! The registry holds a read-locked list of configured chat providers and
 //! supports hot-reloading via [`ProviderRegistry::replace`].
 
+#![allow(missing_docs)]
+
 use std::sync::Arc;
 
 use parking_lot::RwLock;

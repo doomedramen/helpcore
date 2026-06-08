@@ -1,5 +1,7 @@
 //! SQLite database layer: connection pool, migrations, and audit logging.
 
+#![allow(missing_docs)]
+
 pub mod audit;
 
 use anyhow::Context;
