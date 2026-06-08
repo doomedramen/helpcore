@@ -2,6 +2,7 @@ import { SerwistProvider } from "@serwist/turbopack/react";
 import type { Metadata, Viewport } from "next";
 import { AuthProvider } from "@/context/auth";
 import { ThemeProvider } from "@/context/theme";
+import "highlight.js/styles/github.css";
 import "./globals.css";
 
 const APP_NAME = "helpcore";

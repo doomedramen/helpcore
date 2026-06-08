@@ -3,31 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import rehypePrettyCode from "rehype-pretty-code";
-import {
-  createHighlighterCoreSync,
-  createJavaScriptRegexEngine,
-  type HighlighterCore,
-} from "shiki";
-import githubLight from "@shikijs/themes/github-light";
-import githubDark from "@shikijs/themes/github-dark";
-import javascript from "@shikijs/langs/javascript";
-import typescript from "@shikijs/langs/typescript";
-import tsx from "@shikijs/langs/tsx";
-import jsx from "@shikijs/langs/jsx";
-import json from "@shikijs/langs/json";
-import bash from "@shikijs/langs/bash";
-import rust from "@shikijs/langs/rust";
-import python from "@shikijs/langs/python";
-import html from "@shikijs/langs/html";
-import css from "@shikijs/langs/css";
-import markdown from "@shikijs/langs/markdown";
-import yaml from "@shikijs/langs/yaml";
-import toml from "@shikijs/langs/toml";
-import sql from "@shikijs/langs/sql";
-import diff from "@shikijs/langs/diff";
-import graphql from "@shikijs/langs/graphql";
-import dockerfile from "@shikijs/langs/dockerfile";
+import rehypeHighlight from "rehype-highlight";
 import {
   AlertTriangle,
   ChevronDown,
@@ -47,30 +23,6 @@ import {
 import { tts } from "@/lib/api";
 import type { Message } from "@/lib/types";
 import BrandMark from "./brand-mark";
-
-const syncHighlighter: HighlighterCore = createHighlighterCoreSync({
-  themes: [githubLight, githubDark],
-  langs: [
-    javascript,
-    typescript,
-    tsx,
-    jsx,
-    json,
-    bash,
-    rust,
-    python,
-    html,
-    css,
-    markdown,
-    yaml,
-    toml,
-    sql,
-    diff,
-    graphql,
-    dockerfile,
-  ],
-  engine: createJavaScriptRegexEngine(),
-});
 
 function stripMarkdown(text: string): string {
   return text
@@ -447,22 +399,7 @@ export default function MessageBubble({
           </span>
         ) : (
           <div className="prose prose-sm max-w-none">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              rehypePlugins={[
-                [
-                  rehypePrettyCode,
-                  {
-                    theme: {
-                      light: "github-light",
-                      dark: "github-dark",
-                    },
-                    keepBackground: false,
-                    getHighlighter: () => syncHighlighter,
-                  },
-                ],
-              ]}
-            >
+            <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeHighlight]}>
               {message.content}
             </ReactMarkdown>
           </div>
