@@ -1,3 +1,7 @@
+//! Text-to-speech handler — proxies TTS requests through the configured voice plugin.
+//!
+//! Endpoint: POST /api/tts
+
 use std::sync::Arc;
 
 use axum::{
@@ -13,6 +17,7 @@ use crate::{
     state::AppState,
 };
 
+/// Request body for the text-to-speech endpoint.
 #[derive(Deserialize)]
 pub struct TtsRequest {
     pub text: String,
@@ -20,6 +25,9 @@ pub struct TtsRequest {
     pub voice: Option<String>,
 }
 
+/// POST /api/tts — converts text to speech via the configured voice plugin.
+///
+/// Returns raw audio bytes with the appropriate Content-Type header.
 pub async fn tts_handler(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,

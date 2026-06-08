@@ -1,3 +1,7 @@
+//! Admin configuration handlers — read and write the server configuration.
+//!
+//! All endpoints under `/api/admin`. Requires admin role.
+
 use axum::{Json, extract::State};
 use helpcore_api::{
     AdminConfigResponse, AdminConfigUpdateRequest, AdminProviderConfig, AdminServerConfig,
@@ -10,6 +14,7 @@ use crate::{
     state::AppState,
 };
 
+/// GET /api/admin/config — returns the current server configuration (admin only).
 pub async fn get_config(
     State(state): State<Arc<AppState>>,
     _admin: AdminUser,
@@ -18,6 +23,7 @@ pub async fn get_config(
     Ok(Json(config_response(&state, &config)))
 }
 
+/// PUT /api/admin/config — updates the server configuration, reloads providers, and disables blacklisted plugins (admin only).
 pub async fn update_config(
     State(state): State<Arc<AppState>>,
     _admin: AdminUser,

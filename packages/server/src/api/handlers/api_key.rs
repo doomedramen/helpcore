@@ -1,3 +1,7 @@
+//! API key management handlers — create, list, and revoke personal API keys.
+//!
+//! All endpoints under `/api/auth/api-keys`.
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -12,6 +16,7 @@ use crate::{
     state::AppState,
 };
 
+/// GET /api/auth/api-keys — lists the authenticated user's active API keys.
 pub async fn list_api_keys(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -45,6 +50,9 @@ pub async fn list_api_keys(
     Ok(Json(ListApiKeysResponse { keys }))
 }
 
+/// POST /api/auth/api-keys — creates a new API key for the authenticated user.
+///
+/// Returns the full key only once; the caller must store it.
 pub async fn create_api_key(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -97,6 +105,7 @@ pub async fn create_api_key(
     ))
 }
 
+/// DELETE /api/auth/api-keys/{id} — revokes an API key by ID.
 pub async fn revoke_api_key(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,

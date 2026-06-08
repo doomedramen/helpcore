@@ -28,7 +28,7 @@ const TABS = [
 type TabKey = (typeof TABS)[number]["key"];
 
 export default function PersonalityPage() {
-  const { accessToken, isLoading } = useAuth();
+  const { accessToken } = useAuth();
   const router = useRouter();
   const { mutate } = useSWRConfig();
   const [activeTab, setActiveTab] = useState<TabKey>("soul");
@@ -51,17 +51,8 @@ export default function PersonalityPage() {
     user: false,
   });
 
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center text-sm text-slate-400">
-        Loading…
-      </div>
-    );
-  }
-  if (!accessToken) {
-    router.replace("/login/");
-    return null;
-  }
+  // No auth guard needed here — AuthGate (in the root layout) only renders
+  // this page once a session is confirmed.
 
   function currentContent(tab: TabKey): string {
     if (edited[tab]) return draft[tab];

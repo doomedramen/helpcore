@@ -1,8 +1,11 @@
+//! `hc login` — authenticate against a helpcore server and store credentials.
+
 use anyhow::bail;
 
 use super::prompt::prompt;
 use crate::{client::Client, config::Credentials};
 
+/// Prompts for credentials, exchanges them for tokens, and persists the result.
 pub async fn run(server_flag: Option<&str>, email_flag: Option<&str>) -> anyhow::Result<()> {
     let mut creds = Credentials::load()?;
 

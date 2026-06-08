@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 
+/// A tool (function) definition that can be sent to a model to enable tool use.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolDefinition {
     pub name: String,
@@ -7,6 +8,7 @@ pub struct ToolDefinition {
     pub input_schema: serde_json::Value,
 }
 
+/// A tool call request emitted by a model during a conversation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ToolCall {
     pub id: String,
@@ -29,15 +31,19 @@ pub struct ChatMessage {
 }
 
 impl ChatMessage {
+    /// Create a system message.
     pub fn system(content: impl Into<String>) -> Self {
         Self::plain("system", content)
     }
+    /// Create a user message.
     pub fn user(content: impl Into<String>) -> Self {
         Self::plain("user", content)
     }
+    /// Create a plain assistant message without tool calls.
     pub fn assistant(content: impl Into<String>) -> Self {
         Self::plain("assistant", content)
     }
+    /// Create an assistant message that requests tool calls.
     pub fn assistant_with_tools(content: impl Into<String>, tool_calls: Vec<ToolCall>) -> Self {
         Self {
             role: "assistant".to_string(),
@@ -47,6 +53,7 @@ impl ChatMessage {
             tool_name: None,
         }
     }
+    /// Create a tool result message with a call ID and tool name.
     pub fn tool(
         id: impl Into<String>,
         name: impl Into<String>,
@@ -72,6 +79,9 @@ impl ChatMessage {
 }
 
 /// A token delta from a streaming provider response.
+///
+/// Carries text content, optional tool calls, and a final flag that
+/// signals the end of the stream.
 #[derive(Debug, Clone)]
 pub struct StreamChunk {
     /// Text content of this chunk.
@@ -83,6 +93,7 @@ pub struct StreamChunk {
 }
 
 impl StreamChunk {
+    /// Create a text delta chunk.
     pub fn delta(text: impl Into<String>) -> Self {
         Self {
             delta: text.into(),
@@ -90,6 +101,7 @@ impl StreamChunk {
             is_final: false,
         }
     }
+    /// Create a chunk carrying tool calls from the model.
     pub fn tool_calls(tool_calls: Vec<ToolCall>) -> Self {
         Self {
             delta: String::new(),
@@ -97,6 +109,7 @@ impl StreamChunk {
             is_final: false,
         }
     }
+    /// Create the terminal chunk that signals the end of the stream.
     pub fn done() -> Self {
         Self {
             delta: String::new(),

@@ -1,3 +1,5 @@
+//! API key generation, validation, and revocation.
+
 use anyhow::Context;
 use chrono::{DateTime, Utc};
 use rusqlite::Connection;
@@ -24,7 +26,9 @@ pub fn display_prefix(key: &str) -> String {
     key.chars().take(DISPLAY_LEN).collect()
 }
 
+/// Result of creating a new API key — ID, full key (shown once), and UI prefix.
 pub struct CreatedApiKey {
+    /// Stable identifier for this API key.
     pub id: String,
     /// The full key — shown to the user once, never stored in the DB.
     pub full_key: String,
@@ -32,6 +36,7 @@ pub struct CreatedApiKey {
     pub key_prefix: String,
 }
 
+/// Creates a new API key for a user and stores its hash in the database.
 pub fn create_api_key(
     conn: &Connection,
     user_id: &str,

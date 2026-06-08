@@ -1,7 +1,8 @@
-/// Context compaction — summarises the oldest portion of a conversation so it
-/// fits in the model's context window.
-///
-/// Design: `docs/conversation.md` §Context overflow handling.
+//! Context compaction — summarises the oldest portion of a conversation so it
+//! fits in the model's context window.
+//!
+//! Design: `docs/conversation.md` §Context overflow handling.
+
 use std::sync::Arc;
 
 use anyhow::Context;

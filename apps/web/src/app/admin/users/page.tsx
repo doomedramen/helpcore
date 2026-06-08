@@ -7,7 +7,7 @@ import AdminNav from "@/app/components/admin-nav";
 import AppShell from "@/app/components/app-shell";
 import PageHeader from "@/app/components/page-header";
 import StatusMessage from "@/app/components/status-message";
-import { useAuth } from "@/context/auth";
+import { useRequireAuth } from "@/hooks/use-require-auth";
 import {
   createAdminUser,
   listAdminUsers,
@@ -25,7 +25,7 @@ import {
 } from "@/app/components/ui/dialog";
 
 export default function AdminUsersPage() {
-  const { accessToken, currentUser, isLoading } = useAuth();
+  const { accessToken, currentUser, ready } = useRequireAuth({ role: "admin" });
   const router = useRouter();
   const { mutate } = useSWRConfig();
 
@@ -42,22 +42,18 @@ export default function AdminUsersPage() {
   const [resetting, setResetting] = useState(false);
 
   const { data } = useSWR(
-    accessToken && currentUser?.role === "admin" ? ["/api/admin/users", accessToken] : null,
+    ready && accessToken ? ["/api/admin/users", accessToken] : null,
     ([, t]) => listAdminUsers(t),
     { revalidateOnFocus: false },
   );
   const users: AdminUserSummary[] = data?.users ?? [];
 
-  if (isLoading) {
+  if (!ready || !accessToken) {
     return (
       <div className="flex h-screen items-center justify-center text-sm text-slate-400">
         Loading…
       </div>
     );
-  }
-  if (!accessToken || currentUser?.role !== "admin") {
-    router.replace(accessToken ? "/chat/" : "/login/");
-    return null;
   }
 
   async function handleCreate() {

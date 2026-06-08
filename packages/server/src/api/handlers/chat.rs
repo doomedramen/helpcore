@@ -1,3 +1,7 @@
+//! Chat and conversation handlers — the core AI chat loop, conversation CRUD, feedback, and compaction.
+//!
+//! All endpoints under `/api/chat` and `/api/conversations`.
+
 use std::{convert::Infallible, sync::Arc, time::Duration};
 
 use axum::{
@@ -28,8 +32,11 @@ use crate::{
 
 type EventSender = tokio::sync::mpsc::Sender<Result<Event, Infallible>>;
 
-// ── POST /chat ────────────────────────────────────────────────────────────────
+// ── POST /api/chat ─────────────────────────────────────────────────────────────
 
+/// POST /api/chat — starts a new chat turn and streams the assistant's response via SSE.
+///
+/// Emits `started`, `chunk`, `tool_call`, `tool_result`, `done`, and `error` events.
 pub async fn chat(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -144,8 +151,9 @@ pub async fn chat(
     Ok(Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default()))
 }
 
-// ── POST /conversations/:id/messages/:message_id/retry ───────────────────────
+// ── POST /api/conversations/:id/messages/:message_id/retry ────────────────────
 
+/// POST /api/conversations/{id}/messages/{message_id}/retry — retries a failed assistant message and streams the result via SSE.
 pub async fn retry_message(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -556,8 +564,9 @@ fn turn_error(error: anyhow::Error) -> AppError {
     }
 }
 
-// ── GET /conversations ────────────────────────────────────────────────────────
+// ── GET /api/conversations ─────────────────────────────────────────────────────
 
+/// GET /api/conversations — lists all conversations for the authenticated user.
 pub async fn list_conversations(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -570,8 +579,9 @@ pub async fn list_conversations(
     Ok(Json(convs))
 }
 
-// ── GET /conversations/:id/messages ──────────────────────────────────────────
+// ── GET /api/conversations/:id/messages ────────────────────────────────────────
 
+/// GET /api/conversations/{id}/messages — loads all messages for a conversation.
 pub async fn get_messages(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -600,8 +610,9 @@ pub async fn get_messages(
     Ok(Json(msgs))
 }
 
-// ── PATCH /conversations/:id ─────────────────────────────────────────────────
+// ── PATCH /api/conversations/:id ───────────────────────────────────────────────
 
+/// PATCH /api/conversations/{id} — renames a conversation.
 pub async fn rename_conversation(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -624,8 +635,9 @@ pub async fn rename_conversation(
     Ok(StatusCode::NO_CONTENT)
 }
 
-// ── DELETE /conversations/:id ─────────────────────────────────────────────────
+// ── DELETE /api/conversations/:id ───────────────────────────────────────────────
 
+/// DELETE /api/conversations/{id} — deletes a conversation and all its messages.
 pub async fn delete_conversation(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -651,11 +663,12 @@ pub async fn delete_conversation(
     }
 }
 
-// ── POST /conversations/:id/feedback ──────────────────────────────────────────
+// ── POST /api/conversations/:id/feedback ───────────────────────────────────────
 //
 // Injected by the frontend when chart/mermaid rendering errors are detected.
 // Stored as a "user" message so the AI sees the error and can self-correct.
 
+/// Request body for rendering-error feedback.
 #[derive(Deserialize)]
 pub struct FeedbackBody {
     #[serde(rename = "type")]
@@ -663,6 +676,7 @@ pub struct FeedbackBody {
     message: String,
 }
 
+/// POST /api/conversations/{id}/feedback — submits rendering-error feedback as a user message.
 pub async fn submit_feedback(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -690,8 +704,9 @@ pub async fn submit_feedback(
     Ok(Json(serde_json::json!({"status": "ok"})))
 }
 
-// ── POST /conversations/:id/cancel ───────────────────────────────────────────
+// ── POST /api/conversations/:id/cancel ─────────────────────────────────────────
 
+/// POST /api/conversations/{id}/cancel — interrupts any in-progress messages for a conversation.
 pub async fn cancel_conversation(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -721,8 +736,9 @@ pub async fn cancel_conversation(
     Ok(Json(serde_json::json!({ "interrupted": interrupted })))
 }
 
-// ── POST /conversations/:id/compact ──────────────────────────────────────────
+// ── POST /api/conversations/:id/compact ────────────────────────────────────────
 
+/// POST /api/conversations/{id}/compact — compacts a conversation's history into a summary.
 pub async fn compact_conversation(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,

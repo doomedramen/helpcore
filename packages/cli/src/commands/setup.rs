@@ -1,3 +1,5 @@
+//! `hc setup` — first-admin setup wizard.
+
 use anyhow::{Context, bail};
 
 use super::prompt::{prompt, prompt_with_default};

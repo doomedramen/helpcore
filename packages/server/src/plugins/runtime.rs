@@ -1,3 +1,5 @@
+//! Plugin tool execution: built-in tools, WASM sandbox, and bridge HTTP dispatch.
+
 use anyhow::Context;
 use base64::Engine as _;
 use reqwest::header::{AUTHORIZATION, HeaderName, HeaderValue};
@@ -25,25 +27,30 @@ use crate::{
     state::AppState,
 };
 
-wasmtime::component::bindgen!({
-    inline: r#"
-        package helpcore:plugin;
+/// WASM component model bindings generated from the helpcore:plugin WIT world.
+mod wasm_bindings {
+    #![allow(missing_docs)]
+    wasmtime::component::bindgen!({
+        inline: r#"
+            package helpcore:plugin;
 
-        interface host {
-            http-request: func(request-json: string) -> result<string, string>;
-            http-request-binary: func(request-json: string) -> result<string, string>;
-            data-read: func(path: string) -> result<string, string>;
-            data-write: func(path: string, content: string) -> result<_, string>;
-            config-read: func(key: string) -> result<string, string>;
-            secret-read: func(key: string) -> result<string, string>;
-        }
+            interface host {
+                http-request: func(request-json: string) -> result<string, string>;
+                http-request-binary: func(request-json: string) -> result<string, string>;
+                data-read: func(path: string) -> result<string, string>;
+                data-write: func(path: string, content: string) -> result<_, string>;
+                config-read: func(key: string) -> result<string, string>;
+                secret-read: func(key: string) -> result<string, string>;
+            }
 
-        world plugin {
-            import host;
-            export call: func(tool: string, input-json: string) -> result<string, string>;
-        }
-    "#,
-});
+            world plugin {
+                import host;
+                export call: func(tool: string, input-json: string) -> result<string, string>;
+            }
+        "#,
+    });
+}
+use wasm_bindings::*;
 
 const WASM_MEMORY_LIMIT: usize = 64 * 1024 * 1024;
 const WASM_FUEL_LIMIT: u64 = 1_000_000_000;
@@ -56,12 +63,14 @@ struct RuntimeTool {
     plugin: InstalledPlugin,
 }
 
+/// Loads and dispatches tool calls to built-in handlers or WASM/bridge plugins.
 pub struct ToolCatalog {
     definitions: Vec<ToolDefinition>,
     tools: HashMap<String, RuntimeTool>,
 }
 
 impl ToolCatalog {
+    /// Loads all enabled plugins for a user and builds the tool catalog.
     pub async fn load(state: &AppState, user_id: &str) -> anyhow::Result<Self> {
         let user_id = user_id.to_string();
         let plugins = state
@@ -91,10 +100,12 @@ impl ToolCatalog {
         Ok(Self { definitions, tools })
     }
 
+    /// Returns the tool definitions visible to the model.
     pub fn definitions(&self) -> &[ToolDefinition] {
         &self.definitions
     }
 
+    /// Dispatches a tool call to the appropriate runtime (built-in, WASM, or bridge).
     pub async fn execute(
         &self,
         state: &AppState,

@@ -1,3 +1,5 @@
+//! Session token creation, validation, and rotation.
+
 use anyhow::Context;
 use chrono::{DateTime, Duration, Utc};
 use rusqlite::Connection;
@@ -20,10 +22,15 @@ pub fn hash_token(token: &str) -> String {
     hex::encode(Sha256::digest(token.as_bytes()))
 }
 
+/// Result of creating a new session — raw tokens and their expiry timestamps.
 pub struct CreatedSession {
+    /// Short-lived bearer token for API requests (15 min TTL).
     pub access_token: String,
+    /// Long-lived token used to obtain a new access token (30 day TTL).
     pub refresh_token: String,
+    /// UTC timestamp when the access token expires.
     pub access_expires_at: DateTime<Utc>,
+    /// UTC timestamp when the refresh token expires.
     pub refresh_expires_at: DateTime<Utc>,
 }
 

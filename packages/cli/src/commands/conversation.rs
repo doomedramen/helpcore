@@ -1,5 +1,8 @@
+//! `hc conversation ls` and `hc conversation show` — browse conversation history.
+
 use crate::{client::Client, config::Credentials};
 
+/// Lists all conversations for the authenticated user, most recently updated first.
 pub async fn list(server_flag: Option<&str>) -> anyhow::Result<()> {
     let creds = Credentials::load()?;
     let server = resolve_server(&creds, server_flag)?;
@@ -30,6 +33,7 @@ pub async fn list(server_flag: Option<&str>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Prints all messages in a conversation by ID.
 pub async fn show(conversation_id: &str, server_flag: Option<&str>) -> anyhow::Result<()> {
     let creds = Credentials::load()?;
     let server = resolve_server(&creds, server_flag)?;

@@ -1,5 +1,6 @@
-/// Plugin registry: loading manifests from disk, registering plugins in the DB,
-/// and querying installed plugins for a user.
+//! Plugin registry: loading manifests from disk, registering plugins in the DB,
+//! and querying installed plugins for a user.
+
 use anyhow::Context;
 use chrono::Utc;
 use helpcore_api::ConfigField;
@@ -15,15 +16,24 @@ use crate::config::LocalPluginConfig;
 /// Parsed content of a plugin's `manifest.toml`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Manifest {
+    /// Unique plugin identifier (e.g. "helpcore-weather").
     pub id: String,
+    /// Human-readable name (e.g. "Weather").
     pub name: String,
+    /// Semver version string.
     pub version: String,
+    /// Short description of what the plugin does.
     pub description: String,
-    pub tier: String, // "wasm" | "bridge"
+    /// Runtime tier: "wasm" or "bridge".
+    pub tier: String,
+    /// Permissions the plugin requires (e.g. "outbound_http").
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// Minimum helpcore server version required.
     pub min_core_version: Option<String>,
+    /// Optional bridge-tier configuration.
     pub bridge: Option<BridgeConfig>,
+    /// Hosts the plugin may contact (supports `*` and `*.example.com` wildcards).
     #[serde(default)]
     pub allowed_hosts: Vec<String>,
     /// User-configurable fields declared by the plugin.
@@ -39,30 +49,49 @@ pub struct Manifest {
     pub brief: String,
 }
 
+/// Optional bridge-tier plugin configuration from manifest.toml.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct BridgeConfig {
+    /// Default port for the bridge HTTP server.
     pub default_port: Option<u16>,
+    /// Optional health-check endpoint path.
     pub health_path: Option<String>,
 }
 
-/// Runtime representation of an installed plugin for a user.
+/// Runtime representation of a plugin installed for a specific user.
 #[derive(Debug, Clone)]
 pub struct InstalledPlugin {
+    /// Row ID in the plugin_installs table.
     pub install_id: String,
+    /// Matches the plugin's `id` in the manifest.
     pub plugin_id: String,
+    /// Human-readable plugin name.
     pub name: String,
+    /// Short description from the manifest.
     pub description: String,
+    /// Currently installed version.
     pub version: String,
+    /// Previously installed version (if any).
     pub previous_version: Option<String>,
+    /// Runtime tier: "wasm" or "bridge".
     pub tier: String,
+    /// Whether the plugin is active for this user.
     pub enabled: bool,
+    /// Full skill.md content loaded on demand.
     pub skill_md: Option<String>,
+    /// One-line routing description for the skill index.
     pub brief: String,
+    /// Granted permissions for this install.
     pub permissions: Vec<String>,
+    /// Full parsed manifest.
     pub manifest: Manifest,
+    /// Tool definitions exported by the plugin.
     pub tools: PluginTools,
+    /// User-configured settings (non-secret values only).
     pub config: serde_json::Value,
+    /// Encrypted secret values (base64-encoded).
     pub secrets: Option<String>,
+    /// URL of the plugin's source repository or registry.
     pub source_url: Option<String>,
 }
 
@@ -70,73 +99,112 @@ pub struct InstalledPlugin {
 /// the full skill.md loaded on demand via the `skill_read` tool.
 #[derive(Debug, Clone)]
 pub struct PluginSkill {
+    /// Human-readable plugin name (e.g. "Weather").
     pub name: String,
+    /// One-line routing description (e.g. "Use when the user asks about weather.").
     pub brief: String,
+    /// Full skill instructions loaded from `skill.md`.
     pub skill_md: Option<String>,
 }
 
+/// Summary state of a plugin install for API responses.
 #[derive(Debug, Clone)]
 pub struct InstalledState {
+    /// Whether the plugin is active.
     pub enabled: bool,
+    /// Currently installed version.
     pub version: String,
+    /// Previously installed version (if any).
     pub previous_version: Option<String>,
+    /// Whether all required config fields have values.
     pub configured: bool,
 }
 
+/// Root of the plugin store registry JSON.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StoreRegistry {
+    /// List of plugins available in the store.
     pub plugins: Vec<StorePlugin>,
 }
 
+/// A single plugin entry in the store registry.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StorePlugin {
+    /// Unique plugin identifier.
     pub id: String,
+    /// Human-readable name.
     pub name: String,
+    /// Short description of the plugin.
     pub description: String,
+    /// Latest available version.
     pub version: String,
+    /// Runtime tier: "wasm" or "bridge".
     pub tier: String,
+    /// Plugin author name.
     #[serde(default)]
     pub author: String,
+    /// Plugin homepage URL.
     #[serde(default)]
     pub homepage: String,
+    /// Required permissions for this plugin.
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// Features this plugin provides.
     #[serde(default)]
     pub provides: Vec<String>,
+    /// Source repository reference.
     #[serde(default)]
     pub source: Option<StorePluginSource>,
+    /// Optional setup guide Markdown.
     pub setup_guide: Option<String>,
+    /// Downloadable package metadata.
     pub package: Option<StorePluginPackage>,
 }
 
+/// Downloadable package metadata for a store plugin entry.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StorePluginPackage {
+    /// Download URL for the package archive.
     pub url: String,
+    /// Expected SHA-256 hex digest of the downloaded file.
     pub sha256: String,
+    /// Expected file size in bytes (optional).
     pub size: Option<u64>,
 }
 
+/// Source repository reference for a store plugin entry.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct StorePluginSource {
+    /// Source type (e.g. "github").
     #[serde(rename = "type")]
     pub source_type: String,
+    /// Repository URL.
     pub repo: Option<String>,
+    /// Git ref (branch or tag).
     #[serde(rename = "ref")]
     pub source_ref: Option<String>,
+    /// Path to the WASM artifact in the repo.
     pub wasm_asset: Option<String>,
+    /// Direct source URL.
     pub url: Option<String>,
 }
 
+/// Collection of tools exported by a plugin.
 #[derive(Debug, Clone, Default, Deserialize, Serialize)]
 pub struct PluginTools {
+    /// List of tool definitions.
     #[serde(default)]
     pub tools: Vec<PluginTool>,
 }
 
+/// A single tool definition exported by a plugin.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct PluginTool {
+    /// Tool name exposed to the model.
     pub name: String,
+    /// Human-readable description of what the tool does.
     pub description: String,
+    /// JSON Schema describing the tool's input parameters.
     pub input_schema: serde_json::Value,
 }
 
@@ -398,6 +466,7 @@ pub fn list_enabled(conn: &Connection, user_id: &str) -> anyhow::Result<Vec<Inst
     Ok(rows)
 }
 
+/// Returns a map of plugin_id → InstalledState for all plugins installed by a user.
 pub fn installed_states(
     conn: &Connection,
     user_id: &str,
@@ -430,6 +499,7 @@ pub fn installed_states(
     Ok(states)
 }
 
+/// Fetches the plugin store registry from a URL or local file.
 pub async fn fetch_store(registry_url: &str) -> anyhow::Result<StoreRegistry> {
     if let Some(path) = registry_url.strip_prefix("file://") {
         let raw = std::fs::read_to_string(path)

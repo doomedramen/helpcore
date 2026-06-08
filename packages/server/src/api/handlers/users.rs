@@ -1,3 +1,7 @@
+//! Admin user management handlers — CRUD for user accounts and provider grants.
+//!
+//! All endpoints under `/api/admin/users`. Requires admin role.
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -18,6 +22,7 @@ use crate::{
     state::AppState,
 };
 
+/// GET /api/admin/users — lists all users (admin only).
 pub async fn list_users(
     State(state): State<Arc<AppState>>,
     _admin: AdminUser,
@@ -40,6 +45,7 @@ pub async fn list_users(
     Ok(Json(AdminListUsersResponse { users }))
 }
 
+/// POST /api/admin/users — creates a new user account (admin only).
 pub async fn create_user(
     State(state): State<Arc<AppState>>,
     admin: AdminUser,
@@ -128,6 +134,7 @@ pub async fn create_user(
     Ok((StatusCode::CREATED, Json(user)))
 }
 
+/// PATCH /api/admin/users/{id} — updates a user's status (admin only).
 pub async fn update_user(
     State(state): State<Arc<AppState>>,
     admin: AdminUser,
@@ -174,6 +181,7 @@ pub async fn update_user(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// POST /api/admin/users/{id}/password-reset — resets a user's password (admin only).
 pub async fn reset_password(
     State(state): State<Arc<AppState>>,
     admin: AdminUser,
@@ -217,6 +225,7 @@ pub async fn reset_password(
 
 // ── Provider grants ────────────────────────────────────────────────────────────
 
+/// GET /api/admin/users/{id}/providers — lists provider grants for a user (admin only).
 pub async fn list_provider_grants(
     State(state): State<Arc<AppState>>,
     _admin: AdminUser,
@@ -238,7 +247,7 @@ pub async fn list_provider_grants(
     let granted_ids: std::collections::HashSet<_> =
         grants.iter().map(|g| g.provider_id.clone()).collect();
 
-    let ungrated_providers = all_provider_ids
+    let ungranted_providers = all_provider_ids
         .iter()
         .filter(|id| !granted_ids.contains(*id))
         .cloned()
@@ -254,10 +263,11 @@ pub async fn list_provider_grants(
 
     Ok(Json(ListProviderGrantsResponse {
         grants,
-        ungrated_providers,
+        ungranted_providers,
     }))
 }
 
+/// PUT /api/admin/users/{id}/providers — sets provider access grants for a user (admin only).
 pub async fn set_provider_grants(
     State(state): State<Arc<AppState>>,
     admin: AdminUser,

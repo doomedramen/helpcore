@@ -1,5 +1,8 @@
+//! `hc plugin` — list, token, enable, and disable plugins.
+
 use crate::{client::Client, config::Credentials};
 
+/// Lists all plugins and their enabled/disabled state.
 pub async fn list(server_flag: Option<&str>) -> anyhow::Result<()> {
     let creds = Credentials::load()?;
     let server = resolve_server(&creds, server_flag)?;
@@ -21,6 +24,7 @@ pub async fn list(server_flag: Option<&str>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Generates and prints a scoped bearer token for a plugin.
 pub async fn token(
     plugin_id: &str,
     permissions: Vec<String>,
@@ -42,6 +46,7 @@ pub async fn token(
     Ok(())
 }
 
+/// Enables or disables a plugin by ID.
 pub async fn enable(
     plugin_id: &str,
     enabled: bool,

@@ -1,3 +1,7 @@
+//! Memory and personality handlers — CRUD for user memory files and personality settings.
+//!
+//! All endpoints under `/api/memory` and `/api/personality`.
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -20,6 +24,7 @@ use crate::{
 
 const VALID_PERSONALITY_NAMES: &[&str] = &["soul", "identity", "user"];
 
+/// GET /api/personality/{name} — retrieves a personality file (soul, identity, or user).
 pub async fn get_personality(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -42,6 +47,7 @@ pub async fn get_personality(
     }))
 }
 
+/// PUT /api/personality/{name} — writes a personality file (soul, identity, or user).
 pub async fn put_personality(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -61,6 +67,7 @@ pub async fn put_personality(
 
 // ── Memory list ───────────────────────────────────────────────────────────────
 
+/// GET /api/memory — lists all memory files for the authenticated user.
 pub async fn list_memory(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -82,6 +89,7 @@ pub async fn list_memory(
 
 // ── Memory file CRUD ──────────────────────────────────────────────────────────
 
+/// GET /api/memory/{path} — reads the content of a memory file.
 pub async fn get_memory(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -101,6 +109,7 @@ pub async fn get_memory(
     }))
 }
 
+/// PUT /api/memory/{path} — creates or overwrites a memory file.
 pub async fn put_memory(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -117,6 +126,7 @@ pub async fn put_memory(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// DELETE /api/memory/{path} — deletes a memory file.
 pub async fn delete_memory(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,

@@ -1,10 +1,13 @@
-use std::io::Write;
+//! `hc ask` — one-shot question with streaming response.
 
 use anyhow::bail;
 use helpcore_api::ChatRequest;
+use std::io::Write;
 
 use crate::{client::Client, config::Credentials};
 
+/// Sends a question to the AI and streams the response to stdout. If no
+/// `conversation_id` is given, a new conversation is created.
 pub async fn run(
     query: &[String],
     conversation_id: Option<&str>,

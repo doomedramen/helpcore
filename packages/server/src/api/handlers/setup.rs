@@ -1,3 +1,7 @@
+//! Initial server setup handlers — check setup status and create the first admin user.
+//!
+//! All endpoints under `/api/setup`.
+
 use axum::{Json, extract::State, http::StatusCode};
 use std::sync::Arc;
 
@@ -5,6 +9,7 @@ use helpcore_api::{LoginResponse, SetupRequest, SetupStatusResponse};
 
 use crate::{api::error::AppError, state::AppState};
 
+/// GET /api/setup — returns whether initial setup is required.
 pub async fn status(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<SetupStatusResponse>, AppError> {
@@ -15,6 +20,7 @@ pub async fn status(
     }))
 }
 
+/// POST /api/setup — creates the first admin user using the setup token and returns login tokens.
 pub async fn create_admin(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SetupRequest>,

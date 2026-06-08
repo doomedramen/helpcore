@@ -3,8 +3,11 @@ name         = "helpcore-api"
 version.workspace      = true
 edition.workspace      = true
 rust-version.workspace = true
+description.workspace  = true
 license.workspace      = true
 repository.workspace   = true
+homepage.workspace     = true
+documentation.workspace = true
 
 [dependencies]
 serde = { workspace = true, features = ["derive"] }

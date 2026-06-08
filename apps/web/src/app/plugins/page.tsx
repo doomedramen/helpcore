@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import PluginManager from "@/app/components/plugin-manager";
 import PageHeader from "@/app/components/page-header";
@@ -9,20 +8,13 @@ import SettingsNav from "@/app/components/settings-nav";
 import { useAuth } from "@/context/auth";
 
 export default function PluginsPage() {
-  const { accessToken, isLoading } = useAuth();
+  const { accessToken } = useAuth();
   const router = useRouter();
 
-  useEffect(() => {
-    if (!isLoading && !accessToken) router.replace("/login/");
-  }, [accessToken, isLoading, router]);
-
-  if (isLoading || !accessToken) {
-    return (
-      <div className="flex h-screen items-center justify-center bg-slate-50 text-sm text-slate-400 dark:bg-slate-950 dark:text-slate-500">
-        Loading…
-      </div>
-    );
-  }
+  // AuthGate guarantees a session is present once this page renders; this
+  // check exists purely to narrow `accessToken` from `string | null` to
+  // `string` for PluginManager below (it should never actually return null).
+  if (!accessToken) return null;
 
   return (
     <AppShell

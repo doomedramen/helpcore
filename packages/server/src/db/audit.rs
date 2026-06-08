@@ -1,9 +1,12 @@
+//! Tamper-evident audit logging with chained SHA-256 hashes.
+
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::Connection;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+/// Writes a tamper-evident audit log entry with chained SHA-256 hashes.
 pub fn log_event(
     conn: &Connection,
     event_type: &str,

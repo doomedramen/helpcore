@@ -1,3 +1,7 @@
+//! Provider listing handler — returns available AI providers for the authenticated user.
+//!
+//! Endpoint: GET /api/providers
+
 use std::sync::Arc;
 
 use axum::{Json, extract::State};
@@ -10,6 +14,7 @@ use crate::{
     state::AppState,
 };
 
+/// GET /api/providers — lists available chat providers, filtered by provider grants for non-admin users.
 pub async fn list_providers(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,

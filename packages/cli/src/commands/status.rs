@@ -1,5 +1,9 @@
+//! `hc status` — verifies the session and prints connection info.
+
 use crate::{client::Client, config::Credentials};
 
+/// Checks connectivity to the server (with token refresh if needed) and prints
+/// the current user, role, and server URL.
 pub async fn run(server_flag: Option<&str>) -> anyhow::Result<()> {
     let mut creds = Credentials::load()?;
 

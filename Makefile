@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help run check test build build-headless install uninstall \
-        docker-up docker-down docker-logs
+        docker-up docker-down docker-logs docs
 
 WEB_DIR := $(CURDIR)/apps/web
 CARGO := cargo
@@ -31,6 +31,13 @@ build: ## Build release binaries with the web UI embedded
 
 build-headless: ## Build release binaries without the web UI
 	$(CARGO) build --release -p helpcore-server -p helpcore-cli
+
+docs: ## Generate Rust API documentation (open target/doc/helpcore_api/index.html)
+	$(CARGO) doc --workspace --no-deps
+	@echo "Docs generated in target/doc/"
+
+docs-check: ## Check that Rust API docs build without warnings (CI gate)
+	RUSTDOCFLAGS="-D warnings" $(CARGO) doc --workspace --no-deps
 
 install: ## Install and start helpcore as a macOS LaunchAgent
 	./packaging/macos/install.sh

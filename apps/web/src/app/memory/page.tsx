@@ -41,7 +41,7 @@ const MEMORY_LEANING_OPTIONS = [
 ];
 
 export default function MemoryPage() {
-  const { accessToken, isLoading, currentUser } = useAuth();
+  const { accessToken, currentUser } = useAuth();
   const router = useRouter();
   const { mutate } = useSWRConfig();
 
@@ -76,17 +76,8 @@ export default function MemoryPage() {
     ([, t]) => getMemoryFile(selected!, t as string),
   );
 
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center text-sm text-slate-400">
-        Loading…
-      </div>
-    );
-  }
-  if (!accessToken) {
-    router.replace("/login/");
-    return null;
-  }
+  // No auth guard needed here — AuthGate (in the root layout) only renders
+  // this page once a session is confirmed.
 
   function handleSelect(path: string) {
     setSelected(path);

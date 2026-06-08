@@ -1,3 +1,8 @@
+//! CLI for the helpcore personal AI assistant. Parses subcommands via clap and
+//! dispatches them to the appropriate handler in the `commands` module.
+
+#![warn(missing_docs)]
+
 mod client;
 mod commands;
 pub mod config;
@@ -5,6 +10,7 @@ pub mod config;
 use clap::{CommandFactory, Parser, Subcommand};
 use clap_complete::Shell;
 
+/// Top-level CLI struct parsed by clap.
 #[derive(Parser)]
 #[command(name = "helpcore", version, about = "helpcore — personal AI assistant")]
 struct Cli {
@@ -256,6 +262,7 @@ enum PluginCommands {
     },
 }
 
+/// Parses CLI arguments and dispatches to the matching subcommand handler.
 pub async fn run() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.command {

@@ -1,3 +1,6 @@
+//! Thin HTTP client for the helpcore server API, including SSE chat streaming
+//! and auth helpers.
+
 use anyhow::{Context, bail};
 use futures_util::TryStreamExt;
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -24,6 +27,8 @@ pub struct Client {
 }
 
 impl Client {
+    /// Creates a new client for the given `server_url` (trailing slashes are
+    /// stripped).
     pub fn new(server_url: impl Into<String>) -> Self {
         Self {
             inner: reqwest::Client::new(),
@@ -33,6 +38,7 @@ impl Client {
 
     // ── Auth ─────────────────────────────────────────────────────────────────
 
+    /// Authenticates with email and password, returning access and refresh tokens.
     pub async fn login(&self, email: &str, password: &str) -> anyhow::Result<LoginResponse> {
         let resp = self
             .inner
@@ -52,6 +58,7 @@ impl Client {
             .context("invalid login response")
     }
 
+    /// Revokes the given refresh token (best-effort server-side logout).
     pub async fn logout(&self, refresh_token: &str) -> anyhow::Result<()> {
         let resp = self
             .inner
@@ -66,6 +73,7 @@ impl Client {
         Ok(())
     }
 
+    /// Fetches the currently authenticated user's profile.
     pub async fn current_user(&self, access_token: &str) -> anyhow::Result<CurrentUserResponse> {
         let resp = self
             .inner
@@ -84,6 +92,7 @@ impl Client {
             .context("invalid current-user response")
     }
 
+    /// Exchanges a refresh token for a new access/refresh token pair.
     pub async fn refresh(&self, refresh_token: &str) -> anyhow::Result<RefreshResponse> {
         let resp = self
             .inner
@@ -103,6 +112,7 @@ impl Client {
 
     // ── Setup ─────────────────────────────────────────────────────────────────
 
+    /// Checks whether the server requires initial admin setup.
     pub async fn setup_status(&self) -> anyhow::Result<SetupStatusResponse> {
         let resp = self
             .inner
@@ -117,6 +127,7 @@ impl Client {
             .context("invalid setup response")
     }
 
+    /// Creates the first admin account on a fresh server (requires setup token).
     pub async fn setup(
         &self,
         token: &str,
@@ -176,6 +187,7 @@ impl Client {
         e.to_string() == TOKEN_EXPIRED
     }
 
+    /// Lists conversations belonging to the authenticated user.
     pub async fn list_conversations(
         &self,
         access_token: &str,
@@ -194,6 +206,7 @@ impl Client {
             .context("invalid conversation list response")
     }
 
+    /// Fetches all messages for a given conversation.
     pub async fn get_conversation_messages(
         &self,
         access_token: &str,
@@ -221,6 +234,7 @@ impl Client {
 
     // ── Memory ────────────────────────────────────────────────────────────────
 
+    /// Lists all memory files for the authenticated user.
     pub async fn list_memory(&self, access_token: &str) -> anyhow::Result<Vec<MemoryEntry>> {
         let resp = self
             .inner
@@ -237,6 +251,7 @@ impl Client {
         Ok(body.files)
     }
 
+    /// Reads a single memory file. Returns `None` if the file does not exist.
     pub async fn get_memory(
         &self,
         access_token: &str,
@@ -260,6 +275,7 @@ impl Client {
         Ok(Some(body.content))
     }
 
+    /// Creates or overwrites a memory file at the given path.
     pub async fn set_memory(
         &self,
         access_token: &str,
@@ -280,6 +296,7 @@ impl Client {
         Ok(())
     }
 
+    /// Deletes a memory file. Returns `false` if the file was not found.
     pub async fn delete_memory(&self, access_token: &str, path: &str) -> anyhow::Result<bool> {
         let resp = self
             .inner
@@ -297,6 +314,7 @@ impl Client {
 
     // ── Personality ───────────────────────────────────────────────────────────
 
+    /// Fetches a personality document by name. Returns `None` if not found.
     pub async fn get_personality(
         &self,
         access_token: &str,
@@ -322,6 +340,8 @@ impl Client {
 
     // ── Compact ───────────────────────────────────────────────────────────────
 
+    /// Triggers compaction of the oldest messages in a conversation into a
+    /// summary. Returns counts of compacted messages and the summary length.
     pub async fn compact(
         &self,
         access_token: &str,
@@ -346,6 +366,7 @@ impl Client {
 
     // ── Plugins ───────────────────────────────────────────────────────────────
 
+    /// Lists all plugins available to the user.
     pub async fn list_plugins(&self, access_token: &str) -> anyhow::Result<Vec<PluginInfo>> {
         let resp = self
             .inner
@@ -362,6 +383,7 @@ impl Client {
         Ok(body.plugins)
     }
 
+    /// Generates a scoped bearer token for a bridge plugin.
     pub async fn create_plugin_token(
         &self,
         access_token: &str,
@@ -386,6 +408,7 @@ impl Client {
             .context("invalid token response")
     }
 
+    /// Enables or disables a plugin by ID.
     pub async fn set_plugin_enabled(
         &self,
         access_token: &str,
@@ -409,6 +432,7 @@ impl Client {
 
     // ── API keys ──────────────────────────────────────────────────────────────
 
+    /// Lists API keys belonging to the authenticated user.
     pub async fn list_api_keys(&self, access_token: &str) -> anyhow::Result<Vec<ApiKeyInfo>> {
         let resp = self
             .inner
@@ -425,6 +449,7 @@ impl Client {
         Ok(body.keys)
     }
 
+    /// Creates a new API key (the full key is returned only once).
     pub async fn create_api_key(
         &self,
         access_token: &str,
@@ -448,6 +473,7 @@ impl Client {
             .context("invalid create-key response")
     }
 
+    /// Revokes an API key by ID.
     pub async fn revoke_api_key(&self, access_token: &str, key_id: &str) -> anyhow::Result<()> {
         let resp = self
             .inner
@@ -460,6 +486,7 @@ impl Client {
         Ok(())
     }
 
+    /// Writes (creates or updates) a personality document.
     pub async fn set_personality(
         &self,
         access_token: &str,

@@ -1,3 +1,5 @@
+//! Context assembly: building the system prompt and message list for the provider.
+
 use chrono_tz::Tz;
 use helpcore_api::MessageSummary;
 use std::collections::{BTreeMap, HashMap};

@@ -468,11 +468,26 @@ fn analyze_domain_clusters(plugins: &[Plugin]) -> Vec<DomainCluster> {
     }
 
     let notes = HashMap::from([
-        ("media", "Movies-tv, plex, radarr, sonarr, seerr, recommend — 6 plugins in media domain. High collision risk for generic 'find me a movie' queries. Needs discriminative briefs that mention specific server/product names."),
-        ("home-server", "Plex, radarr, sonarr, seerr, proxmox — 5 home-server tools. Risk: 'check my server' is ambiguous. Briefs must mention product names."),
-        ("utility", "Calculator, color-tools, currency-lens, data-format, date-utils, dns-peek, image-info, markdown-utils, net-identity, page-fetch, productivity, qr-code, text-utils, unit-converter, voice, world-clock — 16 utility plugins. Cannot distinguish on domain alone. Each brief must have specific triggering verbs and objects."),
-        ("weather", "Pollen-count, sun-times, weather — 3 weather-adjacent plugins. Weather and pollen-count are distinct enough; sun-times has sharper scope."),
-        ("food", "Meal-finder and nutrition-facts — 2 overlapping. 'How healthy is lasagna' could trigger either. Briefs should distinguish recipe vs. nutrition data."),
+        (
+            "media",
+            "Movies-tv, plex, radarr, sonarr, seerr, recommend — 6 plugins in media domain. High collision risk for generic 'find me a movie' queries. Needs discriminative briefs that mention specific server/product names.",
+        ),
+        (
+            "home-server",
+            "Plex, radarr, sonarr, seerr, proxmox — 5 home-server tools. Risk: 'check my server' is ambiguous. Briefs must mention product names.",
+        ),
+        (
+            "utility",
+            "Calculator, color-tools, currency-lens, data-format, date-utils, dns-peek, image-info, markdown-utils, net-identity, page-fetch, productivity, qr-code, text-utils, unit-converter, voice, world-clock — 16 utility plugins. Cannot distinguish on domain alone. Each brief must have specific triggering verbs and objects.",
+        ),
+        (
+            "weather",
+            "Pollen-count, sun-times, weather — 3 weather-adjacent plugins. Weather and pollen-count are distinct enough; sun-times has sharper scope.",
+        ),
+        (
+            "food",
+            "Meal-finder and nutrition-facts — 2 overlapping. 'How healthy is lasagna' could trigger either. Briefs should distinguish recipe vs. nutrition data.",
+        ),
     ]);
 
     clusters

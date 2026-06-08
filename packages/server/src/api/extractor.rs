@@ -13,6 +13,8 @@ pub struct AuthUser {
 }
 
 /// Injected into handlers restricted to server administrators.
+///
+/// Wraps an [`AuthUser`]; the extractor rejects non-admin users with 403.
 pub struct AdminUser(pub AuthUser);
 
 impl FromRequestParts<Arc<AppState>> for AuthUser {

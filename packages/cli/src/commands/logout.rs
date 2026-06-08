@@ -1,5 +1,8 @@
+//! `hc logout` — clears local credentials and best-effort revokes server session.
+
 use crate::{client::Client, config::Credentials};
 
+/// Revokes the session on the server (best-effort) and deletes local credentials.
 pub async fn run() -> anyhow::Result<()> {
     let creds = Credentials::load()?;
 

@@ -1,3 +1,5 @@
+//! SQLite database layer: connection pool, migrations, and audit logging.
+
 pub mod audit;
 
 use anyhow::Context;
@@ -24,11 +26,13 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (15, include_str!("migrations/0015_skill_brief.sql")),
 ];
 
+/// Thread-safe SQLite connection pool wrapping a single WAL-mode connection.
 pub struct DbPool {
     conn: Arc<Mutex<Connection>>,
 }
 
 impl DbPool {
+    /// Opens (or creates) a SQLite database at `path` and applies all migrations.
     pub fn open(path: &Path) -> anyhow::Result<Self> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)

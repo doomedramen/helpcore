@@ -1,8 +1,8 @@
-/// Scoped bearer tokens for Tier 2 bridge plugins.
-///
-/// Bridge plugins (like the voice plugin) need a long-lived credential to call
-/// the helpcore API on behalf of a user. These are separate from user session
-/// tokens and can be independently revoked.
+//! Scoped bearer tokens for Tier 2 bridge plugins.
+//!
+//! Bridge plugins (like the voice plugin) need a long-lived credential to call
+//! the helpcore API on behalf of a user. These are separate from user session
+//! tokens and can be independently revoked.
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::{Connection, params};
@@ -15,10 +15,11 @@ pub struct NewPluginToken {
     /// The raw token to hand to the bridge plugin. Prefix `hcp_` marks it as
     /// a plugin token (distinct from user API keys which use `hc_`).
     pub raw: String,
+    /// Stable identifier for revoking this token.
     pub token_id: String,
 }
 
-/// Create a new scoped token for a bridge plugin and store its hash.
+/// Creates a new scoped token for a bridge plugin and stores its hash.
 pub fn create_plugin_token(
     conn: &Connection,
     user_id: &str,
@@ -42,7 +43,7 @@ pub fn create_plugin_token(
     Ok(NewPluginToken { raw, token_id: id })
 }
 
-/// Look up the user_id and plugin_id for a valid (non-revoked) plugin token.
+/// Looks up the user_id and plugin_id for a valid (non-revoked) plugin token.
 /// Returns `None` if the token is invalid or revoked.
 pub fn validate_plugin_token(
     conn: &Connection,
@@ -60,7 +61,7 @@ pub fn validate_plugin_token(
     }
 }
 
-/// Revoke a plugin token by its ID.
+/// Revokes a plugin token by its ID, scoped to the owning user.
 pub fn revoke_plugin_token(
     conn: &Connection,
     token_id: &str,
@@ -75,13 +76,17 @@ pub fn revoke_plugin_token(
     Ok(n > 0)
 }
 
-/// List active (non-revoked) tokens for a user+plugin pair.
+/// Active (non-revoked) token metadata for a user+plugin pair.
 pub struct TokenInfo {
+    /// Stable identifier for revoking this token.
     pub id: String,
+    /// The plugin this token grants access to.
     pub plugin_id: String,
+    /// UTC timestamp when the token was created.
     pub created_at: String,
 }
 
+/// Lists active (non-revoked) tokens for a user+plugin pair.
 pub fn list_plugin_tokens(
     conn: &Connection,
     user_id: &str,

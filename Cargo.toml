@@ -6,8 +6,11 @@ resolver = "2"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.87"
+description = "helpcore — personal AI assistant with memory, plugins, and multi-provider support"
 license = "LicenseRef-PolyForm-Noncommercial-1.0.0"
 repository = "https://github.com/martin/helpcore"
+homepage = "https://github.com/martin/helpcore"
+documentation = "https://github.com/martin/helpcore/tree/main/docs"
 
 [workspace.dependencies]
 # Internal

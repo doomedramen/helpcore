@@ -1,23 +1,19 @@
 "use client";
 
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/auth";
 import { changePassword } from "@/lib/api";
 import AuthShell from "@/app/components/auth-shell";
 
 export default function ChangePasswordPage() {
-  const { accessToken, isLoading, clearForcePasswordChange } = useAuth();
+  const { accessToken, clearForcePasswordChange } = useAuth();
   const router = useRouter();
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!isLoading && !accessToken) router.replace("/login/");
-  }, [accessToken, isLoading, router]);
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -42,7 +38,7 @@ export default function ChangePasswordPage() {
     }
   }
 
-  if (isLoading || !accessToken) return null;
+  if (isLoading || !ready || !accessToken) return null;
 
   return (
     <AuthShell

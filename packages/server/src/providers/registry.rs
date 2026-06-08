@@ -1,3 +1,8 @@
+//! Provider registry that resolves providers by role.
+//!
+//! The registry holds a read-locked list of configured chat providers and
+//! supports hot-reloading via [`ProviderRegistry::replace`].
+
 use std::sync::Arc;
 
 use parking_lot::RwLock;
@@ -12,8 +17,10 @@ struct RuntimeProvider {
     roles: Vec<ProviderRole>,
 }
 
+/// Prepared but not yet registered providers — returned by [`ProviderRegistry::prepare`].
 pub struct PreparedProviders(Vec<RuntimeProvider>);
 
+/// Describes a provider for API responses (id, display name, default model).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderDescriptor {
     pub id: String,
@@ -21,12 +28,17 @@ pub struct ProviderDescriptor {
     pub default_model: String,
 }
 
+/// Thread-safe registry of chat providers, indexed by role.
+///
+/// Supports concurrent lookups and hot-reloading without blocking in-flight
+/// requests (old providers live as long as active `Arc` references exist).
 #[derive(Clone, Default)]
 pub struct ProviderRegistry {
     inner: Arc<RwLock<Vec<RuntimeProvider>>>,
 }
 
 impl ProviderRegistry {
+    /// Build a new registry from already-constructed providers.
     pub fn from_providers(providers: Vec<(Arc<dyn ChatProvider>, Vec<ProviderRole>)>) -> Self {
         Self {
             inner: Arc::new(RwLock::new(
@@ -38,6 +50,7 @@ impl ProviderRegistry {
         }
     }
 
+    /// Build providers from configs and return them as [`PreparedProviders`].
     pub fn prepare(configs: &[ProviderConfig]) -> anyhow::Result<PreparedProviders> {
         let providers = configs
             .iter()
@@ -53,16 +66,22 @@ impl ProviderRegistry {
         Ok(PreparedProviders(providers))
     }
 
+    /// Create a live registry from prepared providers.
     pub fn new(prepared: PreparedProviders) -> Self {
         Self {
             inner: Arc::new(RwLock::new(prepared.0)),
         }
     }
 
+    /// Atomically swap all providers for hot-reloading.
+    ///
+    /// Existing in-flight requests retain their `Arc` references and are
+    /// unaffected by the swap.
     pub fn replace(&self, prepared: PreparedProviders) {
         *self.inner.write() = prepared.0;
     }
 
+    /// Find a provider by role, optionally narrowed to a specific provider ID.
     pub fn find_for_role(
         &self,
         provider_id: Option<&str>,
@@ -78,6 +97,7 @@ impl ProviderRegistry {
             .map(|entry| Arc::clone(&entry.provider))
     }
 
+    /// List descriptors for all providers that match the given role.
     pub fn list_for_role(&self, role: ProviderRole) -> Vec<ProviderDescriptor> {
         self.inner
             .read()
@@ -91,6 +111,7 @@ impl ProviderRegistry {
             .collect()
     }
 
+    /// Returns true if no providers are registered.
     pub fn is_empty(&self) -> bool {
         self.inner.read().is_empty()
     }

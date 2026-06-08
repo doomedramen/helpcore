@@ -1,3 +1,7 @@
+//! Plugin management handlers — install, uninstall, configure, enable/disable, and token management.
+//!
+//! All endpoints under `/api/plugins`.
+
 use axum::{
     Json,
     extract::{Path, State},
@@ -29,6 +33,7 @@ use crate::{
     state::AppState,
 };
 
+/// GET /api/plugins — lists installed plugins with their status and capabilities.
 pub async fn list_plugins(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -105,6 +110,7 @@ pub async fn list_plugins(
     }))
 }
 
+/// GET /api/plugins/store — lists available plugins from the plugin registry.
 pub async fn list_store(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -159,6 +165,7 @@ pub async fn list_store(
     }))
 }
 
+/// POST /api/plugins/{id}/install — installs a plugin from the store.
 pub async fn install_plugin(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -198,6 +205,7 @@ pub async fn install_plugin(
     Ok(StatusCode::CREATED)
 }
 
+/// POST /api/plugins/{id}/update — updates an installed plugin to the latest version.
 pub async fn update_plugin(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -293,6 +301,7 @@ pub async fn update_plugin(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// POST /api/plugins/{id}/rollback — rolls back an installed plugin to the previous version.
 pub async fn rollback_plugin(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -357,6 +366,7 @@ pub async fn rollback_plugin(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// DELETE /api/plugins/{id} — uninstalls a plugin and removes its files and tokens.
 pub async fn uninstall_plugin(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -407,6 +417,9 @@ pub async fn uninstall_plugin(
     }
 }
 
+/// PUT /api/plugins/{id}/config — configures a plugin's settings and secrets.
+///
+/// For bridge plugins, performs a health check against the configured endpoint.
 pub async fn configure_plugin(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -549,6 +562,7 @@ pub async fn configure_plugin(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// PUT /api/plugins/{id}/enable — enables or disables a plugin.
 pub async fn set_enabled(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -640,6 +654,7 @@ pub async fn set_enabled(
     }
 }
 
+/// POST /api/plugins/{id}/tokens — creates a plugin access token with the given permissions.
 pub async fn create_token(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -676,6 +691,7 @@ pub async fn create_token(
     }))
 }
 
+/// DELETE /api/plugins/{id}/tokens/{token_id} — revokes a plugin access token.
 pub async fn revoke_token(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,

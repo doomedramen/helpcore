@@ -1,3 +1,9 @@
+//! Encrypted storage for plugin secrets using XChaCha20-Poly1305.
+
+//! Encrypted storage for plugin secrets using XChaCha20-Poly1305.
+
+//! Encrypted storage for plugin secrets using XChaCha20-Poly1305.
+
 use anyhow::Context;
 use base64::{Engine, engine::general_purpose::STANDARD};
 use chacha20poly1305::{
@@ -13,6 +19,7 @@ use std::{
 
 const KEY_FILE: &str = "plugin-secrets.key";
 
+/// Encrypts plugin secrets with XChaCha20-Poly1305, scoped to a user+plugin pair.
 pub fn encrypt(
     data_dir: &Path,
     user_id: &str,
@@ -38,6 +45,7 @@ pub fn encrypt(
     Ok(STANDARD.encode(encoded))
 }
 
+/// Decrypts plugin secrets previously encrypted with [`encrypt`].
 pub fn decrypt(
     data_dir: &Path,
     user_id: &str,

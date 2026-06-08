@@ -4,9 +4,11 @@ use std::collections::HashSet;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
+/// Default URL for the plugin registry, pointing to the latest plugins release on GitHub.
 pub const DEFAULT_REGISTRY_URL: &str =
     "https://github.com/doomedramen/helpcore-plugins/releases/download/plugins-latest/plugins.json";
 
+/// Top-level configuration loaded from `config.toml`.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
     pub server: ServerConfig,
@@ -22,6 +24,7 @@ pub struct Config {
     pub registry: RegistryConfig,
 }
 
+/// Plugin management configuration including blacklists and local plugins.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct PluginsConfig {
     /// Plugin IDs that cannot be installed on this server.
@@ -48,6 +51,7 @@ fn default_true() -> bool {
     true
 }
 
+/// Server identity and networking configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ServerConfig {
     pub name: String,
@@ -60,12 +64,15 @@ fn default_port() -> u16 {
     3000
 }
 
+/// Persistent data directory configuration.
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct DataConfig {
     pub dir: Option<String>,
 }
 
 impl DataConfig {
+    /// Resolves the data directory, preferring the `HELPCORE_DATA` env var,
+    /// then the configured `dir`, then the OS-specific default.
     pub fn resolved_dir(&self) -> PathBuf {
         // HELPCORE_DATA env var takes precedence (used by Docker Compose).
         if let Ok(env_dir) = std::env::var("HELPCORE_DATA") {
@@ -84,6 +91,7 @@ fn default_data_dir() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from(".helpcore/data"))
 }
 
+/// Logging verbosity configuration.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct LoggingConfig {
     #[serde(default = "default_log_level")]
@@ -102,6 +110,7 @@ fn default_log_level() -> String {
     "info".to_string()
 }
 
+/// Configuration for a single AI provider: credentials, model defaults, and capabilities.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ProviderConfig {
     pub id: String,
@@ -122,6 +131,7 @@ pub struct ProviderConfig {
     pub num_predict: Option<u32>,
 }
 
+/// Supported AI provider backends.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderType {
@@ -134,6 +144,7 @@ pub enum ProviderType {
 }
 
 impl ProviderType {
+    /// Returns the lowercase `snake_case` string representation of this variant.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Anthropic => "anthropic",
@@ -160,6 +171,7 @@ impl TryFrom<&str> for ProviderType {
     }
 }
 
+/// Roles a provider can fulfill, determining which features it powers.
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ProviderRole {
@@ -171,6 +183,7 @@ pub enum ProviderRole {
 }
 
 impl ProviderRole {
+    /// Returns the lowercase `snake_case` string representation of this variant.
     pub fn as_str(&self) -> &'static str {
         match self {
             Self::Chat => "chat",
@@ -197,6 +210,7 @@ impl TryFrom<&str> for ProviderRole {
     }
 }
 
+/// Plugin registry configuration, specifying where to fetch available plugins.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct RegistryConfig {
     #[serde(default = "default_registry_url")]
@@ -216,6 +230,7 @@ fn default_registry_url() -> String {
 }
 
 impl Config {
+    /// Loads configuration from a TOML file, applying any necessary migrations.
     pub fn load(path: &Path) -> anyhow::Result<Self> {
         let content = std::fs::read_to_string(path)
             .with_context(|| format!("failed to read config from {}", path.display()))?;
@@ -266,6 +281,8 @@ impl Config {
         Ok(mapping)
     }
 
+    /// Returns the config file path, respecting `HELPCORE_CONFIG`,
+    /// falling back to `~/.helpcore/config.toml`.
     pub fn config_path() -> PathBuf {
         if let Ok(path) = std::env::var("HELPCORE_CONFIG") {
             return PathBuf::from(path);
@@ -275,6 +292,7 @@ impl Config {
             .unwrap_or_else(|| PathBuf::from("config.toml"))
     }
 
+    /// Validates server, provider, registry, and logging settings.
     pub fn validate(&self) -> anyhow::Result<()> {
         if self.server.name.trim().is_empty() {
             anyhow::bail!("server name cannot be empty");
@@ -354,6 +372,7 @@ impl Config {
         Ok(())
     }
 
+    /// Atomically writes the configuration to disk after validation.
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         self.validate()?;
         if let Some(parent) = path.parent() {
@@ -398,6 +417,7 @@ impl Config {
         result
     }
 
+    /// Checks whether the config file and its parent directory are writable.
     pub fn writability(path: &Path) -> Result<(), String> {
         if path.is_dir() {
             return Err(format!(

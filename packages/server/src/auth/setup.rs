@@ -1,3 +1,5 @@
+//! First-admin setup: one-time tokens for creating the initial admin user.
+
 use anyhow::Context;
 use chrono::{Duration, Utc};
 use rusqlite::Connection;

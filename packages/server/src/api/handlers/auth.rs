@@ -1,3 +1,7 @@
+//! Authentication handlers — login, logout, token refresh, and current-user profile.
+//!
+//! All endpoints under `/api/auth`.
+
 use axum::{Json, extract::State, http::StatusCode};
 use std::sync::Arc;
 
@@ -24,6 +28,7 @@ fn validate_memory_leaning(value: &str) -> Result<(), AppError> {
     }
 }
 
+/// GET /api/auth/me — returns the authenticated user's profile.
 pub async fn current_user(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -45,6 +50,7 @@ pub async fn current_user(
     }))
 }
 
+/// PATCH /api/auth/me — updates the authenticated user's display name, timezone, and memory_leaning.
 pub async fn update_me(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -79,6 +85,7 @@ pub async fn update_me(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// POST /api/auth/me/password — changes the authenticated user's password.
 pub async fn change_password(
     State(state): State<Arc<AppState>>,
     auth_user: AuthUser,
@@ -111,6 +118,7 @@ pub async fn change_password(
     Ok(StatusCode::NO_CONTENT)
 }
 
+/// POST /api/auth/login — authenticates a user with email/password and returns access/refresh tokens.
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LoginRequest>,
@@ -156,6 +164,7 @@ pub async fn login(
     }))
 }
 
+/// POST /api/auth/refresh — exchanges a refresh token for a new access/refresh token pair.
 pub async fn refresh(
     State(state): State<Arc<AppState>>,
     Json(req): Json<RefreshRequest>,
@@ -177,6 +186,7 @@ pub async fn refresh(
     }))
 }
 
+/// POST /api/auth/logout — revokes a refresh token session.
 pub async fn logout(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LogoutRequest>,

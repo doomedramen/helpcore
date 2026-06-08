@@ -3,6 +3,7 @@ use chrono::Utc;
 use rusqlite::Connection;
 use uuid::Uuid;
 
+/// Permissions role for a user.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UserRole {
     Admin,
@@ -10,6 +11,7 @@ pub enum UserRole {
 }
 
 impl UserRole {
+    /// Returns the string representation used in the database.
     pub fn as_str(&self) -> &'static str {
         match self {
             UserRole::Admin => "admin",
@@ -29,6 +31,7 @@ impl TryFrom<&str> for UserRole {
     }
 }
 
+/// Account status.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UserStatus {
     Active,
@@ -37,6 +40,7 @@ pub enum UserStatus {
 }
 
 impl UserStatus {
+    /// Returns the string representation used in the database.
     pub fn as_str(&self) -> &'static str {
         match self {
             UserStatus::Active => "active",
@@ -46,26 +50,44 @@ impl UserStatus {
     }
 }
 
+/// A full user record from the database.
 #[derive(Debug, Clone)]
 pub struct User {
+    /// Stable UUID.
     pub id: String,
+    /// Login email.
     pub email: String,
+    /// Bcrypt hash of the user's password.
     pub password_hash: String,
+    /// Optional display name shown in the UI.
     pub display_name: Option<String>,
+    /// Permission role (admin or member).
     pub role: UserRole,
+    /// Account status (active, deactivated, or deleted).
     pub status: UserStatus,
+    /// Whether the user must change their password on next login.
     pub force_password_change: bool,
+    /// IANA timezone string, e.g. "America/New_York".
     pub timezone: String,
+    /// Memory retention preference (e.g. "low", "moderate", "high").
     pub memory_leaning: String,
 }
 
+/// Public summary of a user (excludes sensitive fields like password_hash).
+/// Public summary of a user (excludes sensitive fields like password_hash).
 #[derive(Debug, Clone)]
 pub struct UserSummary {
+    /// Stable UUID.
     pub id: String,
+    /// Login email.
     pub email: String,
+    /// Optional display name.
     pub display_name: Option<String>,
+    /// Permission role.
     pub role: UserRole,
+    /// Account status.
     pub status: UserStatus,
+    /// ISO 8601 timestamp of account creation.
     pub created_at: String,
 }
 
@@ -110,6 +132,7 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<UserSummary> {
     })
 }
 
+/// Look up a non-deleted user by email.
 pub fn find_by_email(conn: &Connection, email: &str) -> anyhow::Result<Option<User>> {
     match conn.query_row(
         "SELECT id, email, password_hash, display_name, role, status, force_password_change, timezone, memory_leaning
@@ -123,6 +146,7 @@ pub fn find_by_email(conn: &Connection, email: &str) -> anyhow::Result<Option<Us
     }
 }
 
+/// Look up an active user by ID.
 pub fn find_by_id(conn: &Connection, id: &str) -> anyhow::Result<Option<User>> {
     match conn.query_row(
         "SELECT id, email, password_hash, display_name, role, status, force_password_change, timezone, memory_leaning
@@ -136,6 +160,7 @@ pub fn find_by_id(conn: &Connection, id: &str) -> anyhow::Result<Option<User>> {
     }
 }
 
+/// List all non-deleted users ordered by creation time.
 pub fn list_users(conn: &Connection) -> anyhow::Result<Vec<UserSummary>> {
     let mut stmt = conn.prepare(
         "SELECT id, email, display_name, role, status, created_at
@@ -148,6 +173,7 @@ pub fn list_users(conn: &Connection) -> anyhow::Result<Vec<UserSummary>> {
     Ok(rows)
 }
 
+/// Create an admin user. Returns the new user's ID.
 pub fn create_admin(
     conn: &Connection,
     email: &str,
@@ -167,6 +193,8 @@ pub fn create_admin(
     Ok(id)
 }
 
+/// Create a member user (sets force_password_change and records created_by).
+/// Returns the new user's ID.
 pub fn create_member(
     conn: &Connection,
     email: &str,
@@ -187,6 +215,7 @@ pub fn create_member(
     Ok(id)
 }
 
+/// Set the status of a non-deleted user. Returns true if a row was updated.
 pub fn set_status(conn: &Connection, user_id: &str, status: UserStatus) -> anyhow::Result<bool> {
     let now = Utc::now().to_rfc3339();
     let n = conn.execute(
@@ -196,6 +225,8 @@ pub fn set_status(conn: &Connection, user_id: &str, status: UserStatus) -> anyho
     Ok(n > 0)
 }
 
+/// Set a new password hash and clear force_password_change.
+/// Returns true if a row was updated.
 pub fn set_password(conn: &Connection, user_id: &str, password_hash: &str) -> anyhow::Result<bool> {
     let now = Utc::now().to_rfc3339();
     let n = conn
@@ -208,6 +239,8 @@ pub fn set_password(conn: &Connection, user_id: &str, password_hash: &str) -> an
     Ok(n > 0)
 }
 
+/// Update the current user's profile fields (display_name, timezone, memory_leaning).
+/// Only non-None values are applied (COALESCE semantics).
 pub fn update_me(
     conn: &Connection,
     user_id: &str,
@@ -229,6 +262,7 @@ pub fn update_me(
     Ok(())
 }
 
+/// Check whether a non-deleted user with the given email exists.
 pub fn email_exists(conn: &Connection, email: &str) -> anyhow::Result<bool> {
     let count: i64 = conn.query_row(
         "SELECT COUNT(*) FROM users WHERE email = ?1 AND status != 'deleted'",

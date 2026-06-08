@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect } from "react";
 import { useRouter } from "next/navigation";
 import useSWR from "swr";
 import AdminNav from "@/app/components/admin-nav";
@@ -8,18 +7,18 @@ import AppShell from "@/app/components/app-shell";
 import ConfigForm from "@/app/components/admin/config-form";
 import PageHeader from "@/app/components/page-header";
 import StatusMessage from "@/app/components/status-message";
-import { useAuth } from "@/context/auth";
+import { useRequireAuth } from "@/hooks/use-require-auth";
 import { getAdminConfig } from "@/lib/api";
 
 export default function AdminPage() {
-  const { accessToken, currentUser, isLoading } = useAuth();
+  const { accessToken, ready } = useRequireAuth({ role: "admin" });
   const router = useRouter();
   const {
     data: config,
     error,
     mutate,
   } = useSWR(
-    accessToken && currentUser?.role === "admin" ? ["/api/admin/config", accessToken] : null,
+    ready && accessToken ? ["/api/admin/config", accessToken] : null,
     ([, token]) => getAdminConfig(token),
     {
       revalidateOnFocus: false,
@@ -27,13 +26,7 @@ export default function AdminPage() {
     },
   );
 
-  useEffect(() => {
-    if (isLoading) return;
-    if (!accessToken) router.replace("/login/");
-    else if (currentUser?.role !== "admin") router.replace("/chat/");
-  }, [accessToken, currentUser, isLoading, router]);
-
-  if (isLoading || !accessToken || currentUser?.role !== "admin") {
+  if (!ready || !accessToken) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-50 text-sm text-slate-400 dark:bg-slate-950 dark:text-slate-500">
         Loading…

@@ -2,13 +2,11 @@
 
 import { Suspense, useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { useAuth } from "@/context/auth";
 import ChatWindow from "@/app/components/chat-window";
 import AppShell from "@/app/components/app-shell";
 import StreamdownCodeBlockHandlers from "@/app/components/streamdown-code-block-handlers";
 
 function ChatApp() {
-  const { accessToken, isLoading } = useAuth();
   const router = useRouter();
   const params = useSearchParams();
   const [conversationId, setConversationId] = useState<string | null>(params.get("id"));
@@ -18,22 +16,8 @@ function ChatApp() {
     setConversationId(params.get("id"));
   }, [params]);
 
-  useEffect(() => {
-    if (!isLoading && !accessToken) {
-      router.replace("/login/");
-    }
-  }, [accessToken, isLoading, router]);
-
-  if (isLoading) {
-    return (
-      <div className="app-canvas flex h-dvh items-center justify-center">
-        <div className="text-sm text-slate-400 dark:text-slate-500">Loading…</div>
-      </div>
-    );
-  }
-
-  if (!accessToken) return null;
-
+  // No auth guard needed here — AuthGate (in the root layout) only renders
+  // this page once a session is confirmed.
   return (
     <AppShell
       conversationId={conversationId}

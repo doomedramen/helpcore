@@ -1,3 +1,6 @@
+//! Personality commands (`soul`, `identity`, `me`) and memory file management
+//! (`memory ls`, `memory get`, `memory set`, `memory rm`).
+
 use std::io::Read;
 
 use anyhow::{Context, bail};
@@ -51,6 +54,7 @@ pub async fn personality(
 
 // ── Memory commands ───────────────────────────────────────────────────────────
 
+/// Lists the paths of all memory files.
 pub async fn memory_ls(server_flag: Option<&str>) -> anyhow::Result<()> {
     let creds = Credentials::load()?;
     let server = resolve_server(&creds, server_flag)?;
@@ -68,6 +72,7 @@ pub async fn memory_ls(server_flag: Option<&str>) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// Prints the content of a single memory file.
 pub async fn memory_get(path: &str, server_flag: Option<&str>) -> anyhow::Result<()> {
     let creds = Credentials::load()?;
     let server = resolve_server(&creds, server_flag)?;
@@ -81,6 +86,7 @@ pub async fn memory_get(path: &str, server_flag: Option<&str>) -> anyhow::Result
     Ok(())
 }
 
+/// Creates or overwrites a memory file. Reads from `--content`, `--edit`, or stdin.
 pub async fn memory_set(
     path: &str,
     content_arg: Option<&str>,
@@ -116,6 +122,7 @@ pub async fn memory_set(
     Ok(())
 }
 
+/// Deletes a memory file by path.
 pub async fn memory_rm(path: &str, server_flag: Option<&str>) -> anyhow::Result<()> {
     let creds = Credentials::load()?;
     let server = resolve_server(&creds, server_flag)?;

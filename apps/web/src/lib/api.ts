@@ -60,6 +60,10 @@ async function req<T>(path: string, init: RequestInit = {}, token?: string): Pro
 
 // ── Auth ──────────────────────────────────────────────────────────────────────
 
+/**
+ * Authenticate with email and password.
+ * @returns The login response containing access and refresh tokens.
+ */
 export function login(email: string, password: string): Promise<LoginResponse> {
   return req("/auth/login", {
     method: "POST",
@@ -67,6 +71,11 @@ export function login(email: string, password: string): Promise<LoginResponse> {
   });
 }
 
+/**
+ * Invalidate the refresh token and end the session.
+ * @param refreshToken - The current refresh token.
+ * @param token - The current access token.
+ */
 export function logout(refreshToken: string, token: string): Promise<void> {
   return req(
     "/auth/logout",
@@ -78,6 +87,11 @@ export function logout(refreshToken: string, token: string): Promise<void> {
   );
 }
 
+/**
+ * Exchange a refresh token for new tokens (access + refresh).
+ * @param refreshToken - The current refresh token.
+ * @returns A new token pair.
+ */
 export function refresh(refreshToken: string): Promise<RefreshResponse> {
   return req("/auth/refresh", {
     method: "POST",
@@ -85,16 +99,32 @@ export function refresh(refreshToken: string): Promise<RefreshResponse> {
   });
 }
 
+/**
+ * Fetch the current user's profile.
+ * @param token - Access token.
+ */
 export function getCurrentUser(token: string): Promise<CurrentUser> {
   return req("/auth/me", {}, token);
 }
 
 // ── Setup ─────────────────────────────────────────────────────────────────────
 
+/**
+ * Check whether initial setup is still required.
+ * @returns Setup status response.
+ */
 export function setupStatus(): Promise<SetupStatusResponse> {
   return req("/setup");
 }
 
+/**
+ * Complete initial admin setup.
+ * @param args.token - Setup token (from the initial config page).
+ * @param args.email - Admin email.
+ * @param args.password - Admin password.
+ * @param args.display_name - Optional display name.
+ * @returns Login response on success.
+ */
 export function setupAdmin(args: {
   token: string;
   email: string;
@@ -106,26 +136,62 @@ export function setupAdmin(args: {
 
 // ── Conversations ─────────────────────────────────────────────────────────────
 
+/**
+ * List all conversations for the authenticated user.
+ * @param token - Access token.
+ */
 export function listConversations(token: string): Promise<ConversationSummary[]> {
   return req("/conversations", {}, token);
 }
 
+/**
+ * Fetch all messages in a conversation.
+ * @param id - Conversation ID.
+ * @param token - Access token.
+ */
 export function getMessages(id: string, token: string): Promise<Message[]> {
   return req(`/conversations/${id}/messages`, {}, token);
 }
 
+/**
+ * Delete a conversation and all its messages.
+ * @param id - Conversation ID.
+ * @param token - Access token.
+ */
 export function deleteConversation(id: string, token: string): Promise<void> {
   return req(`/conversations/${id}`, { method: "DELETE" }, token);
 }
 
+/**
+ * Cancel an in-progress generation for a conversation.
+ * @param id - Conversation ID.
+ * @param token - Access token.
+ */
 export function cancelGeneration(id: string, token: string): Promise<void> {
   return req(`/conversations/${id}/cancel`, { method: "POST" }, token);
 }
 
+/**
+ * List available LLM providers.
+ * @param token - Access token.
+ */
 export function listProviders(token: string): Promise<ProviderListResponse> {
   return req("/providers", {}, token);
 }
 
+/**
+ * Ask the model to retry a previous message, optionally with a different provider.
+ * @param args.conversationId - The conversation ID.
+ * @param args.messageId - The message to retry from.
+ * @param args.providerId - Optional provider override.
+ * @param args.token - Access token.
+ * @param args.onStarted - Called when the SSE stream starts.
+ * @param args.onChunk - Called with each text delta.
+ * @param args.onToolCall - Optional, called when the model requests a tool.
+ * @param args.onToolResult - Optional, called with the result of a tool callback.
+ * @param args.onDone - Called when the stream completes.
+ * @param args.signal - Optional AbortSignal to cancel the stream.
+ */
 export function retryMessage(args: {
   conversationId: string;
   messageId: string;
@@ -154,6 +220,11 @@ export function retryMessage(args: {
 
 // ── Profile / me ─────────────────────────────────────────────────────────────
 
+/**
+ * Update the current user's profile fields.
+ * @param data - Partial profile fields to update.
+ * @param token - Access token.
+ */
 export function updateMe(
   data: { display_name?: string | null; timezone?: string; memory_leaning?: string },
   token: string,
@@ -161,6 +232,12 @@ export function updateMe(
   return req("/auth/me", { method: "PATCH", body: JSON.stringify(data) }, token);
 }
 
+/**
+ * Change the current user's password.
+ * @param data.current_password - Current password.
+ * @param data.new_password - New password.
+ * @param token - Access token.
+ */
 export function changePassword(
   data: { current_password: string; new_password: string },
   token: string,
@@ -170,10 +247,21 @@ export function changePassword(
 
 // ── API keys ──────────────────────────────────────────────────────────────────
 
+/**
+ * List all API keys for the current user.
+ * @param token - Access token.
+ */
 export function listApiKeys(token: string): Promise<ListApiKeysResponse> {
   return req("/auth/api-keys", {}, token);
 }
 
+/**
+ * Create a new API key.
+ * @param data.name - Human-readable name for the key.
+ * @param data.expires_at - Optional expiration timestamp.
+ * @param token - Access token.
+ * @returns The created key with the raw key value (shown only once).
+ */
 export function createApiKey(
   data: { name: string; expires_at?: string },
   token: string,
@@ -181,26 +269,51 @@ export function createApiKey(
   return req("/auth/api-keys", { method: "POST", body: JSON.stringify(data) }, token);
 }
 
+/**
+ * Revoke (delete) an API key.
+ * @param id - The key ID to revoke.
+ * @param token - Access token.
+ */
 export function revokeApiKey(id: string, token: string): Promise<void> {
   return req(`/auth/api-keys/${id}`, { method: "DELETE" }, token);
 }
 
 // ── Personality ────────────────────────────────────────────────────────────────
 
+/**
+ * Fetch a personality file by name.
+ * @param name - Personality file name.
+ * @param token - Access token.
+ */
 export function getPersonality(name: string, token: string): Promise<PersonalityFile> {
   return req(`/personality/${name}`, {}, token);
 }
 
+/**
+ * Create or update a personality file.
+ * @param name - Personality file name.
+ * @param content - File content.
+ * @param token - Access token.
+ */
 export function putPersonality(name: string, content: string, token: string): Promise<void> {
   return req(`/personality/${name}`, { method: "PUT", body: JSON.stringify({ content }) }, token);
 }
 
 // ── Memory ────────────────────────────────────────────────────────────────────
 
+/**
+ * List all memory files.
+ * @param token - Access token.
+ */
 export function listMemory(token: string): Promise<MemoryListResponse> {
   return req("/memory", {}, token);
 }
 
+/**
+ * Fetch a single memory file's content.
+ * @param path - File path.
+ * @param token - Access token.
+ */
 export function getMemoryFile(
   path: string,
   token: string,
@@ -208,20 +321,42 @@ export function getMemoryFile(
   return req(`/memory/${path}`, {}, token);
 }
 
+/**
+ * Create or update a memory file.
+ * @param path - File path.
+ * @param content - File content.
+ * @param token - Access token.
+ */
 export function putMemoryFile(path: string, content: string, token: string): Promise<void> {
   return req(`/memory/${path}`, { method: "PUT", body: JSON.stringify({ content }) }, token);
 }
 
+/**
+ * Delete a memory file.
+ * @param path - File path.
+ * @param token - Access token.
+ */
 export function deleteMemoryFile(path: string, token: string): Promise<void> {
   return req(`/memory/${path}`, { method: "DELETE" }, token);
 }
 
 // ── Admin users ───────────────────────────────────────────────────────────────
 
+/**
+ * List all users (admin-only).
+ * @param token - Access token.
+ */
 export function listAdminUsers(token: string): Promise<AdminListUsersResponse> {
   return req("/admin/users", {}, token);
 }
 
+/**
+ * Create a new user (admin-only).
+ * @param data.email - New user's email.
+ * @param data.password - New user's password.
+ * @param data.display_name - Optional display name.
+ * @param token - Access token.
+ */
 export function createAdminUser(
   data: { email: string; password: string; display_name?: string },
   token: string,
@@ -229,6 +364,12 @@ export function createAdminUser(
   return req("/admin/users", { method: "POST", body: JSON.stringify(data) }, token);
 }
 
+/**
+ * Activate or deactivate a user (admin-only).
+ * @param id - User ID.
+ * @param data.status - New status ("active" or "deactivated").
+ * @param token - Access token.
+ */
 export function updateAdminUser(
   id: string,
   data: { status: "active" | "deactivated" },
@@ -237,6 +378,12 @@ export function updateAdminUser(
   return req(`/admin/users/${id}`, { method: "PATCH", body: JSON.stringify(data) }, token);
 }
 
+/**
+ * Reset a user's password (admin-only).
+ * @param id - User ID.
+ * @param password - New password.
+ * @param token - Access token.
+ */
 export function resetAdminUserPassword(id: string, password: string, token: string): Promise<void> {
   return req(
     `/admin/users/${id}/password-reset`,
@@ -245,6 +392,11 @@ export function resetAdminUserPassword(id: string, password: string, token: stri
   );
 }
 
+/**
+ * Get provider grants for a user (admin-only).
+ * @param userId - User ID.
+ * @param token - Access token.
+ */
 export function listProviderGrants(
   userId: string,
   token: string,
@@ -252,6 +404,12 @@ export function listProviderGrants(
   return req(`/admin/users/${userId}/providers`, {}, token);
 }
 
+/**
+ * Set provider grants for a user (admin-only).
+ * @param userId - User ID.
+ * @param grants - Updated list of provider grants.
+ * @param token - Access token.
+ */
 export function setProviderGrants(
   userId: string,
   grants: ProviderGrantInfo[],
@@ -266,10 +424,19 @@ export function setProviderGrants(
 
 // ── Admin configuration ──────────────────────────────────────────────────────
 
+/**
+ * Fetch the full admin configuration (admin-only).
+ * @param token - Access token.
+ */
 export function getAdminConfig(token: string): Promise<AdminConfig> {
   return req("/admin/config", {}, token);
 }
 
+/**
+ * Update the admin configuration (admin-only).
+ * @param config - The updated config payload.
+ * @param token - Access token.
+ */
 export function updateAdminConfig(config: AdminConfigUpdate, token: string): Promise<AdminConfig> {
   return req(
     "/admin/config",
@@ -283,14 +450,28 @@ export function updateAdminConfig(config: AdminConfigUpdate, token: string): Pro
 
 // ── Plugins ──────────────────────────────────────────────────────────────────
 
+/**
+ * List installed plugins and capabilities.
+ * @param token - Access token.
+ */
 export async function listPlugins(token: string): Promise<PluginListResponse> {
   return req<PluginListResponse>("/plugins", {}, token);
 }
 
+/**
+ * List available plugins from the store / registry.
+ * @param token - Access token.
+ */
 export function listPluginStore(token: string): Promise<PluginStoreResponse> {
   return req("/plugins/store", {}, token);
 }
 
+/**
+ * Enable or disable an installed plugin.
+ * @param id - Plugin ID.
+ * @param enabled - Whether the plugin should be enabled.
+ * @param token - Access token.
+ */
 export function setPluginEnabled(id: string, enabled: boolean, token: string): Promise<void> {
   return req(
     `/plugins/${id}/enable`,
@@ -302,6 +483,12 @@ export function setPluginEnabled(id: string, enabled: boolean, token: string): P
   );
 }
 
+/**
+ * Install a plugin from the store.
+ * @param id - Plugin ID.
+ * @param permissions - Permissions to grant the plugin.
+ * @param token - Access token.
+ */
 export function installPlugin(id: string, permissions: string[], token: string): Promise<void> {
   return req(
     `/plugins/${id}/install`,
@@ -313,6 +500,12 @@ export function installPlugin(id: string, permissions: string[], token: string):
   );
 }
 
+/**
+ * Update an installed plugin to the latest version.
+ * @param id - Plugin ID.
+ * @param permissions - Permissions to grant the updated plugin.
+ * @param token - Access token.
+ */
 export function updatePlugin(id: string, permissions: string[], token: string): Promise<void> {
   return req(
     `/plugins/${id}/update`,
@@ -324,14 +517,30 @@ export function updatePlugin(id: string, permissions: string[], token: string): 
   );
 }
 
+/**
+ * Rollback a plugin to its previous version.
+ * @param id - Plugin ID.
+ * @param token - Access token.
+ */
 export function rollbackPlugin(id: string, token: string): Promise<void> {
   return req(`/plugins/${id}/rollback`, { method: "POST" }, token);
 }
 
+/**
+ * Uninstall a plugin.
+ * @param id - Plugin ID.
+ * @param token - Access token.
+ */
 export function uninstallPlugin(id: string, token: string): Promise<void> {
   return req(`/plugins/${id}`, { method: "DELETE" }, token);
 }
 
+/**
+ * Update a plugin's configuration values.
+ * @param id - Plugin ID.
+ * @param values - Key-value config values to set.
+ * @param token - Access token.
+ */
 export function configurePlugin(
   id: string,
   values: Record<string, unknown>,
@@ -349,6 +558,13 @@ export function configurePlugin(
 
 // ── TTS ───────────────────────────────────────────────────────────────────────
 
+/**
+ * Convert text to speech and return the audio as a Blob.
+ * @param text - The text to synthesize.
+ * @param token - Access token.
+ * @param voice - Optional voice ID.
+ * @returns An audio Blob.
+ */
 export async function tts(text: string, token: string, voice?: string): Promise<Blob> {
   const resp = await fetch("/api/tts", {
     method: "POST",
@@ -373,6 +589,13 @@ export async function tts(text: string, token: string, voice?: string): Promise<
 
 // ── Content rendering feedback ─────────────────────────────────────────────────
 
+/**
+ * Submit rendering feedback (best-effort, failures are silently ignored).
+ * @param conversationId - The conversation ID.
+ * @param token - Access token.
+ * @param type - Feedback type.
+ * @param message - Feedback message.
+ */
 export async function submitFeedback(
   conversationId: string,
   token: string,
@@ -396,6 +619,19 @@ export async function submitFeedback(
 
 // ── Chat (SSE) ────────────────────────────────────────────────────────────────
 
+/**
+ * Start or continue a chat conversation via SSE streaming.
+ * @param args.message - The user's chat message.
+ * @param args.conversation_id - Optional existing conversation ID (omit to start a new one).
+ * @param args.provider_id - Optional provider override.
+ * @param args.token - Access token.
+ * @param args.onStarted - Called when the SSE stream starts.
+ * @param args.onChunk - Called with each text delta.
+ * @param args.onToolCall - Optional, called when the model requests a tool.
+ * @param args.onToolResult - Optional, called with the result of a tool callback.
+ * @param args.onDone - Called when the stream completes.
+ * @param args.signal - Optional AbortSignal to cancel the stream.
+ */
 export async function chat(args: {
   message: string;
   conversation_id?: string;
@@ -541,4 +777,5 @@ function processChatEvent(
   return false;
 }
 
+/** Error thrown by API calls when the server returns a non-OK status. */
 export { ApiError };

@@ -9,7 +9,7 @@ apps/web/              Next.js frontend (React 19, Tailwind CSS 4, shadcn/ui v4 
 packages/api/          Rust – shared API types (workspace edition 2024)
 packages/cli/          Rust – CLI (bins: `helpcore` and `hc`; both delegate to `helpcore_cli::run()`)
 packages/server/       Rust – Axum server, SSE chat, MCP-style tools
-packages/skill-validate/  Rust – CI-only tool that validates skill brief discriminability (edition 2021, NOT 2024)
+packages/skill-validate/  Rust – CI-only tool that validates skill brief discriminability (edition 2024)
 ```
 
 ## Pre-commit (must pass before `git commit`)
@@ -38,6 +38,7 @@ Managed by lefthook. All run in parallel.
 ## CI extras (not in lefthook, but run in CI)
 
 - `cargo run --bin skill-validate` — validates skill brief discriminability, produces JSON report
+- `RUSTDOCFLAGS="-D warnings" cargo doc -p helpcore-api -p helpcore-cli --no-deps` — API + CLI docs must be warning-free
 - macOS test (`cargo test --workspace` on macos-14 runner)
 - Web production build (`npm run build` with `NEXT_EXPORT=true`)
 
@@ -128,3 +129,18 @@ npx ai-elements@latest add <component-name>
 npm run format
 npx tsc --noEmit
 ```
+
+## Rust documentation conventions
+
+- `//!` module-level doc on every `lib.rs` and `mod.rs` (describe the module's purpose)
+- `///` doc on every `pub` item (struct, enum, function, method, type alias)
+- `#![warn(missing_docs)]` in `lib.rs` — keep doc warnings at zero for `helpcore-api` and `helpcore-cli`
+- Use `cargo doc --workspace --no-deps` (or `make docs`) to preview generated docs
+- Field-level docs are recommended but not enforced by CI
+
+## TypeScript documentation conventions
+
+- JSDoc (`/** ... */`) on all exported functions, types, and interfaces
+- Use `@param` and `@returns` tags for functions
+- Keep descriptions concise (1-2 lines)
+- Reference: `@/lib/api.ts`, `@/lib/types.ts`, `@/context/auth.tsx`

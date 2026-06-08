@@ -10,6 +10,7 @@ mod embedded {
     include!(concat!(env!("OUT_DIR"), "/embedded_web.rs"));
 }
 
+/// Attaches the web UI (embedded or external directory) as a fallback service.
 pub fn attach(router: Router, enabled: bool) -> Router {
     if !enabled {
         tracing::info!("web UI disabled");
@@ -34,6 +35,7 @@ pub fn attach(router: Router, enabled: bool) -> Router {
     router.fallback(serve_embedded)
 }
 
+/// Returns `true` when embedded web assets were compiled in.
 pub fn embedded_available() -> bool {
     !embedded::FILES.is_empty()
 }

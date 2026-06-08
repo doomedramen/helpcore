@@ -1,5 +1,8 @@
+//! Password hashing and verification using Argon2.
+
 use argon2::{Argon2, PasswordHash, PasswordHasher, PasswordVerifier, password_hash::SaltString};
 
+/// Hashes a password using Argon2 with a random salt.
 pub fn hash_password(password: &str) -> anyhow::Result<String> {
     let mut salt_bytes = [0u8; 16];
     getrandom::getrandom(&mut salt_bytes).expect("OS RNG unavailable");
@@ -11,6 +14,7 @@ pub fn hash_password(password: &str) -> anyhow::Result<String> {
         .map_err(|e| anyhow::anyhow!("failed to hash password: {e}"))
 }
 
+/// Verifies a password against an Argon2 PHC hash string.
 pub fn verify_password(password: &str, hash: &str) -> anyhow::Result<bool> {
     let parsed =
         PasswordHash::new(hash).map_err(|e| anyhow::anyhow!("invalid password hash: {e}"))?;

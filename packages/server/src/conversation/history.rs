@@ -1,3 +1,5 @@
+//! Conversation CRUD, message persistence, and turn management.
+
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::Connection;
@@ -5,10 +7,15 @@ use uuid::Uuid;
 
 use helpcore_api::{ConversationSummary, MessageStatus, MessageSummary};
 
+/// Result of starting a new conversation turn — metadata needed for generation.
 pub struct StartedTurn {
+    /// Summary of the conversation (ID, title, provider info).
     pub conversation: ConversationSummary,
+    /// All non-compacted messages in the conversation before this turn.
     pub history: Vec<MessageSummary>,
+    /// The newly-inserted user message.
     pub user_message: MessageSummary,
+    /// ID of the empty assistant message placeholder to stream into.
     pub assistant_message_id: String,
 }
 
@@ -80,6 +87,7 @@ pub fn load_messages(
     Ok(rows)
 }
 
+/// Loads non-compacted messages before the given sequence number.
 pub fn load_messages_before(
     conn: &Connection,
     conversation_id: &str,
@@ -98,6 +106,7 @@ pub fn load_messages_before(
     Ok(rows)
 }
 
+/// Begins a new conversation turn: inserts user message and assistant placeholder.
 pub fn start_turn(
     conn: &Connection,
     user_id: &str,
@@ -123,6 +132,7 @@ pub fn start_turn(
     })
 }
 
+/// Retries a failed or interrupted assistant response from a previous turn.
 pub fn retry_turn(
     conn: &Connection,
     user_id: &str,
@@ -318,6 +328,7 @@ pub fn insert_assistant_placeholder(
     Ok(id)
 }
 
+/// Appends a streaming chunk to an active assistant message.
 pub fn append_assistant_content(
     conn: &Connection,
     message_id: &str,
@@ -336,6 +347,7 @@ pub fn append_assistant_content(
     Ok(())
 }
 
+/// Marks an assistant message as complete after streaming finishes.
 pub fn finish_assistant_message(conn: &Connection, message_id: &str) -> anyhow::Result<()> {
     let now = Utc::now().to_rfc3339();
     conn.execute(
@@ -346,6 +358,7 @@ pub fn finish_assistant_message(conn: &Connection, message_id: &str) -> anyhow::
     Ok(())
 }
 
+/// Persists a tool-call round: bumps the active assistant, inserts tool results.
 pub fn persist_tool_round(
     conn: &Connection,
     assistant_message_id: &str,
@@ -442,6 +455,7 @@ pub fn insert_assistant_message(
     Ok(id)
 }
 
+/// Marks an assistant message as failed with an error string.
 pub fn fail_assistant_message(
     conn: &Connection,
     message_id: &str,
@@ -456,6 +470,7 @@ pub fn fail_assistant_message(
     Ok(())
 }
 
+/// Marks all active assistant messages as interrupted (called on server restart).
 pub fn interrupt_active_messages(conn: &Connection) -> anyhow::Result<usize> {
     let now = Utc::now().to_rfc3339();
     Ok(conn.execute(
@@ -468,6 +483,7 @@ pub fn interrupt_active_messages(conn: &Connection) -> anyhow::Result<usize> {
     )?)
 }
 
+/// Marks active assistant messages in a conversation as cancelled by the user.
 pub fn interrupt_active_messages_for_conversation(
     conn: &Connection,
     conversation_id: &str,
@@ -487,11 +503,17 @@ pub fn interrupt_active_messages_for_conversation(
 
 /// A message row returned for compaction analysis (includes the compacted flag).
 pub struct CompactableMessage {
+    /// Message row ID.
     pub id: String,
+    /// Message role: "user", "assistant", or "tool".
     pub role: String,
+    /// Message text content.
     pub content: String,
+    /// Monotonically increasing position in the conversation.
     pub sequence: i64,
+    /// JSON-serialised tool calls (assistant messages only).
     pub tool_calls: Option<String>,
+    /// ID of the tool call this result belongs to (tool messages only).
     pub tool_call_id: Option<String>,
 }
 
@@ -583,6 +605,7 @@ pub fn append_user_feedback(
     Ok(id)
 }
 
+/// Updates the title of a conversation (user-scoped access check).
 pub fn update_conversation_title(
     conn: &rusqlite::Connection,
     conversation_id: &str,

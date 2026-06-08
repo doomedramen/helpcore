@@ -6,6 +6,9 @@ use std::sync::Arc;
 
 use crate::{api::handlers, state::AppState, web};
 
+/// Builds the full Axum router tree — all `/api/*` routes, auth, chat, admin, plugins, etc.
+///
+/// If `web_ui` is true, the static Next.js export is attached for catch-all serving.
 pub fn create(state: Arc<AppState>, web_ui: bool) -> Router {
     let api = Router::new()
         .route("/health", get(handlers::health))

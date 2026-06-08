@@ -20,6 +20,11 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 const REFRESH_KEY = "helpcore_refresh";
 
+/**
+ * Provides authentication state and actions to the entire app.
+ * Manages access tokens, refresh tokens, and current user data.
+ * Includes stale-token recovery via SWR's onError handler.
+ */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [currentUser, setCurrentUser] = useState<CurrentUser | null>(null);
@@ -159,6 +164,11 @@ function StaleTokenRecovery({
   );
 }
 
+/**
+ * Hook to access the current auth state and actions.
+ * Must be called within an {@link AuthProvider}.
+ * @returns The auth context value (access token, user, login, logout, etc.).
+ */
 export function useAuth(): AuthContextValue {
   const ctx = useContext(AuthContext);
   if (!ctx) throw new Error("useAuth must be used within AuthProvider");

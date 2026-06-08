@@ -1,3 +1,5 @@
+//! Plugin package download, validation, and extraction.
+
 use anyhow::Context;
 use flate2::read::GzDecoder;
 use futures_util::StreamExt;
@@ -19,13 +21,19 @@ const MAX_PACKAGE_BYTES: usize = 50 * 1024 * 1024;
 const MAX_UNPACKED_BYTES: u64 = 200 * 1024 * 1024;
 const MAX_FILES: usize = 64;
 
+/// A validated, installed plugin package with manifest, skill, and tool definitions.
 pub struct InstalledPackage {
+    /// Parsed plugin manifest.
     pub manifest: Manifest,
+    /// Full skill instructions loaded from `skill.md`.
     pub skill_md: String,
+    /// Tool definitions exported by the plugin.
     pub tools: PluginTools,
+    /// Filesystem path to the installed version directory.
     pub version_path: PathBuf,
 }
 
+/// Loads a previously installed plugin package from disk.
 pub fn load_installed_package(version_path: &Path) -> anyhow::Result<InstalledPackage> {
     let manifest: Manifest =
         toml::from_str(&fs::read_to_string(version_path.join("manifest.toml"))?)
@@ -42,6 +50,7 @@ pub fn load_installed_package(version_path: &Path) -> anyhow::Result<InstalledPa
     })
 }
 
+/// Downloads, verifies, and extracts a plugin package from the store registry.
 pub async fn install_store_package(
     data_dir: &Path,
     user_id: &str,
@@ -80,6 +89,7 @@ pub async fn install_store_package(
     .map_err(|error| anyhow::anyhow!("plugin package task failed: {error}"))?
 }
 
+/// Returns the filesystem root for a user's installed plugin.
 pub fn plugin_root(data_dir: &Path, user_id: &str, plugin_id: &str) -> PathBuf {
     data_dir
         .join("users")

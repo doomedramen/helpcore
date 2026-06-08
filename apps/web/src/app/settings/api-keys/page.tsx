@@ -22,7 +22,7 @@ import {
 } from "@/app/components/ui/dialog";
 
 export default function ApiKeysPage() {
-  const { accessToken, isLoading } = useAuth();
+  const { accessToken } = useAuth();
   const router = useRouter();
   const { mutate } = useSWRConfig();
 
@@ -39,17 +39,8 @@ export default function ApiKeysPage() {
   );
   const keys: ApiKeyInfo[] = data?.keys ?? [];
 
-  if (isLoading) {
-    return (
-      <div className="flex h-screen items-center justify-center text-sm text-slate-400">
-        Loading…
-      </div>
-    );
-  }
-  if (!accessToken) {
-    router.replace("/login/");
-    return null;
-  }
+  // No auth guard needed here — AuthGate (in the root layout) only renders
+  // this page once a session is confirmed.
 
   async function handleCreate() {
     const name = newName.trim();

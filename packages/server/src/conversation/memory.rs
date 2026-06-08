@@ -1,3 +1,5 @@
+//! User memory and personality file storage with FTS5 search.
+
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::{Connection, params};
@@ -8,22 +10,29 @@ use std::collections::HashSet;
 /// Soul, identity, and user-profile personality files for a user.
 #[derive(Debug, Default)]
 pub struct PersonalityFiles {
+    /// Assistant personality / tone instructions.
     pub soul: Option<String>,
+    /// Assistant identity / background.
     pub identity: Option<String>,
+    /// Facts about the human user.
     pub user_profile: Option<String>,
 }
 
 /// A memory file returned from a search or direct read.
 #[derive(Debug, Clone)]
 pub struct MemoryResult {
+    /// Relative path of the memory file.
     pub path: String,
+    /// Full Markdown content of the file.
     pub content: String,
 }
 
 /// Metadata returned when listing memory files.
 #[derive(Debug, Clone)]
 pub struct MemoryEntry {
+    /// Relative path of the memory file.
     pub path: String,
+    /// UTC timestamp of the last write.
     pub updated_at: String,
 }
 
