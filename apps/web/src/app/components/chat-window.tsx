@@ -30,6 +30,7 @@ import {
   ConversationEmptyState,
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
+import { type StickToBottomContext } from "use-stick-to-bottom";
 import { Message as AIMessage, MessageContent } from "@/components/ai-elements/message";
 import {
   PromptInput,
@@ -133,6 +134,9 @@ export default function ChatWindow({
   const providerSelectionsRef = useRef<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const processingRef = useRef(false);
+  const stickToBottomRef = useRef<StickToBottomContext | null>(null);
+  const prevMessageCountRef = useRef(0);
+  const prevActiveRef = useRef(false);
 
   const messageKey =
     accessToken && conversationId
@@ -201,8 +205,27 @@ export default function ChatWindow({
       setQueue([]);
       setLiveToolCalls({});
       setContextUsage(null);
+      prevMessageCountRef.current = 0;
     }
   }, [conversationId]);
+
+  useEffect(() => {
+    const ctx = stickToBottomRef.current;
+    if (!ctx) return;
+    if (messages.length > prevMessageCountRef.current) {
+      ctx.scrollToBottom({ ignoreEscapes: true });
+    }
+    prevMessageCountRef.current = messages.length;
+  }, [messages.length]);
+
+  useEffect(() => {
+    const ctx = stickToBottomRef.current;
+    if (!ctx) return;
+    if (active && !prevActiveRef.current) {
+      ctx.scrollToBottom({ ignoreEscapes: true });
+    }
+    prevActiveRef.current = active;
+  }, [active]);
 
   useEffect(() => {
     if (infoMessage) {
@@ -651,7 +674,7 @@ export default function ChatWindow({
       </div>
 
       {/* Conversation */}
-      <Conversation>
+      <Conversation contextRef={stickToBottomRef}>
         <ConversationContent>
           {empty ? (
             <ConversationEmptyState
