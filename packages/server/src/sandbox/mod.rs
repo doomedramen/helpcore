@@ -113,9 +113,6 @@ pub async fn exec(
         cmd: Some(vec!["/bin/sh", "-c", command]),
         working_dir: Some("/workspace"),
         host_config: Some(HostConfig {
-            // Security
-            cap_drop: Some(vec!["ALL".to_string()]),
-            security_opt: Some(vec!["no-new-privileges:true".to_string()]),
             readonly_rootfs: Some(false),
             privileged: Some(false),
             // Resources
