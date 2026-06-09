@@ -28,6 +28,8 @@ pub struct SandboxState {
     pub timeout: u64,
     /// Memory limit in MB.
     pub memory_mb: u64,
+    /// Human-readable Docker connection info for error messages.
+    pub host_info: String,
 }
 
 /// Result of a sandboxed command execution.
@@ -48,9 +50,16 @@ pub struct SandboxResult {
 /// Errors that can occur during sandbox execution.
 #[derive(Debug, thiserror::Error)]
 pub enum SandboxError {
-    /// Docker daemon error.
-    #[error("Docker error: {0}")]
-    Docker(#[from] bollard::errors::Error),
+    /// Docker daemon error with operation context.
+    #[error("Docker error (host={host}, op={operation}): {source}")]
+    Docker {
+        /// Which Docker API operation failed (e.g. "pull", "create_container").
+        operation: &'static str,
+        /// Human-readable Docker connection info.
+        host: String,
+        /// The underlying bollard/hyper error.
+        source: bollard::errors::Error,
+    },
     /// Command exceeded its timeout.
     #[error("Command timed out after {0}s")]
     Timeout(u64),
@@ -60,6 +69,17 @@ pub enum SandboxError {
     /// Other internal errors.
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
+}
+
+impl SandboxError {
+    /// Create a Docker error with operation and host context.
+    pub fn docker(operation: &'static str, host: &str, source: bollard::errors::Error) -> Self {
+        SandboxError::Docker {
+            operation,
+            host: host.to_string(),
+            source,
+        }
+    }
 }
 
 /// Run a shell command in a sandboxed container.
@@ -84,7 +104,7 @@ pub async fn exec(
         None,
     );
     while let Some(pull_result) = pull_stream.next().await {
-        pull_result?;
+        pull_result.map_err(|e| SandboxError::docker("pull_image", &state.host_info, e))?;
     }
 
     // Create container
@@ -120,14 +140,19 @@ pub async fn exec(
         ..Default::default()
     };
 
-    let id = state
+    let id: String = state
         .docker
         .create_container(None::<CreateContainerOptions<String>>, config)
-        .await?
+        .await
+        .map_err(|e| SandboxError::docker("create_container", &state.host_info, e))?
         .id;
 
     // Start
-    state.docker.start_container::<String>(&id, None).await?;
+    state
+        .docker
+        .start_container::<String>(&id, None)
+        .await
+        .map_err(|e| SandboxError::docker("start_container", &state.host_info, e))?;
 
     // Wait for exit with timeout
     let wait_result = timeout(
@@ -141,7 +166,9 @@ pub async fn exec(
 
     let exit_code = match wait_result {
         Ok(Some(Ok(output))) => output.status_code,
-        Ok(Some(Err(e))) => return Err(SandboxError::Docker(e)),
+        Ok(Some(Err(e))) => {
+            return Err(SandboxError::docker("wait_container", &state.host_info, e));
+        }
         Ok(None) => return Err(anyhow::anyhow!("container disappeared before exiting").into()),
         Err(_) => {
             let _ = state.docker.kill_container::<String>(&id, None).await;

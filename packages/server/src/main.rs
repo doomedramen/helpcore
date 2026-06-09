@@ -114,6 +114,12 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let sandbox = if config.sandbox.enabled {
+        let host_info = if let Some(host) = &config.sandbox.host {
+            host.clone()
+        } else {
+            "unix:///var/run/docker.sock (local default)".to_string()
+        };
+
         let docker_res = if let Some(host) = &config.sandbox.host {
             bollard::Docker::connect_with_http(host, 120, bollard::API_DEFAULT_VERSION)
         } else {
@@ -124,7 +130,7 @@ async fn main() -> anyhow::Result<()> {
             Ok(docker) => {
                 tracing::info!(
                     image = %config.sandbox.image,
-                    host = ?config.sandbox.host,
+                    host = %host_info,
                     "sandbox: Docker client initialised"
                 );
                 Some(helpcore_server::sandbox::SandboxState {
@@ -132,10 +138,16 @@ async fn main() -> anyhow::Result<()> {
                     image: config.sandbox.image.clone(),
                     timeout: config.sandbox.timeout,
                     memory_mb: config.sandbox.memory_mb,
+                    host_info,
                 })
             }
             Err(e) => {
-                tracing::warn!("sandbox: failed to connect to Docker: {e}");
+                tracing::warn!(
+                    host = %host_info,
+                    error = %e,
+                    "sandbox: failed to connect to Docker — check that Docker is running and {} is reachable",
+                    host_info
+                );
                 None
             }
         }

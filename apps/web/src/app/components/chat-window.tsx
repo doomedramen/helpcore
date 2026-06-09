@@ -91,6 +91,7 @@ interface QueueItem {
 interface Props {
   conversationId: string | null;
   onConversationCreated: (id: string) => void;
+  onConversationNotFound?: () => void;
 }
 
 const isActive = (message: Message) =>
@@ -98,7 +99,11 @@ const isActive = (message: Message) =>
 
 let nextQueueId = 1;
 
-export default function ChatWindow({ conversationId, onConversationCreated }: Props) {
+export default function ChatWindow({
+  conversationId,
+  onConversationCreated,
+  onConversationNotFound,
+}: Props) {
   const { accessToken, currentUser, refreshAccessToken } = useAuth();
   const router = useRouter();
   const { mutate: mutateGlobal } = useSWRConfig();
@@ -167,6 +172,13 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     providerSelectionsRef.current[key] = selection;
     setSelectedProviderId(selection);
   }, [conversationId, conversations, providerData, providers]);
+
+  useEffect(() => {
+    if (onConversationNotFound && historyError instanceof ApiError && historyError.status === 404) {
+      onConversationNotFound();
+      setInfoMessage("Conversation not found. Starting a new chat.");
+    }
+  }, [historyError, onConversationNotFound]);
 
   const handleProviderChange = useCallback(
     (providerId: string) => {
@@ -348,9 +360,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     try {
       const result = await compactConversation(conversationId, accessToken);
       if (result.messages_compacted > 0) {
-        setInfoMessage(
-          `Compacted ${result.messages_compacted} message${result.messages_compacted === 1 ? "" : "s"} into a summary.`,
-        );
+        setInfoMessage("");
         await refreshConversation(conversationId);
       } else {
         setInfoMessage("Nothing to compact — conversation is already short.");
@@ -361,9 +371,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
         if (fresh) {
           const result = await compactConversation(conversationId, fresh);
           if (result.messages_compacted > 0) {
-            setInfoMessage(
-              `Compacted ${result.messages_compacted} message${result.messages_compacted === 1 ? "" : "s"} into a summary.`,
-            );
+            setInfoMessage("");
             await refreshConversation(conversationId);
           } else {
             setInfoMessage("Nothing to compact — conversation is already short.");
@@ -496,7 +504,13 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   const toolCount = messages.filter((m) => m.role === "tool").length;
   const visibleMessages = showToolLogs ? messages : messages.filter((m) => m.role !== "tool");
   const empty = !historyLoading && messages.length === 0 && queue.length === 0;
-  const visibleError = error || (historyError instanceof Error ? historyError.message : "");
+  const historyErrorMessage =
+    historyError instanceof ApiError && historyError.status === 404
+      ? ""
+      : historyError instanceof Error
+        ? historyError.message
+        : "";
+  const visibleError = error || historyErrorMessage;
   const currentConversation = conversations?.find((c) => c.id === conversationId);
   const firstName = currentUser?.display_name?.split(/\s+/)[0];
 
@@ -702,7 +716,40 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                   );
                 }
 
-                // Assistant or summary
+                // Summary
+                if (message.role === "summary") {
+                  return (
+                    <AIMessage key={message.id} from="assistant">
+                      <MessageContent>
+                        <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                          <svg
+                            width="13"
+                            height="13"
+                            viewBox="0 0 24 24"
+                            fill="none"
+                            stroke="currentColor"
+                            strokeWidth="2"
+                            strokeLinecap="round"
+                            strokeLinejoin="round"
+                            aria-hidden="true"
+                          >
+                            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5A1.5 1.5 0 0 1 5 20.5a1.5 1.5 0 0 1 1.5-1.5H20" />
+                            <path d="m8 7 4 4-4 4" />
+                            <path d="M14 17h4" />
+                          </svg>
+                          Conversation compacted
+                        </div>
+                        <CodeBlockInjector>
+                          <MessageContentWithAssets onContentError={handleContentError}>
+                            {message.content}
+                          </MessageContentWithAssets>
+                        </CodeBlockInjector>
+                      </MessageContent>
+                    </AIMessage>
+                  );
+                }
+
+                // Assistant
                 const calls =
                   message.role === "assistant" && message.tool_calls?.length
                     ? ((message.tool_calls as Record<string, unknown>[])

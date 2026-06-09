@@ -9,11 +9,12 @@ import StreamdownCodeBlockHandlers from "@/app/components/streamdown-code-block-
 function ChatApp() {
   const router = useRouter();
   const params = useSearchParams();
-  const [conversationId, setConversationId] = useState<string | null>(params.get("id"));
+  const rawId = params.get("id");
+  const [conversationId, setConversationId] = useState<string | null>(rawId || null);
 
   // Sync conversationId with URL param
   useEffect(() => {
-    setConversationId(params.get("id"));
+    setConversationId(params.get("id") || null);
   }, [params]);
 
   // No auth guard needed here — AuthGate (in the root layout) only renders
@@ -32,6 +33,10 @@ function ChatApp() {
       <ChatWindow
         conversationId={conversationId}
         onConversationCreated={(id) => setConversationId(id)}
+        onConversationNotFound={() => {
+          setConversationId(null);
+          router.replace("/chat/", { scroll: false });
+        }}
       />
     </AppShell>
   );

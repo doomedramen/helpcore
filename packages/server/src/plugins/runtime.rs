@@ -662,7 +662,7 @@ async fn execute_builtin(
             let sandbox = state
                 .sandbox
                 .as_ref()
-                .context("sandbox not configured or Docker unavailable")?;
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
             let command = require_str_arg(&call.arguments, "command")?;
             let timeout = call.arguments.get("timeout").and_then(|v| v.as_u64());
 
