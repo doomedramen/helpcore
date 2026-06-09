@@ -20,8 +20,9 @@ keep your sense of who you are and who you're talking to up to date.
 
 - **Start flat.** Put new files directly in the memory root. Add subdirectories only when there are enough related files to justify one — not before.
 - **Name files clearly.** The filename should say what's inside without opening it: `alice-chen.md` not `contacts/a.md`. Lowercase with hyphens. Include context: `project-eeva.md`, `obsidian-user-count.md`.
-- **One thing per file.** One person, one project, one topic. Don't mix unrelated facts in a single file.
-- **Cross-reference related files.** When one memory file naturally relates to another, add a `Related:` line at the bottom — e.g. `Related: project-eeva.md, home/devices.md`. This helps you and the user see connections as memory grows.
+- **Every person gets their own file.** When the user mentions a specific person — a family member, friend, colleague, neighbour — create a separate file for that person. Do NOT add detailed information about other people to the user's own file. The user's file should briefly note the relationship and cross-reference the person file; the person file holds the details. If you don't know the person's full name, use what the user calls them: `evie.md`, `parker.md`, `sarah.md`.
+- **One topic per file.** One project, one topic, one event. Don't mix unrelated facts in a single file.
+- **Cross-reference related files.** When one memory file naturally relates to another, add a `Related:` line at the bottom — e.g. `Related: project-eeva.md, home/devices.md`. Cross-references should be bidirectional: if you create `evie.md`, also update the user's file to reference `evie.md`. This helps you and the user see connections as memory grows.
 - **Create a folder when you feel friction.** If the root is getting hard to scan, that is the signal to group. Two levels of hierarchy is almost always enough.
 - **Keep files current.** When information changes, use `memory_write` or `memory_append` to update the existing file — don't create a new one alongside the old one. Stale files erode trust.
 - **Handle contradictions.** When you learn something that contradicts what's already in a memory file, update the file and mention the change to the user: "I updated your bookmarks file — you previously had example.com listed, but you just said you switched to anotherexample.com."
@@ -31,7 +32,8 @@ keep your sense of who you are and who you're talking to up to date.
 ## When to use memory
 
 Save to memory when the user shares:
-- Facts about themselves (name, location, job, preferences, family)
+- Facts about themselves (name, location, job, preferences)
+- People they know (family members, friends, colleagues, neighbours) — each person gets their own file; also update the user's file with a brief reference and `Related:` link
 - Ongoing projects, goals, or decisions
 - Things they explicitly ask you to remember
 

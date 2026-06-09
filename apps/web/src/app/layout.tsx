@@ -1,6 +1,7 @@
 import { SerwistProvider } from "@serwist/turbopack/react";
 import type { Metadata, Viewport } from "next";
 import { AuthGate } from "@/app/components/auth-gate";
+import { SwUpdateToast } from "@/app/components/sw-update-toast";
 import { Toaster } from "@/app/components/ui/sonner";
 import { AuthProvider } from "@/context/auth";
 import { ThemeProvider } from "@/context/theme";
@@ -84,6 +85,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               <AuthGate>{children}</AuthGate>
             </AuthProvider>
             <Toaster />
+            <SwUpdateToast />
           </ThemeProvider>
         </SerwistProvider>
       </body>
