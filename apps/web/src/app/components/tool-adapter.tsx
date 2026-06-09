@@ -1,6 +1,8 @@
 "use client";
 
+import { useMemo } from "react";
 import type { ReactNode } from "react";
+import { diffLines } from "diff";
 import {
   AlertTriangle,
   BarChart3,
@@ -399,9 +401,129 @@ function MoveOutput({ data, call }: { data?: Record<string, unknown>; call?: Too
   );
 }
 
+// ---------------------------------------------------------------------------
+// Git-style diff helpers
+// ---------------------------------------------------------------------------
+
+const DIFF_CONTEXT = 3;
+
+type DiffLine =
+  | { type: "added" | "removed" | "context"; text: string }
+  | { type: "collapsed"; count: number };
+
+function buildDiffLines(oldText: string, newText: string): DiffLine[] {
+  const changes = diffLines(oldText, newText);
+
+  // Flatten to per-line items
+  const flat: Array<{ type: "added" | "removed" | "context"; text: string }> = [];
+  for (const change of changes) {
+    const rawLines = change.value.split("\n");
+    if (rawLines[rawLines.length - 1] === "") rawLines.pop();
+    for (const text of rawLines) {
+      flat.push({ type: change.added ? "added" : change.removed ? "removed" : "context", text });
+    }
+  }
+
+  // Collapse long unchanged runs to keep the view scannable
+  const result: DiffLine[] = [];
+  let i = 0;
+  while (i < flat.length) {
+    if (flat[i].type !== "context") {
+      result.push(flat[i++]);
+      continue;
+    }
+    let j = i;
+    while (j < flat.length && flat[j].type === "context") j++;
+    const run = flat.slice(i, j);
+    const isFirst = i === 0;
+    const isLast = j === flat.length;
+    const showHead = isFirst ? 0 : DIFF_CONTEXT;
+    const showTail = isLast ? 0 : DIFF_CONTEXT;
+    if (run.length <= showHead + showTail) {
+      for (const l of run) result.push(l);
+    } else {
+      for (let k = 0; k < showHead; k++) result.push(run[k]);
+      result.push({ type: "collapsed", count: run.length - showHead - showTail });
+      for (let k = run.length - showTail; k < run.length; k++) result.push(run[k]);
+    }
+    i = j;
+  }
+  return result;
+}
+
+function DiffView({ oldContent, newContent }: { oldContent: string; newContent: string }) {
+  const lines = useMemo(() => buildDiffLines(oldContent, newContent), [oldContent, newContent]);
+  const hasChanges = lines.some((l) => l.type === "added" || l.type === "removed");
+
+  if (!hasChanges) {
+    return (
+      <pre className="font-mono whitespace-pre-wrap rounded bg-background p-2 text-xs text-foreground">
+        {newContent}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="overflow-hidden rounded border border-border/40 font-mono text-xs">
+      {lines.map((line, i) => {
+        if (line.type === "collapsed") {
+          return (
+            <div
+              key={i}
+              className="select-none bg-muted/20 px-2 py-0.5 text-center text-muted-foreground/60"
+            >
+              ⋯ {line.count} unchanged {line.count === 1 ? "line" : "lines"} ⋯
+            </div>
+          );
+        }
+        if (line.type === "removed") {
+          return (
+            <div key={i} className="flex min-w-0 bg-red-500/10">
+              <span className="w-4 shrink-0 select-none text-center text-red-400/70">−</span>
+              <span className="flex-1 whitespace-pre-wrap break-all px-1 text-red-700 dark:text-red-300/90">
+                {line.text}
+              </span>
+            </div>
+          );
+        }
+        if (line.type === "added") {
+          return (
+            <div key={i} className="flex min-w-0 bg-emerald-500/10">
+              <span className="w-4 shrink-0 select-none text-center text-emerald-500/70">+</span>
+              <span className="flex-1 whitespace-pre-wrap break-all px-1 text-emerald-700 dark:text-emerald-300">
+                {line.text}
+              </span>
+            </div>
+          );
+        }
+        return (
+          <div key={i} className="flex min-w-0">
+            <span className="w-4 shrink-0 select-none text-center text-muted-foreground/30"> </span>
+            <span className="flex-1 whitespace-pre-wrap break-all px-1 text-foreground/70">
+              {line.text}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Tool output components
+// ---------------------------------------------------------------------------
+
 function DeleteOutput({ data, content }: { data?: Record<string, unknown>; content: string }) {
   const oldContent = (data?.old_content ?? unwrapResult(content)) as string;
   const path = data?.path as string;
+
+  const lines = useMemo(() => {
+    if (!oldContent || typeof oldContent !== "string") return [];
+    const rawLines = oldContent.split("\n");
+    if (rawLines[rawLines.length - 1] === "") rawLines.pop();
+    return rawLines;
+  }, [oldContent]);
+
   return (
     <div className="space-y-2">
       <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Result</h4>
@@ -412,9 +534,16 @@ function DeleteOutput({ data, content }: { data?: Record<string, unknown>; conte
             <span className="font-mono">{path}</span>
           </p>
         )}
-        {oldContent && typeof oldContent === "string" && (
-          <div className="rounded bg-red-500/5 p-2 text-red-700/70 dark:text-red-300/70 line-through font-mono whitespace-pre-wrap max-h-[200px] overflow-y-auto">
-            {oldContent}
+        {lines.length > 0 && (
+          <div className="max-h-[200px] overflow-y-auto overflow-hidden rounded border border-border/40 font-mono">
+            {lines.map((text, i) => (
+              <div key={i} className="flex min-w-0 bg-red-500/10">
+                <span className="w-4 shrink-0 select-none text-center text-red-400/70">−</span>
+                <span className="flex-1 whitespace-pre-wrap break-all px-1 text-red-700 dark:text-red-300/90">
+                  {text}
+                </span>
+              </div>
+            ))}
           </div>
         )}
       </div>
@@ -450,30 +579,18 @@ function ReadWriteOutput({
             <span className="font-mono">{path}</span>
           </p>
         )}
-        {oldContent && typeof oldContent === "string" && (
-          <div className="mb-2">
-            <span className="text-[10px] uppercase text-muted-foreground">Before</span>
-            <pre className="mt-1 whitespace-pre-wrap rounded bg-red-500/5 p-2 text-red-700/70 dark:text-red-300/70 line-through">
-              {oldContent}
-            </pre>
-          </div>
-        )}
-        {displayContent && typeof displayContent === "string" && (
-          <div>
-            {oldContent && (
-              <span className="text-[10px] uppercase text-muted-foreground">After</span>
-            )}
-            <pre
-              className={cn(
-                "whitespace-pre-wrap rounded p-2",
-                oldContent
-                  ? "mt-1 bg-emerald-500/5 text-emerald-700 dark:text-emerald-300"
-                  : "bg-background text-foreground",
-              )}
-            >
+        {oldContent &&
+        typeof oldContent === "string" &&
+        displayContent &&
+        typeof displayContent === "string" ? (
+          <DiffView oldContent={oldContent} newContent={displayContent} />
+        ) : (
+          displayContent &&
+          typeof displayContent === "string" && (
+            <pre className="font-mono whitespace-pre-wrap rounded bg-background p-2 text-foreground">
               {displayContent}
             </pre>
-          </div>
+          )
         )}
       </div>
     </div>
