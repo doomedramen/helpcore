@@ -13,7 +13,7 @@ ENV NEXT_EXPORT=true
 RUN npm run build
 
 # ── Rust server build ──────────────────────────────────────────────────────────
-FROM rust:1.87-slim AS builder
+FROM rust:1.88-slim AS builder
 
 ARG TARGETARCH
 
