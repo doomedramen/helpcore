@@ -80,7 +80,7 @@ import { MessageContentWithAssets } from "./asset-renderer";
 import PromptAttachments from "./prompt-attachments";
 import CodeBlockInjector from "./code-copy-button";
 import { Badge } from "@/app/components/ui/badge";
-import { Shuffle, Terminal } from "lucide-react";
+import { ScrollText, Shuffle, Terminal } from "lucide-react";
 
 interface QueueItem {
   id: string;
@@ -722,21 +722,7 @@ export default function ChatWindow({
                     <AIMessage key={message.id} from="assistant">
                       <MessageContent>
                         <div className="mb-2 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
-                          <svg
-                            width="13"
-                            height="13"
-                            viewBox="0 0 24 24"
-                            fill="none"
-                            stroke="currentColor"
-                            strokeWidth="2"
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            aria-hidden="true"
-                          >
-                            <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5A1.5 1.5 0 0 1 5 20.5a1.5 1.5 0 0 1 1.5-1.5H20" />
-                            <path d="m8 7 4 4-4 4" />
-                            <path d="M14 17h4" />
-                          </svg>
+                          <ScrollText size={13} aria-hidden="true" />
                           Conversation compacted
                         </div>
                         <CodeBlockInjector>
