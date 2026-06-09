@@ -56,6 +56,7 @@ semver           = { workspace = true }
 chacha20poly1305  = { workspace = true }
 base64           = { workspace = true }
 wasmtime         = { workspace = true }
+bollard          = { workspace = true }
 clap             = { workspace = true, features = ["derive"] }
 mime_guess       = { workspace = true }
 

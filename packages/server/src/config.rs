@@ -24,6 +24,39 @@ pub struct Config {
     pub plugins: PluginsConfig,
     #[serde(default)]
     pub registry: RegistryConfig,
+    #[serde(default)]
+    pub sandbox: SandboxConfig,
+}
+
+/// Docker sandbox configuration for safe command execution.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct SandboxConfig {
+    /// Whether the sandbox is enabled.
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Docker image to use for sandbox containers.
+    /// Defaults to ghcr.io/doomedramen/helpcore-sandbox:latest
+    #[serde(default = "default_sandbox_image")]
+    pub image: String,
+
+    /// Max execution time in seconds per command.
+    #[serde(default = "default_sandbox_timeout")]
+    pub timeout: u64,
+
+    /// Max memory in MB.
+    #[serde(default = "default_sandbox_memory")]
+    pub memory_mb: u64,
+}
+
+fn default_sandbox_image() -> String {
+    "ghcr.io/doomedramen/helpcore-sandbox:latest".into()
+}
+fn default_sandbox_timeout() -> u64 {
+    120
+}
+fn default_sandbox_memory() -> u64 {
+    512
 }
 
 /// Plugin management configuration including blacklists and local plugins.

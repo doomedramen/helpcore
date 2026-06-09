@@ -63,7 +63,13 @@ export function SlashCommandMenu({ commands, className }: SlashCommandMenuProps)
       {/* Hidden trigger — popover is opened/closed programmatically via
           the `open` prop, so we don't need a visible trigger element. */}
       <PopoverTrigger className="absolute inset-0 pointer-events-none" />
-      <PopoverContent side="top" align="start" sideOffset={8} className={cn("w-72 p-0", className)}>
+      <PopoverContent
+        side="top"
+        align="start"
+        sideOffset={8}
+        initialFocus={false}
+        className={cn("w-72 p-0", className)}
+      >
         <div className="overflow-hidden p-1">
           <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Commands</div>
           {filtered.length > 0 ? (

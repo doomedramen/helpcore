@@ -288,6 +288,14 @@ export interface AdminProviderConfig {
   num_predict: number | null;
 }
 
+/** Admin-level sandbox configuration. */
+export interface AdminSandboxConfig {
+  enabled: boolean;
+  image: string;
+  timeout: number;
+  memory_mb: number;
+}
+
 /** The full admin configuration payload. */
 export interface AdminConfig {
   config_path: string;
@@ -302,6 +310,7 @@ export interface AdminConfig {
   registry_url: string;
   plugin_blacklist: string[];
   providers: AdminProviderConfig[];
+  sandbox: AdminSandboxConfig;
   restart_required: boolean;
 }
 
@@ -318,4 +327,5 @@ export interface AdminConfigUpdate {
   registry_url: string;
   plugin_blacklist: string[];
   providers: AdminProviderUpdate[];
+  sandbox: AdminSandboxConfig;
 }

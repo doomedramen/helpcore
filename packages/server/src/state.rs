@@ -2,7 +2,9 @@
 
 use std::{path::PathBuf, sync::Arc};
 
-use crate::{config::Config, db::DbPool, providers::registry::ProviderRegistry};
+use crate::{
+    config::Config, db::DbPool, providers::registry::ProviderRegistry, sandbox::SandboxState,
+};
 
 /// Shared application state available to all handlers.
 #[derive(Clone)]
@@ -19,4 +21,6 @@ pub struct AppState {
     pub providers: ProviderRegistry,
     /// Serialises config reload requests to prevent races.
     pub config_update_lock: Arc<tokio::sync::Mutex<()>>,
+    /// Shared sandbox state, if enabled.
+    pub sandbox: Option<SandboxState>,
 }

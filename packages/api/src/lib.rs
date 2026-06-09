@@ -625,6 +625,19 @@ pub struct AdminProviderConfig {
     pub num_predict: Option<u32>,
 }
 
+/// Sandbox configuration viewable and editable by admins.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AdminSandboxConfig {
+    /// Whether the sandbox is enabled.
+    pub enabled: bool,
+    /// Docker image to use for sandbox containers.
+    pub image: String,
+    /// Max execution time in seconds per command.
+    pub timeout: u64,
+    /// Max memory in MB.
+    pub memory_mb: u64,
+}
+
 /// Response containing the full admin-viewable server configuration.
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AdminConfigResponse {
@@ -644,6 +657,8 @@ pub struct AdminConfigResponse {
     pub plugin_blacklist: Vec<String>,
     /// Configured AI providers.
     pub providers: Vec<AdminProviderConfig>,
+    /// Sandbox configuration.
+    pub sandbox: AdminSandboxConfig,
     /// Whether a server restart is needed for changes to take effect.
     pub restart_required: bool,
 }
@@ -690,6 +705,8 @@ pub struct AdminConfigUpdateRequest {
     /// Updated provider configurations.
     #[serde(default)]
     pub providers: Vec<AdminProviderUpdate>,
+    /// Updated sandbox configuration.
+    pub sandbox: AdminSandboxConfig,
 }
 
 // ── Admin user management ─────────────────────────────────────────────────────

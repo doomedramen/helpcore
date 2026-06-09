@@ -1,6 +1,7 @@
 //! Subcommand handlers for the helpcore CLI. Each public module corresponds to
 //! one top-level command (or a group of related commands).
 
+pub mod admin;
 pub mod api_key;
 pub mod ask;
 pub mod conversation;

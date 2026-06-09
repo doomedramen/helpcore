@@ -7,10 +7,11 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio_util::io::StreamReader;
 
 use helpcore_api::{
-    ApiKeyInfo, ChatRequest, CompactResponse, ConversationSummary, CreateApiKeyRequest,
-    CreateApiKeyResponse, CurrentUserResponse, ListApiKeysResponse, LoginRequest, LoginResponse,
-    LogoutRequest, MemoryEntry, MemoryListResponse, MemoryReadResponse, MemoryWriteRequest,
-    MessageSummary, PersonalityResponse, PersonalityWriteRequest, PluginInfo, PluginListResponse,
+    AdminConfigResponse, AdminConfigUpdateRequest, ApiKeyInfo, ChatRequest, CompactResponse,
+    ConversationSummary, CreateApiKeyRequest, CreateApiKeyResponse, CurrentUserResponse,
+    ListApiKeysResponse, LoginRequest, LoginResponse, LogoutRequest, MemoryEntry,
+    MemoryListResponse, MemoryReadResponse, MemoryWriteRequest, MessageSummary,
+    PersonalityResponse, PersonalityWriteRequest, PluginInfo, PluginListResponse,
     PluginTokenRequest, PluginTokenResponse, RefreshRequest, RefreshResponse, SetupRequest,
     SetupStatusResponse, SseChunk, SseDone,
 };
@@ -505,6 +506,46 @@ impl Client {
             .context("failed to reach server")?;
         require_success(resp).await?;
         Ok(())
+    }
+
+    /// Fetches the current server configuration (admin only).
+    pub async fn get_admin_config(
+        &self,
+        access_token: &str,
+    ) -> anyhow::Result<AdminConfigResponse> {
+        let resp = self
+            .inner
+            .get(format!("{}/api/admin/config", self.server_url))
+            .bearer_auth(access_token)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid admin-config response")
+    }
+
+    /// Updates the server configuration (admin only).
+    pub async fn update_admin_config(
+        &self,
+        access_token: &str,
+        request: &AdminConfigUpdateRequest,
+    ) -> anyhow::Result<AdminConfigResponse> {
+        let resp = self
+            .inner
+            .put(format!("{}/api/admin/config", self.server_url))
+            .bearer_auth(access_token)
+            .json(request)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        require_success(resp)
+            .await?
+            .json()
+            .await
+            .context("invalid update-config response")
     }
 }
 

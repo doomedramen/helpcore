@@ -113,6 +113,26 @@ async fn main() -> anyhow::Result<()> {
         tracing::warn!("no providers configured — POST /chat will return an error");
     }
 
+    let sandbox = if config.sandbox.enabled {
+        match bollard::Docker::connect_with_local_defaults() {
+            Ok(docker) => {
+                tracing::info!(image = %config.sandbox.image, "sandbox: Docker client initialised");
+                Some(helpcore_server::sandbox::SandboxState {
+                    docker,
+                    image: config.sandbox.image.clone(),
+                    timeout: config.sandbox.timeout,
+                    memory_mb: config.sandbox.memory_mb,
+                })
+            }
+            Err(e) => {
+                tracing::warn!("sandbox: failed to connect to Docker: {e}");
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     let state = Arc::new(state::AppState {
         config: Arc::new(config),
         config_path,
@@ -120,6 +140,7 @@ async fn main() -> anyhow::Result<()> {
         db: Arc::new(db),
         providers: provider_registry,
         config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
+        sandbox,
     });
 
     let port = state.config.server.port;

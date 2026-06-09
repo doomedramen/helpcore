@@ -55,6 +55,7 @@ function draftFromConfig(config: AdminConfig): AdminConfigUpdate {
       api_key: null,
       clear_api_key: false,
     })),
+    sandbox: { ...config.sandbox },
   };
 }
 
@@ -285,6 +286,46 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
               ))}
             </select>
           </Field>
+        </div>
+      </Section>
+
+      <Section
+        title="Execution sandbox"
+        description="Configure the Docker sandbox for safe, isolated command execution."
+      >
+        <div className="space-y-4">
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input type="checkbox" {...register("sandbox.enabled")} />
+            Enable sandbox
+          </label>
+          <div className="grid gap-4 md:grid-cols-2">
+            <Field label="Docker image" hint="The image used for sandbox containers.">
+              <input
+                {...register("sandbox.image")}
+                placeholder="ghcr.io/doomedramen/helpcore-sandbox:latest"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Timeout (seconds)" hint="Maximum execution time per command.">
+              <input
+                type="number"
+                min={1}
+                max={600}
+                {...register("sandbox.timeout", { valueAsNumber: true })}
+                placeholder="120"
+                className={inputClass}
+              />
+            </Field>
+            <Field label="Memory limit (MB)" hint="Maximum RAM allowed for each container.">
+              <input
+                type="number"
+                min={64}
+                {...register("sandbox.memory_mb", { valueAsNumber: true })}
+                placeholder="512"
+                className={inputClass}
+              />
+            </Field>
+          </div>
         </div>
       </Section>
 

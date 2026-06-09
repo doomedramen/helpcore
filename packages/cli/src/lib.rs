@@ -148,6 +148,43 @@ enum Commands {
     /// Manage API keys
     #[command(subcommand)]
     ApiKeys(ApiKeyCommands),
+
+    /// Server administration (requires admin role)
+    #[command(subcommand)]
+    Admin(AdminCommands),
+}
+
+#[derive(Subcommand)]
+enum AdminCommands {
+    /// Manage server configuration
+    #[command(subcommand)]
+    Config(AdminConfigCommands),
+}
+
+#[derive(Subcommand)]
+enum AdminConfigCommands {
+    /// Manage sandbox settings
+    #[command(subcommand)]
+    Sandbox(AdminSandboxCommands),
+}
+
+#[derive(Subcommand)]
+enum AdminSandboxCommands {
+    /// Show current sandbox status
+    Status {
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Enable the sandbox
+    Enable {
+        #[arg(long)]
+        server: Option<String>,
+    },
+    /// Disable the sandbox
+    Disable {
+        #[arg(long)]
+        server: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -400,6 +437,22 @@ pub async fn run() -> anyhow::Result<()> {
             ApiKeyCommands::Revoke { id, server } => {
                 commands::api_key::revoke(&id, server.as_deref()).await
             }
+        },
+
+        Commands::Admin(sub) => match sub {
+            AdminCommands::Config(sub) => match sub {
+                AdminConfigCommands::Sandbox(sub) => match sub {
+                    AdminSandboxCommands::Status { server } => {
+                        commands::admin::sandbox_status(server.as_deref()).await
+                    }
+                    AdminSandboxCommands::Enable { server } => {
+                        commands::admin::sandbox_enable(true, server.as_deref()).await
+                    }
+                    AdminSandboxCommands::Disable { server } => {
+                        commands::admin::sandbox_enable(false, server.as_deref()).await
+                    }
+                },
+            },
         },
     }
 }

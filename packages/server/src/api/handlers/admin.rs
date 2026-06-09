@@ -4,7 +4,8 @@
 
 use axum::{Json, extract::State};
 use helpcore_api::{
-    AdminConfigResponse, AdminConfigUpdateRequest, AdminProviderConfig, AdminServerConfig,
+    AdminConfigResponse, AdminConfigUpdateRequest, AdminProviderConfig, AdminSandboxConfig,
+    AdminServerConfig,
 };
 use std::{collections::HashSet, sync::Arc};
 
@@ -38,6 +39,10 @@ pub async fn update_config(
     config.server.port = req.server.port;
     config.logging.level = req.logging_level.trim().to_lowercase();
     config.registry.url = req.registry_url.trim().to_string();
+    config.sandbox.enabled = req.sandbox.enabled;
+    config.sandbox.image = req.sandbox.image.trim().to_string();
+    config.sandbox.timeout = req.sandbox.timeout;
+    config.sandbox.memory_mb = req.sandbox.memory_mb;
 
     let mut blacklist = req
         .plugin_blacklist
@@ -187,6 +192,12 @@ fn config_response(state: &AppState, config: &Config) -> AdminConfigResponse {
                 num_predict: provider.num_predict,
             })
             .collect(),
+        sandbox: AdminSandboxConfig {
+            enabled: config.sandbox.enabled,
+            image: config.sandbox.image.clone(),
+            timeout: config.sandbox.timeout,
+            memory_mb: config.sandbox.memory_mb,
+        },
         restart_required: config.server.port != state.config.server.port
             || config.logging.level != state.config.logging.level,
     }

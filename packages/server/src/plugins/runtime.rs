@@ -180,6 +180,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "conversation_rename",
     "skill_read",
     "request_rounds",
+    "sandbox_exec",
 ];
 
 pub(crate) fn is_builtin_tool(name: &str) -> bool {
@@ -398,6 +399,32 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     }
                 },
                 "required": ["reason", "count"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "sandbox_exec".into(),
+            description: "Execute a shell command in a sandboxed Docker container. \
+                          The workspace /workspace is persistent across calls. \
+                          The container has no network access and is destroyed \
+                          after execution. Use this to explore files, run builds, \
+                          test code, and perform other system-level tasks."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "command": {
+                        "type": "string",
+                        "description": "Shell command to run in the sandbox"
+                    },
+                    "timeout": {
+                        "type": "integer",
+                        "description": "Max execution time in seconds (default 120, max 600)",
+                        "minimum": 1,
+                        "maximum": 600
+                    }
+                },
+                "required": ["command"],
                 "additionalProperties": false
             }),
         },
@@ -630,6 +657,17 @@ async fn execute_builtin(
                 )
             })
             .to_string())
+        }
+        "sandbox_exec" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox not configured or Docker unavailable")?;
+            let command = require_str_arg(&call.arguments, "command")?;
+            let timeout = call.arguments.get("timeout").and_then(|v| v.as_u64());
+
+            let result = crate::sandbox::exec(sandbox, command, timeout).await?;
+            Ok(serde_json::to_string(&result)?)
         }
         other => anyhow::bail!("unknown built-in tool {other}"),
     }
