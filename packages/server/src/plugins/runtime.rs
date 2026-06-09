@@ -180,6 +180,10 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "conversation_rename",
     "skill_read",
     "request_rounds",
+    "sandbox_read",
+    "sandbox_write",
+    "sandbox_edit",
+    "sandbox_search",
     "sandbox_exec",
 ];
 
@@ -403,6 +407,94 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "sandbox_read".into(),
+            description: "Read a file from the sandbox workspace. \
+                          Returns the full file content. Errors if the file does not exist."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to /workspace, e.g. 'src/main.rs'"
+                    }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "sandbox_write".into(),
+            description: "Write content to a file in the sandbox workspace. \
+                          Creates parent directories automatically. \
+                          Replaces the file if it already exists."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to /workspace, e.g. 'src/main.rs'"
+                    },
+                    "content": {
+                        "type": "string",
+                        "description": "Full file content to write"
+                    }
+                },
+                "required": ["path", "content"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "sandbox_edit".into(),
+            description: "Perform a surgical find-and-replace in a file in the sandbox workspace. \
+                          Replaces the first occurrence of 'old' with 'new'. \
+                          Prefer this over sandbox_write for small changes. \
+                          Errors if the pattern is not found."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Path relative to /workspace, e.g. 'src/main.rs'"
+                    },
+                    "old": {
+                        "type": "string",
+                        "description": "Exact text to find and replace (first occurrence)"
+                    },
+                    "new": {
+                        "type": "string",
+                        "description": "Replacement text"
+                    }
+                },
+                "required": ["path", "old", "new"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "sandbox_search".into(),
+            description: "Search for a pattern in the sandbox workspace using grep. \
+                          Returns matching lines in <file>:<line>:<text> format. \
+                          Use an optional path filter to narrow the search scope."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "pattern": {
+                        "type": "string",
+                        "description": "Regex pattern to search for (grep -rn)"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional directory or file to limit search scope, e.g. 'src/'"
+                    }
+                },
+                "required": ["pattern"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
             name: "sandbox_exec".into(),
             description: "Execute a shell command in a sandboxed Docker container. \
                           The workspace /workspace is persistent across calls. \
@@ -436,6 +528,22 @@ fn require_str_arg<'a>(arguments: &'a serde_json::Value, key: &str) -> anyhow::R
         .get(key)
         .and_then(serde_json::Value::as_str)
         .with_context(|| format!("tool call is missing required string argument '{key}'"))
+}
+
+/// Escapes a string for use inside single quotes in a POSIX shell command.
+/// Replaces embedded `'` with `'\''` and wraps the result in single quotes.
+fn shell_escape(s: &str) -> String {
+    format!("'{}'", s.replace('\'', "'\\''"))
+}
+
+/// Validates that a path does not traverse outside `/workspace` and
+/// returns the absolute workspace path.
+fn validate_workspace_path(path: &str) -> anyhow::Result<String> {
+    let trimmed = path.trim_start_matches('/');
+    if trimmed.contains("..") {
+        anyhow::bail!("path must not contain '..': {path}");
+    }
+    Ok(format!("/workspace/{trimmed}"))
 }
 
 async fn execute_builtin(
@@ -657,6 +765,87 @@ async fn execute_builtin(
                 )
             })
             .to_string())
+        }
+        "sandbox_read" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let path = require_str_arg(&call.arguments, "path")?;
+            let workspace_path = validate_workspace_path(path)?;
+            let escaped = shell_escape(&workspace_path);
+            let cmd = format!("cat {escaped}");
+            let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
+            if result.exit_code != 0 {
+                anyhow::bail!("file not found: {path}\n{}", result.stderr.trim());
+            }
+            Ok(serde_json::json!({ "content": result.stdout }).to_string())
+        }
+        "sandbox_write" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let path = require_str_arg(&call.arguments, "path")?;
+            let content = require_str_arg(&call.arguments, "content")?;
+            let workspace_path = validate_workspace_path(path)?;
+            let escaped = shell_escape(&workspace_path);
+            let parent = std::path::Path::new(&workspace_path)
+                .parent()
+                .map(|p| p.to_string_lossy().to_string())
+                .unwrap_or_else(|| "/workspace".to_string());
+            let escaped_dir = shell_escape(&parent);
+            let b64 = base64::engine::general_purpose::STANDARD.encode(content);
+            let cmd = format!("mkdir -p {escaped_dir} && echo '{b64}' | base64 -d > {escaped}");
+            let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
+            if result.exit_code != 0 {
+                anyhow::bail!("failed to write {path}: {}", result.stderr.trim());
+            }
+            Ok(serde_json::json!({ "written": path }).to_string())
+        }
+        "sandbox_edit" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let path = require_str_arg(&call.arguments, "path")?;
+            let old = require_str_arg(&call.arguments, "old")?;
+            let new = require_str_arg(&call.arguments, "new")?;
+            let workspace_path = validate_workspace_path(path)?;
+            let escaped = shell_escape(&workspace_path);
+            let old_b64 = base64::engine::general_purpose::STANDARD.encode(old);
+            let new_b64 = base64::engine::general_purpose::STANDARD.encode(new);
+            let cmd = format!(
+                "python3 -c 'import sys, base64; f=sys.argv[1]; o=base64.b64decode(sys.argv[2]).decode(); n=base64.b64decode(sys.argv[3]).decode(); c=open(f).read(); assert o in c, \"pattern not found\"; open(f,\"w\").write(c.replace(o,n,1)); print(\"replaced\")' {escaped} {old_b64} {new_b64}"
+            );
+            let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
+            if result.exit_code != 0 {
+                if result.stderr.contains("pattern not found") {
+                    anyhow::bail!("pattern not found in {path}");
+                }
+                anyhow::bail!("failed to edit {path}: {}", result.stderr.trim());
+            }
+            Ok(serde_json::json!({ "replaced": path }).to_string())
+        }
+        "sandbox_search" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let pattern = require_str_arg(&call.arguments, "pattern")?;
+            let escaped_pattern = shell_escape(pattern);
+            let search_path = call
+                .arguments
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(".");
+            let workspace_search = validate_workspace_path(search_path)?;
+            let escaped_search = shell_escape(&workspace_search);
+            let cmd = format!(
+                "grep -rn {escaped_pattern} {escaped_search} 2>/dev/null || echo 'no matches'"
+            );
+            let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
+            Ok(serde_json::json!({ "matches": result.stdout }).to_string())
         }
         "sandbox_exec" => {
             let sandbox = state
