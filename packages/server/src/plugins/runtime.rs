@@ -180,6 +180,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "conversation_rename",
     "skill_read",
     "request_rounds",
+    "sandbox_list",
     "sandbox_read",
     "sandbox_write",
     "sandbox_edit",
@@ -407,6 +408,29 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
+            name: "sandbox_list".into(),
+            description: "List files and directories in the sandbox workspace. \
+                          Returns one path per line, sorted. \
+                          Use the optional depth to control how deep to recurse (default 2)."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Directory or file path relative to /workspace, e.g. 'src/' or '.'"
+                    },
+                    "depth": {
+                        "type": "integer",
+                        "description": "Maximum recursion depth (default 2, max 5)",
+                        "minimum": 1,
+                        "maximum": 5
+                    }
+                },
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
             name: "sandbox_read".into(),
             description: "Read a file from the sandbox workspace. \
                           Returns the full file content. Errors if the file does not exist."
@@ -476,7 +500,8 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
             name: "sandbox_search".into(),
             description: "Search for a pattern in the sandbox workspace using grep. \
                           Returns matching lines in <file>:<line>:<text> format. \
-                          Use an optional path filter to narrow the search scope."
+                          Use an optional path filter to narrow the search scope. \
+                          Supports context lines, case-insensitive search, and a result cap."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -488,6 +513,22 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "path": {
                         "type": "string",
                         "description": "Optional directory or file to limit search scope, e.g. 'src/'"
+                    },
+                    "context": {
+                        "type": "integer",
+                        "description": "Number of context lines around each match (default 0, max 10)",
+                        "minimum": 0,
+                        "maximum": 10
+                    },
+                    "case_insensitive": {
+                        "type": "boolean",
+                        "description": "Case-insensitive search (default false)"
+                    },
+                    "max_results": {
+                        "type": "integer",
+                        "description": "Maximum result lines (default 200, max 500)",
+                        "minimum": 1,
+                        "maximum": 500
                     }
                 },
                 "required": ["pattern"],
@@ -537,13 +578,32 @@ fn shell_escape(s: &str) -> String {
 }
 
 /// Validates that a path does not traverse outside `/workspace` and
-/// returns the absolute workspace path.
+/// returns a normalized absolute workspace path.
+/// Uses [`Path::components`] to normalize `.`, `//`, and detect `..`.
 fn validate_workspace_path(path: &str) -> anyhow::Result<String> {
     let trimmed = path.trim_start_matches('/');
-    if trimmed.contains("..") {
-        anyhow::bail!("path must not contain '..': {path}");
+    if trimmed.is_empty() {
+        return Ok("/workspace".to_string());
     }
-    Ok(format!("/workspace/{trimmed}"))
+    let mut result = String::from("/workspace");
+    for component in std::path::Path::new(trimmed).components() {
+        match component {
+            std::path::Component::Normal(seg) => {
+                result.push('/');
+                result.push_str(&seg.to_string_lossy());
+            }
+            std::path::Component::ParentDir => {
+                anyhow::bail!("path must not contain '..': {path}");
+            }
+            std::path::Component::CurDir => {
+                // skip `.`
+            }
+            _ => {
+                // RootDir, Prefix — should not appear in a relative path
+            }
+        }
+    }
+    Ok(result)
 }
 
 async fn execute_builtin(
@@ -766,6 +826,30 @@ async fn execute_builtin(
             })
             .to_string())
         }
+        "sandbox_list" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let path = call
+                .arguments
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(".");
+            let depth = call
+                .arguments
+                .get("depth")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(2)
+                .clamp(1, 5);
+            let workspace_path = validate_workspace_path(path)?;
+            let escaped = shell_escape(&workspace_path);
+            let cmd = format!(
+                "find {escaped} -maxdepth {depth} -not -path '*/.git/*' 2>/dev/null | sort | head -500"
+            );
+            let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
+            Ok(serde_json::json!({ "files": result.stdout }).to_string())
+        }
         "sandbox_read" => {
             let sandbox = state
                 .sandbox
@@ -816,7 +900,18 @@ async fn execute_builtin(
             let old_b64 = base64::engine::general_purpose::STANDARD.encode(old);
             let new_b64 = base64::engine::general_purpose::STANDARD.encode(new);
             let cmd = format!(
-                "python3 -c 'import sys, base64; f=sys.argv[1]; o=base64.b64decode(sys.argv[2]).decode(); n=base64.b64decode(sys.argv[3]).decode(); c=open(f).read(); assert o in c, \"pattern not found\"; open(f,\"w\").write(c.replace(o,n,1)); print(\"replaced\")' {escaped} {old_b64} {new_b64}"
+                r#"python3 -c '
+import sys, base64
+f = sys.argv[1]
+o = base64.b64decode(sys.argv[2]).decode()
+n = base64.b64decode(sys.argv[3]).decode()
+c = open(f).read()
+if o not in c:
+    print("ERROR: pattern not found", file=sys.stderr)
+    sys.exit(1)
+open(f, "w").write(c.replace(o, n, 1))
+print("replaced")
+' {escaped} {old_b64} {new_b64}"#
             );
             let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
             if result.exit_code != 0 {
@@ -834,6 +929,23 @@ async fn execute_builtin(
                 .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
             let pattern = require_str_arg(&call.arguments, "pattern")?;
             let escaped_pattern = shell_escape(pattern);
+            let case_insensitive = call
+                .arguments
+                .get("case_insensitive")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            let context = call
+                .arguments
+                .get("context")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(0)
+                .clamp(0, 10);
+            let max_results = call
+                .arguments
+                .get("max_results")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(200)
+                .clamp(1, 500);
             let search_path = call
                 .arguments
                 .get("path")
@@ -841,8 +953,18 @@ async fn execute_builtin(
                 .unwrap_or(".");
             let workspace_search = validate_workspace_path(search_path)?;
             let escaped_search = shell_escape(&workspace_search);
+
+            let mut grep_opts = String::from("-rn");
+            if case_insensitive {
+                grep_opts.push('i');
+            }
+            let context_flag = if context > 0 {
+                format!("-C {context} ")
+            } else {
+                String::new()
+            };
             let cmd = format!(
-                "grep -rn {escaped_pattern} {escaped_search} 2>/dev/null || echo 'no matches'"
+                "OUT=$(grep {grep_opts} {context_flag}{escaped_pattern} {escaped_search} 2>/dev/null | head -n {max_results}); if [ -n \"$OUT\" ]; then echo \"$OUT\"; else echo 'no matches'; fi"
             );
             let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
             Ok(serde_json::json!({ "matches": result.stdout }).to_string())

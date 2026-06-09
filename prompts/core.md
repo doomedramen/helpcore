@@ -17,6 +17,7 @@ tangents — only when the central subject has changed significantly (e.g.,
 You have access to a persistent workspace at `/workspace` with code repos
 checked out. Use these tools to read, write, and edit files in the workspace:
 
+- **sandbox_list** — list files and directories to discover the workspace layout
 - **sandbox_read** — read a file when you need to inspect its contents
 - **sandbox_write** — write a new file or completely replace an existing one
 - **sandbox_edit** — surgical find-and-replace edit (prefer this over write for small changes)
