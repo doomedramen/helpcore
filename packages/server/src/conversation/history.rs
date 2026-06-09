@@ -386,7 +386,7 @@ pub fn persist_tool_round(
     results: &[(crate::providers::types::ToolCall, String)],
 ) -> anyhow::Result<()> {
     let tx = conn.unchecked_transaction()?;
-    let row: Option<(String, i64, String, Option<String>, Option<String>)> = tx
+    let row = tx
         .query_row(
             "SELECT conversation_id, sequence, content, provider_id, model
              FROM messages
@@ -394,18 +394,18 @@ pub fn persist_tool_round(
             [assistant_message_id],
             |row| {
                 Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
+                    row.get::<_, String>(0)?,
+                    row.get::<_, i64>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                    row.get::<_, Option<String>>(4)?,
                 ))
             },
         )
         .optional()?;
 
     let (conversation_id, sequence, content, provider_id, model) = match row {
-        Some(row) => row,
+        Some(r) => r,
         None => {
             tracing::warn!(
                 assistant_message_id,
