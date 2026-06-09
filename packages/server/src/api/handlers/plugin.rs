@@ -93,6 +93,7 @@ pub async fn list_plugins(
                 available_version,
                 tier: plugin.tier,
                 permissions: plugin.permissions,
+                allowed_hosts: plugin.manifest.allowed_hosts.clone(),
                 provides: plugin.manifest.provides.clone(),
                 enabled: plugin.enabled,
                 configured,
@@ -153,6 +154,7 @@ pub async fn list_store(
                 homepage: plugin.homepage,
                 setup_guide: plugin.setup_guide,
                 permissions: plugin.permissions,
+                allowed_hosts: plugin.allowed_hosts,
                 provides: plugin.provides,
             }
         })

@@ -2,7 +2,12 @@
 //!
 //! All endpoints under `/api/setup`.
 
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::State,
+    http::{StatusCode, header},
+    response::{IntoResponse, Response},
+};
 use std::sync::Arc;
 
 use helpcore_api::{LoginResponse, SetupRequest, SetupStatusResponse};
@@ -24,7 +29,7 @@ pub async fn status(
 pub async fn create_admin(
     State(state): State<Arc<AppState>>,
     Json(req): Json<SetupRequest>,
-) -> Result<(StatusCode, Json<LoginResponse>), AppError> {
+) -> Result<Response, AppError> {
     // Validate and consume the setup token atomically.
     let token = req.token.clone();
     let valid = state
@@ -96,13 +101,19 @@ pub async fn create_admin(
         .call(move |conn| crate::auth::token::create_session(conn, &user_id))
         .await?;
 
-    Ok((
+    let mut resp = (
         StatusCode::CREATED,
         Json(LoginResponse {
             access_token: session.access_token,
-            refresh_token: session.refresh_token,
+            refresh_token: session.refresh_token.clone(),
             token_type: "Bearer".to_string(),
             force_password_change: false,
         }),
-    ))
+    )
+        .into_response();
+    resp.headers_mut().insert(
+        header::SET_COOKIE,
+        super::auth::set_refresh_cookie(&session.refresh_token),
+    );
+    Ok(resp)
 }

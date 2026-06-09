@@ -64,7 +64,7 @@ impl Client {
             .inner
             .post(format!("{}/api/auth/logout", self.server_url))
             .json(&LogoutRequest {
-                refresh_token: refresh_token.to_string(),
+                refresh_token: Some(refresh_token.to_string()),
             })
             .send()
             .await
@@ -98,7 +98,7 @@ impl Client {
             .inner
             .post(format!("{}/api/auth/refresh", self.server_url))
             .json(&RefreshRequest {
-                refresh_token: refresh_token.to_string(),
+                refresh_token: Some(refresh_token.to_string()),
             })
             .send()
             .await

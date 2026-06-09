@@ -12,17 +12,17 @@ packages/server/       Rust – Axum server, SSE chat, MCP-style tools
 packages/skill-validate/  Rust – CI-only tool that validates skill brief discriminability (edition 2024)
 ```
 
-## Pre-commit (must pass before `git commit`)
+## Quality gates — run after every change
 
-Managed by lefthook. All run in parallel. Everything must pass — if any fails, fix before committing.
+After making any code changes, run **all three** of the following checks and fix every failure before reporting the task as complete. Do not skip them, do not declare work done while any is failing.
 
-| Check | Command | Covers |
+| Check | Command | Auto-fix |
 |---|---|---|
-| Rust fmt | `cargo fmt -- --check` | `*.rs` |
-| Web lint | `npm run lint` (oxlint) | `apps/web/**/*.{ts,tsx}` |
-| Web format | `npm run format:check` (oxfmt) | `apps/web/**/*.{ts,tsx}` |
+| Rust fmt | `cargo fmt -- --check` | `cargo fmt` |
+| Web lint | `cd apps/web && npm run lint` | fix manually |
+| Web format | `cd apps/web && npm run format:check` | `cd apps/web && npm run format` |
 
-If format check fails, run `npm run format` to auto-fix.
+These are the same checks lefthook enforces as pre-commit hooks. Run them explicitly — do not assume the code is clean because it compiled.
 
 ## Pre-push (must pass before `git push`)
 

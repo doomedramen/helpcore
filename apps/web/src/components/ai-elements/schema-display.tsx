@@ -8,7 +8,7 @@ import {
 } from "@/app/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { ChevronRightIcon } from "lucide-react";
-import type { ComponentProps, HTMLAttributes } from "react";
+import type { ComponentProps, HTMLAttributes, ReactNode } from "react";
 import { createContext, useContext, useMemo } from "react";
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
@@ -89,19 +89,28 @@ export type SchemaDisplayPathProps = HTMLAttributes<HTMLSpanElement>;
 export const SchemaDisplayPath = ({ className, children, ...props }: SchemaDisplayPathProps) => {
   const { path } = useContext(SchemaDisplayContext);
 
-  // Highlight path parameters
-  const highlightedPath = path.replaceAll(
-    /\{([^}]+)\}/g,
-    '<span class="text-blue-600 dark:text-blue-400">{$1}</span>',
-  );
+  const segments = useMemo(() => {
+    const parts: ReactNode[] = [];
+    let last = 0;
+    const re = /\{([^}]+)\}/g;
+    let match: RegExpExecArray | null;
+    while ((match = re.exec(path)) !== null) {
+      if (match.index > last) parts.push(path.slice(last, match.index));
+      parts.push(
+        <span key={match.index} className="text-blue-600 dark:text-blue-400">
+          {match[0]}
+        </span>,
+      );
+      last = match.index + match[0].length;
+    }
+    if (last < path.length) parts.push(path.slice(last));
+    return parts;
+  }, [path]);
 
   return (
-    <span
-      className={cn("font-mono text-sm", className)}
-      // oxlint-disable-next-line eslint-plugin-react(no-danger)
-      dangerouslySetInnerHTML={{ __html: (children as string) ?? highlightedPath }}
-      {...props}
-    />
+    <span className={cn("font-mono text-sm", className)} {...props}>
+      {children ?? segments}
+    </span>
   );
 };
 

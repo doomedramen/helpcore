@@ -18,11 +18,10 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-const REFRESH_KEY = "helpcore_refresh";
-
 /**
  * Provides authentication state and actions to the entire app.
- * Manages access tokens, refresh tokens, and current user data.
+ * Manages the in-memory access token and current user data.
+ * The refresh token is stored in an HttpOnly cookie managed by the server.
  * Includes stale-token recovery via SWR's onError handler.
  */
 export function AuthProvider({ children }: { children: React.ReactNode }) {
@@ -47,19 +46,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     if (refreshInFlightRef.current) return refreshInFlightRef.current;
 
     const run = async (): Promise<string | null> => {
-      const stored = localStorage.getItem(REFRESH_KEY);
-      if (!stored) {
-        setCurrentUser(null);
-        return null;
-      }
       try {
-        const { access_token, refresh_token } = await api.refresh(stored);
-        localStorage.setItem(REFRESH_KEY, refresh_token);
+        const { access_token } = await api.refresh();
         setAccessToken(access_token);
         await loadCurrentUser(access_token);
         return access_token;
       } catch {
-        localStorage.removeItem(REFRESH_KEY);
         setAccessToken(null);
         setCurrentUser(null);
         return null;
@@ -79,17 +71,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const login = useCallback(
     async (email: string, password: string) => {
-      const { access_token, refresh_token, force_password_change } = await api.login(
-        email,
-        password,
-      );
-      localStorage.setItem(REFRESH_KEY, refresh_token);
+      const { access_token, force_password_change } = await api.login(email, password);
       setAccessToken(access_token);
       setForcePasswordChange(force_password_change ?? false);
       try {
         await loadCurrentUser(access_token);
       } catch (error) {
-        localStorage.removeItem(REFRESH_KEY);
         setAccessToken(null);
         setCurrentUser(null);
         setForcePasswordChange(false);
@@ -101,13 +88,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const logout = useCallback(async () => {
-    const stored = localStorage.getItem(REFRESH_KEY);
-    if (stored && accessToken) {
+    if (accessToken) {
       try {
-        await api.logout(stored, accessToken);
+        await api.logout(accessToken);
       } catch {}
     }
-    localStorage.removeItem(REFRESH_KEY);
     setAccessToken(null);
     setCurrentUser(null);
     setForcePasswordChange(false);

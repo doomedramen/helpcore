@@ -36,7 +36,8 @@ pub struct LoginResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RefreshRequest {
     /// The refresh token obtained during login or a previous refresh.
-    pub refresh_token: String,
+    /// Omit when the token is supplied via the `helpcore_refresh` HttpOnly cookie.
+    pub refresh_token: Option<String>,
 }
 
 /// Response containing a fresh access and refresh token pair.
@@ -54,7 +55,8 @@ pub struct RefreshResponse {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct LogoutRequest {
     /// The refresh token to invalidate.
-    pub refresh_token: String,
+    /// Omit when the token is supplied via the `helpcore_refresh` HttpOnly cookie.
+    pub refresh_token: Option<String>,
 }
 
 /// Response containing the currently authenticated user's profile.
@@ -446,6 +448,9 @@ pub struct PluginInfo {
     pub tier: String,
     /// Permissions required by the plugin.
     pub permissions: Vec<String>,
+    /// Hosts the plugin is allowed to contact (may contain `*` for any host).
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
     /// Capabilities provided by the plugin.
     #[serde(default)]
     pub provides: Vec<String>,
@@ -513,6 +518,9 @@ pub struct PluginStoreItem {
     pub setup_guide: Option<String>,
     /// Permissions required by the plugin.
     pub permissions: Vec<String>,
+    /// Hosts the plugin is allowed to contact (may contain `*` for any host).
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
     /// Capabilities provided by the plugin.
     #[serde(default)]
     pub provides: Vec<String>,

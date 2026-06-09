@@ -73,6 +73,7 @@ pub async fn install_store_package(
     let expected_version = plugin.version.clone();
     let expected_tier = plugin.tier.clone();
     let expected_permissions = plugin.permissions.clone();
+    let expected_allowed_hosts = plugin.allowed_hosts.clone();
     tokio::task::spawn_blocking(move || {
         extract_and_validate(
             &data_dir,
@@ -82,6 +83,7 @@ pub async fn install_store_package(
             &expected_version,
             &expected_tier,
             &expected_permissions,
+            &expected_allowed_hosts,
             &bytes,
         )
     })
@@ -176,6 +178,7 @@ fn extract_and_validate(
     expected_version: &str,
     expected_tier: &str,
     expected_permissions: &[String],
+    expected_allowed_hosts: &[String],
     bytes: &[u8],
 ) -> anyhow::Result<InstalledPackage> {
     let root = plugin_root(data_dir, user_id, expected_id);
@@ -250,6 +253,7 @@ fn extract_and_validate(
             expected_version,
             expected_tier,
             expected_permissions,
+            expected_allowed_hosts,
         )?;
         if manifest.tier == "wasm" && !seen.contains("plugin.wasm") {
             anyhow::bail!("WASM plugin package is missing plugin.wasm");
@@ -288,6 +292,7 @@ fn validate_manifest(
     expected_version: &str,
     expected_tier: &str,
     expected_permissions: &[String],
+    expected_allowed_hosts: &[String],
 ) -> anyhow::Result<()> {
     if manifest.id != expected_id {
         anyhow::bail!("package manifest ID does not match the registry");
@@ -308,6 +313,18 @@ fn validate_manifest(
     if manifest_permissions != registry_permissions {
         anyhow::bail!("package manifest permissions do not match the registry");
     }
+    // Only enforce allowed_hosts when the registry explicitly declares them.
+    // Existing registry entries without the field (empty) skip this check for
+    // backwards compatibility; new entries that list hosts are validated strictly.
+    if !expected_allowed_hosts.is_empty() {
+        let mut manifest_hosts = manifest.allowed_hosts.clone();
+        let mut registry_hosts = expected_allowed_hosts.to_vec();
+        manifest_hosts.sort();
+        registry_hosts.sort();
+        if manifest_hosts != registry_hosts {
+            anyhow::bail!("package manifest allowed_hosts do not match the registry");
+        }
+    }
     if let Some(minimum) = manifest.min_core_version.as_deref() {
         let minimum = Version::parse(minimum).context("invalid min_core_version")?;
         let current = Version::parse(env!("CARGO_PKG_VERSION"))?;
@@ -315,12 +332,19 @@ fn validate_manifest(
             anyhow::bail!("plugin requires helpcore {minimum} or newer");
         }
     }
-    if manifest.brief.trim().is_empty() {
+    let brief = manifest.brief.trim();
+    if brief.is_empty() {
         anyhow::bail!(
             "package manifest for '{}' is missing a `brief` field. \
              Add: brief = \"Use when the user asks to...\"",
             manifest.id
         );
+    }
+    if brief.len() > 200 {
+        anyhow::bail!("package manifest brief must be 200 characters or fewer");
+    }
+    if brief.contains('\n') || brief.contains('\r') {
+        anyhow::bail!("package manifest brief must be a single line");
     }
     Ok(())
 }
@@ -451,6 +475,7 @@ brief = "Use when testing package installation."
             author: "Test".into(),
             homepage: "https://example.com".into(),
             permissions: vec!["outbound_http".into()],
+            allowed_hosts: Vec::new(),
             provides: Vec::new(),
             source: Some(super::super::registry::StorePluginSource {
                 source_type: "url".into(),

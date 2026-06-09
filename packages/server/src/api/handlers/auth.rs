@@ -2,7 +2,12 @@
 //!
 //! All endpoints under `/api/auth`.
 
-use axum::{Json, extract::State, http::StatusCode};
+use axum::{
+    Json,
+    extract::State,
+    http::{HeaderMap, HeaderValue, StatusCode, header},
+    response::{IntoResponse, Response},
+};
 use std::sync::Arc;
 
 use helpcore_api::{
@@ -14,6 +19,28 @@ use crate::{
     api::{error::AppError, extractor::AuthUser},
     state::AppState,
 };
+
+pub(super) fn set_refresh_cookie(token: &str) -> HeaderValue {
+    HeaderValue::from_str(&format!(
+        "helpcore_refresh={token}; HttpOnly; SameSite=Strict; Path=/api/auth; Max-Age=2592000"
+    ))
+    .expect("cookie value is always valid ASCII")
+}
+
+const CLEAR_REFRESH_COOKIE: &str =
+    "helpcore_refresh=; HttpOnly; SameSite=Strict; Path=/api/auth; Max-Age=0";
+
+fn cookie_refresh_token(headers: &HeaderMap) -> Option<String> {
+    headers
+        .get(header::COOKIE)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|cookies| {
+            cookies
+                .split("; ")
+                .find(|c| c.starts_with("helpcore_refresh="))
+                .map(|c| c["helpcore_refresh=".len()..].to_string())
+        })
+}
 
 const VALID_MEMORY_LEANING: &[&str] = &["off", "light", "moderate", "heavy"];
 
@@ -122,7 +149,7 @@ pub async fn change_password(
 pub async fn login(
     State(state): State<Arc<AppState>>,
     Json(req): Json<LoginRequest>,
-) -> Result<Json<LoginResponse>, AppError> {
+) -> Result<Response, AppError> {
     let email = req.email.trim().to_lowercase();
 
     // Find user — same generic error regardless of whether email exists or password is wrong.
@@ -156,20 +183,32 @@ pub async fn login(
         .call(move |conn| crate::auth::token::create_session(conn, &user_id))
         .await?;
 
-    Ok(Json(LoginResponse {
+    let mut resp = Json(LoginResponse {
         access_token: session.access_token,
-        refresh_token: session.refresh_token,
+        refresh_token: session.refresh_token.clone(),
         token_type: "Bearer".to_string(),
         force_password_change: user.force_password_change,
-    }))
+    })
+    .into_response();
+    resp.headers_mut().insert(
+        header::SET_COOKIE,
+        set_refresh_cookie(&session.refresh_token),
+    );
+    Ok(resp)
 }
 
 /// POST /api/auth/refresh — exchanges a refresh token for a new access/refresh token pair.
+///
+/// Accepts the token from the `helpcore_refresh` HttpOnly cookie (web) or from the
+/// JSON request body (CLI / programmatic clients).
 pub async fn refresh(
+    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Json(req): Json<RefreshRequest>,
-) -> Result<Json<RefreshResponse>, AppError> {
-    let token = req.refresh_token.clone();
+) -> Result<Response, AppError> {
+    let token = cookie_refresh_token(&headers)
+        .or(req.refresh_token)
+        .ok_or(AppError::Unauthorized)?;
 
     let result = state
         .db
@@ -179,24 +218,39 @@ pub async fn refresh(
 
     let (_user_id, session) = result;
 
-    Ok(Json(RefreshResponse {
+    let mut resp = Json(RefreshResponse {
         access_token: session.access_token,
-        refresh_token: session.refresh_token,
+        refresh_token: session.refresh_token.clone(),
         token_type: "Bearer".to_string(),
-    }))
+    })
+    .into_response();
+    resp.headers_mut().insert(
+        header::SET_COOKIE,
+        set_refresh_cookie(&session.refresh_token),
+    );
+    Ok(resp)
 }
 
 /// POST /api/auth/logout — revokes a refresh token session.
+///
+/// Accepts the token from the `helpcore_refresh` HttpOnly cookie (web) or from the
+/// JSON request body (CLI / programmatic clients). Always clears the cookie.
 pub async fn logout(
+    headers: HeaderMap,
     State(state): State<Arc<AppState>>,
     Json(req): Json<LogoutRequest>,
-) -> Result<StatusCode, AppError> {
-    let token = req.refresh_token.clone();
+) -> Result<Response, AppError> {
+    if let Some(token) = cookie_refresh_token(&headers).or(req.refresh_token) {
+        state
+            .db
+            .call(move |conn| crate::auth::token::revoke_session_by_token(conn, &token))
+            .await?;
+    }
 
-    state
-        .db
-        .call(move |conn| crate::auth::token::revoke_session_by_token(conn, &token))
-        .await?;
-
-    Ok(StatusCode::NO_CONTENT)
+    let mut resp = StatusCode::NO_CONTENT.into_response();
+    resp.headers_mut().insert(
+        header::SET_COOKIE,
+        HeaderValue::from_static(CLEAR_REFRESH_COOKIE),
+    );
+    Ok(resp)
 }

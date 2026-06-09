@@ -39,6 +39,13 @@ const DARK_PALETTE = ["#6DB3FF", "#FF7B85", "#4DD9CC", "#FFC87A", "#BBA4FC"];
 
 const VALID_TYPES = new Set(["pie", "donut", "bar", "line", "area"]);
 
+// Reject CSS rule-injection characters (;, {, }) and url() references that could
+// break out of a CSS custom-property declaration or load external resources via
+// SVG fill/stroke attributes when rendered by ChartStyle.
+function sanitizeColor(color: string | undefined): string | undefined {
+  return color && !/[;{}]/.test(color) && !/url\s*\(/i.test(color) ? color : undefined;
+}
+
 interface Dataset {
   label?: string;
   values: number[];
@@ -64,7 +71,11 @@ function resolvePalette(
   theme: "auto" | "dark" | "light" | undefined,
   customColors?: string[],
 ): string[] {
-  if (customColors?.length) return customColors;
+  if (customColors?.length) {
+    // Invalid colors fall back to EXTRA_COLORS so the palette length stays stable
+    // and per-series color assignment doesn't shift when one entry is rejected.
+    return customColors.map((c, i) => sanitizeColor(c) ?? EXTRA_COLORS[i % EXTRA_COLORS.length]);
+  }
   if (theme === "dark") return DARK_PALETTE;
   if (theme === "light") return LIGHT_PALETTE;
   return []; // auto: CSS variables handle it
@@ -290,7 +301,8 @@ export function InlineChart({ variant, content, onError }: RendererProps) {
   for (let j = 0; j < datasetEntries.length; j++) {
     const ds = datasetEntries[j];
     const key = datasetKeys[j];
-    const color = ds.color ?? ds.fill ?? pickColor(j, palette, useCssVars);
+    const color =
+      sanitizeColor(ds.color) ?? sanitizeColor(ds.fill) ?? pickColor(j, palette, useCssVars);
     config[key] = { label: ds.label ?? key, color };
   }
 
@@ -301,7 +313,7 @@ export function InlineChart({ variant, content, onError }: RendererProps) {
         const pieData = datasetEntries[0].values.map((value, i) => ({
           label: labels[i] ?? `#${i + 1}`,
           value,
-          fill: data.colors?.[i % data.colors.length] ?? palette[i % palette.length],
+          fill: palette.length > 0 ? palette[i % palette.length] : undefined,
         }));
 
         return (
@@ -367,7 +379,10 @@ export function InlineChart({ variant, content, onError }: RendererProps) {
             {datasetEntries.length > 1 && <ChartLegend content={<ChartLegendContent />} />}
             {datasetEntries.map((ds, j) => {
               const key = datasetKeys[j];
-              const color = ds.color ?? ds.fill ?? pickColor(j, palette, useCssVars);
+              const color =
+                sanitizeColor(ds.color) ??
+                sanitizeColor(ds.fill) ??
+                pickColor(j, palette, useCssVars);
               return (
                 <Bar
                   key={key}
@@ -403,7 +418,10 @@ export function InlineChart({ variant, content, onError }: RendererProps) {
             {datasetEntries.length > 1 && <ChartLegend content={<ChartLegendContent />} />}
             {datasetEntries.map((ds, j) => {
               const key = datasetKeys[j];
-              const color = ds.color ?? ds.fill ?? pickColor(j, palette, useCssVars);
+              const color =
+                sanitizeColor(ds.color) ??
+                sanitizeColor(ds.fill) ??
+                pickColor(j, palette, useCssVars);
               return (
                 <Line
                   key={key}
@@ -442,7 +460,10 @@ export function InlineChart({ variant, content, onError }: RendererProps) {
             {datasetEntries.length > 1 && <ChartLegend content={<ChartLegendContent />} />}
             {datasetEntries.map((ds, j) => {
               const key = datasetKeys[j];
-              const color = ds.color ?? ds.fill ?? pickColor(j, palette, useCssVars);
+              const color =
+                sanitizeColor(ds.color) ??
+                sanitizeColor(ds.fill) ??
+                pickColor(j, palette, useCssVars);
               return (
                 <Area
                   key={key}

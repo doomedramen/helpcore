@@ -149,6 +149,10 @@ pub struct StorePlugin {
     /// Required permissions for this plugin.
     #[serde(default)]
     pub permissions: Vec<String>,
+    /// Hosts the plugin is allowed to contact (may contain `*` for any host).
+    /// When non-empty, the package's manifest.toml must declare exactly these hosts.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
     /// Features this plugin provides.
     #[serde(default)]
     pub provides: Vec<String>,

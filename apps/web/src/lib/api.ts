@@ -72,30 +72,30 @@ export function login(email: string, password: string): Promise<LoginResponse> {
 }
 
 /**
- * Invalidate the refresh token and end the session.
- * @param refreshToken - The current refresh token.
+ * Invalidate the session and clear the auth cookie.
+ * The refresh token is read from the HttpOnly cookie set at login.
  * @param token - The current access token.
  */
-export function logout(refreshToken: string, token: string): Promise<void> {
+export function logout(token: string): Promise<void> {
   return req(
     "/auth/logout",
     {
       method: "POST",
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({}),
     },
     token,
   );
 }
 
 /**
- * Exchange a refresh token for new tokens (access + refresh).
- * @param refreshToken - The current refresh token.
+ * Exchange the session cookie for new tokens (access + refresh).
+ * The refresh token is read from the HttpOnly cookie set at login.
  * @returns A new token pair.
  */
-export function refresh(refreshToken: string): Promise<RefreshResponse> {
+export function refresh(): Promise<RefreshResponse> {
   return req("/auth/refresh", {
     method: "POST",
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    body: JSON.stringify({}),
   });
 }
 
