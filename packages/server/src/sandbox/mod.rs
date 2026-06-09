@@ -122,8 +122,8 @@ pub async fn exec(
             memory: Some((state.memory_mb * 1024 * 1024) as i64),
             nano_cpus: Some(1_000_000_000), // 1 CPU
             pids_limit: Some(100),
-            // Network — blocked
-            network_mode: Some("none".to_string()),
+            // Network
+            network_mode: Some("bridge".to_string()),
             // Workspace volume
             mounts: Some(vec![Mount {
                 source: Some(WORKSPACE_VOLUME.to_string()),
