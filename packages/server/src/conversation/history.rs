@@ -133,6 +133,11 @@ pub fn start_turn(
 }
 
 /// Retries a failed or interrupted assistant response from a previous turn.
+///
+/// Returns the conversation, history, user message, provider id, model, and
+/// the previous error text (if any) so callers can build resume context for
+/// interrupted messages.
+#[allow(clippy::type_complexity)]
 pub fn retry_turn(
     conn: &Connection,
     user_id: &str,
@@ -145,24 +150,34 @@ pub fn retry_turn(
     MessageSummary,
     String,
     String,
+    Option<String>,
 )> {
     let tx = conn.unchecked_transaction()?;
     let conversation =
         get_conversation(&tx, conversation_id, user_id)?.context("conversation not found")?;
     ensure_no_active_generation(&tx, conversation_id, Some(assistant_message_id))?;
 
-    let (assistant_sequence, status, provider_id, model): (
+    let (assistant_sequence, status, provider_id, model, error): (
         i64,
         String,
         Option<String>,
         Option<String>,
+        Option<String>,
     ) = tx
         .query_row(
-            "SELECT sequence, status, provider_id, model
+            "SELECT sequence, status, provider_id, model, error
              FROM messages
              WHERE id = ?1 AND conversation_id = ?2 AND role = 'assistant'",
             rusqlite::params![assistant_message_id, conversation_id],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .context("assistant message not found")?;
 
@@ -212,6 +227,7 @@ pub fn retry_turn(
         user_message,
         final_provider.context("retry response has no provider")?,
         final_model.context("retry response has no model")?,
+        error,
     ))
 }
 
@@ -466,6 +482,23 @@ pub fn fail_assistant_message(
         "UPDATE messages SET status = 'failed', error = ?1, updated_at = ?2
          WHERE id = ?3 AND role = 'assistant'",
         rusqlite::params![error, now, message_id],
+    )?;
+    Ok(())
+}
+
+/// Marks an assistant message as interrupted, e.g. when the tool-call limit is
+/// reached mid-turn. The error argument carries an informational summary
+/// (not a failure message) describing which tools were called.
+pub fn interrupt_assistant_message(
+    conn: &Connection,
+    message_id: &str,
+    summary: &str,
+) -> anyhow::Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE messages SET status = 'interrupted', error = ?1, updated_at = ?2
+         WHERE id = ?3 AND role = 'assistant'",
+        rusqlite::params![summary, now, message_id],
     )?;
     Ok(())
 }

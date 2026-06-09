@@ -21,6 +21,7 @@ import type {
   SetupStatusResponse,
   SseContext,
   SseDone,
+  SseInterrupted,
   SseStarted,
   SseToolCall,
   SseToolResult,
@@ -203,6 +204,7 @@ export function listProviders(token: string): Promise<ProviderListResponse> {
  * @param args.onToolCall - Optional, called when the model requests a tool.
  * @param args.onToolResult - Optional, called with the result of a tool callback.
  * @param args.onDone - Called when the stream completes.
+ * @param args.onInterrupted - Optional, called when the tool-call limit is reached and the response pauses.
  * @param args.signal - Optional AbortSignal to cancel the stream.
  */
 export function retryMessage(args: {
@@ -216,6 +218,7 @@ export function retryMessage(args: {
   onToolCall?: (call: SseToolCall) => void;
   onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
+  onInterrupted?: (data: SseInterrupted) => void;
   signal?: AbortSignal;
 }): Promise<void> {
   return consumeChatStream({
@@ -229,6 +232,7 @@ export function retryMessage(args: {
     onToolCall: args.onToolCall,
     onToolResult: args.onToolResult,
     onDone: args.onDone,
+    onInterrupted: args.onInterrupted,
     signal: args.signal,
   });
 }
@@ -646,6 +650,7 @@ export async function submitFeedback(
  * @param args.onToolCall - Optional, called when the model requests a tool.
  * @param args.onToolResult - Optional, called with the result of a tool callback.
  * @param args.onDone - Called when the stream completes.
+ * @param args.onInterrupted - Optional, called when the tool-call limit is reached and the response pauses.
  * @param args.signal - Optional AbortSignal to cancel the stream.
  */
 export async function chat(args: {
@@ -659,6 +664,7 @@ export async function chat(args: {
   onToolCall?: (call: SseToolCall) => void;
   onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
+  onInterrupted?: (data: SseInterrupted) => void;
   signal?: AbortSignal;
 }): Promise<void> {
   const {
@@ -672,6 +678,7 @@ export async function chat(args: {
     onToolCall,
     onToolResult,
     onDone,
+    onInterrupted,
     signal,
   } = args;
   return consumeChatStream({
@@ -685,6 +692,7 @@ export async function chat(args: {
     onToolCall,
     onToolResult,
     onDone,
+    onInterrupted,
     signal,
   });
 }
@@ -700,6 +708,7 @@ async function consumeChatStream(args: {
   onToolCall?: (call: SseToolCall) => void;
   onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
+  onInterrupted?: (data: SseInterrupted) => void;
   signal?: AbortSignal;
 }): Promise<void> {
   const resp = await fetch(args.url, {
@@ -767,6 +776,7 @@ function processChatEvent(
     onToolCall?: (call: SseToolCall) => void;
     onToolResult?: (result: SseToolResult) => void;
     onDone: (done: SseDone) => void;
+    onInterrupted?: (data: SseInterrupted) => void;
   },
 ): boolean {
   let eventName = "";
@@ -789,6 +799,9 @@ function processChatEvent(
     handlers.onToolResult?.(JSON.parse(eventData) as SseToolResult);
   } else if (eventName === "done") {
     handlers.onDone(JSON.parse(eventData) as SseDone);
+    return true;
+  } else if (eventName === "interrupted") {
+    handlers.onInterrupted?.(JSON.parse(eventData) as SseInterrupted);
     return true;
   } else if (eventName === "error") {
     let message = eventData;

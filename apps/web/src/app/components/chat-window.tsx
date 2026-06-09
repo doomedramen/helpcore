@@ -255,6 +255,9 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
           setLiveToolCalls({});
           void refreshConversation(done.conversation_id);
         },
+        onInterrupted: () => {
+          if (activeConversationId) void refreshConversation(activeConversationId);
+        },
       };
     },
     [onConversationCreated, refreshConversation, router],
@@ -767,16 +770,28 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
 
                       {retryable && (
                         <div className="mt-3 border-t pt-3">
-                          <p className="text-xs text-destructive">
-                            {message.error || "This response did not finish."}
+                          <p
+                            className={`text-xs ${message.status === "interrupted" ? "text-amber-600 dark:text-amber-400" : "text-destructive"}`}
+                          >
+                            {message.status === "interrupted"
+                              ? "Paused at tool call limit. Continue?"
+                              : message.error || "This response did not finish."}
                           </p>
                           <button
                             type="button"
                             onClick={() => retry(message.id)}
                             disabled={retryingId === message.id}
-                            className="mt-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted disabled:cursor-wait disabled:opacity-50"
+                            className={`mt-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium transition-colors disabled:cursor-wait disabled:opacity-50 ${
+                              message.status === "interrupted"
+                                ? "border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-300 dark:hover:bg-amber-950/60"
+                                : "hover:bg-muted"
+                            }`}
                           >
-                            {retryingId === message.id ? "Retrying…" : "Retry response"}
+                            {retryingId === message.id
+                              ? "Resuming…"
+                              : message.status === "interrupted"
+                                ? "Continue"
+                                : "Retry response"}
                           </button>
                         </div>
                       )}

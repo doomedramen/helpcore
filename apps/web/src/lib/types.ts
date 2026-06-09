@@ -158,6 +158,11 @@ export interface SseDone {
   message_id: string;
 }
 
+/** SSE event emitted when the tool-call round limit is reached. */
+export interface SseInterrupted {
+  message: string;
+}
+
 /** SSE event reporting context window usage. */
 export interface SseContext {
   used_tokens: number;

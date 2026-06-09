@@ -9,6 +9,10 @@ use std::{
     fs,
     net::IpAddr,
     path::{Component as PathComponent, Path, PathBuf},
+    sync::{
+        Arc,
+        atomic::{AtomicU32, Ordering},
+    },
     time::Duration,
 };
 use wasmtime::{
@@ -67,6 +71,7 @@ struct RuntimeTool {
 pub struct ToolCatalog {
     definitions: Vec<ToolDefinition>,
     tools: HashMap<String, RuntimeTool>,
+    max_rounds: Arc<AtomicU32>,
 }
 
 impl ToolCatalog {
@@ -97,12 +102,34 @@ impl ToolCatalog {
                 );
             }
         }
-        Ok(Self { definitions, tools })
+        Ok(Self {
+            definitions,
+            tools,
+            max_rounds: Arc::new(AtomicU32::new(8)),
+        })
     }
 
     /// Returns the tool definitions visible to the model.
     pub fn definitions(&self) -> &[ToolDefinition] {
         &self.definitions
+    }
+
+    /// Returns the current maximum number of tool-call rounds for this turn.
+    /// Defaults to 8, but may be increased by the model via `request_rounds`.
+    pub fn max_rounds(&self) -> u32 {
+        self.max_rounds.load(Ordering::Relaxed)
+    }
+
+    /// Increases the tool-call round limit by `count`, capped at 50 total.
+    /// Returns the new maximum.
+    pub fn request_rounds(&self, count: u32) -> u32 {
+        let clamped = count.min(50);
+        self.max_rounds
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                Some((cur + clamped).min(50))
+            })
+            .map(|old| (old + clamped).min(50))
+            .unwrap_or(50)
     }
 
     /// Dispatches a tool call to the appropriate runtime (built-in, WASM, or bridge).
@@ -114,7 +141,7 @@ impl ToolCatalog {
         call: &ToolCall,
     ) -> anyhow::Result<String> {
         if is_builtin_tool(&call.name) {
-            return execute_builtin(state, user_id, conversation_id, call).await;
+            return execute_builtin(state, user_id, conversation_id, call, &self.max_rounds).await;
         }
         let runtime = self
             .tools
@@ -152,6 +179,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "personality_append",
     "conversation_rename",
     "skill_read",
+    "request_rounds",
 ];
 
 pub(crate) fn is_builtin_tool(name: &str) -> bool {
@@ -346,6 +374,33 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                 "additionalProperties": false
             }),
         },
+        ToolDefinition {
+            name: "request_rounds".into(),
+            description: "Request more tool-call rounds for the current turn. \
+                You start with 8 rounds per turn (each round = one text reply + \
+                optional tool calls). Use this when you know you'll need many tool \
+                calls in one burst (e.g. reading a large codebase or doing extensive \
+                research). After each tool result you see [Tool round: N/M] so you \
+                know how many rounds remain."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "reason": {
+                        "type": "string",
+                        "description": "Why you need more rounds (e.g. 'I need to read ~20 files to understand this codebase')"
+                    },
+                    "count": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 50,
+                        "description": "Number of ADDITIONAL rounds you need (capped at 50 total)"
+                    }
+                },
+                "required": ["reason", "count"],
+                "additionalProperties": false
+            }),
+        },
     ]
 }
 
@@ -361,6 +416,7 @@ async fn execute_builtin(
     user_id: &str,
     conversation_id: Option<&str>,
     call: &ToolCall,
+    max_rounds: &Arc<AtomicU32>,
 ) -> anyhow::Result<String> {
     let uid = user_id.to_string();
     match call.name.as_str() {
@@ -548,6 +604,32 @@ async fn execute_builtin(
                      Check the skill index above for exact plugin names."
                 )),
             }
+        }
+        "request_rounds" => {
+            let count = call
+                .arguments
+                .get("count")
+                .and_then(serde_json::Value::as_u64)
+                .context("request_rounds requires a numeric 'count' argument")?;
+            let count = count.min(50) as u32;
+            let current = max_rounds.load(Ordering::Relaxed);
+            let new_max = max_rounds
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
+                    Some((cur + count).min(50))
+                })
+                .map(|old| (old + count).min(50))
+                .unwrap_or_else(|_| (current + count).min(50));
+            Ok(serde_json::json!({
+                "action": "request_rounds",
+                "previous_max": current,
+                "new_max": new_max,
+                "rounds_added": new_max.saturating_sub(current),
+                "message": format!(
+                    "Tool call limit increased from {} to {} for this turn ({} rounds added).",
+                    current, new_max, new_max.saturating_sub(current)
+                )
+            })
+            .to_string())
         }
         other => anyhow::bail!("unknown built-in tool {other}"),
     }
@@ -1199,5 +1281,52 @@ mod tests {
             error.contains("user_data_write"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn request_rounds_increases_limit() {
+        let catalog = ToolCatalog {
+            definitions: Vec::new(),
+            tools: HashMap::new(),
+            max_rounds: Arc::new(AtomicU32::new(8)),
+        };
+
+        assert_eq!(catalog.max_rounds(), 8);
+
+        let new = catalog.request_rounds(5);
+        assert_eq!(new, 13);
+        assert_eq!(catalog.max_rounds(), 13);
+
+        let new = catalog.request_rounds(10);
+        assert_eq!(new, 23);
+        assert_eq!(catalog.max_rounds(), 23);
+    }
+
+    #[test]
+    fn request_rounds_caps_at_50() {
+        let catalog = ToolCatalog {
+            definitions: Vec::new(),
+            tools: HashMap::new(),
+            max_rounds: Arc::new(AtomicU32::new(8)),
+        };
+
+        let new = catalog.request_rounds(100);
+        assert_eq!(new, 50, "should cap at 50");
+        assert_eq!(catalog.max_rounds(), 50);
+
+        // Already at 50 — further calls shouldn't increase
+        let new = catalog.request_rounds(1);
+        assert_eq!(new, 50, "should stay at 50");
+        assert_eq!(catalog.max_rounds(), 50);
+    }
+
+    #[test]
+    fn request_rounds_defaults_to_8() {
+        let catalog = ToolCatalog {
+            definitions: Vec::new(),
+            tools: HashMap::new(),
+            max_rounds: Arc::new(AtomicU32::new(8)),
+        };
+        assert_eq!(catalog.max_rounds(), 8);
     }
 }

@@ -146,6 +146,7 @@ pub async fn chat(
         history,
         model_used,
         tx,
+        resume_context: None,
     }));
 
     Ok(Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default()))
@@ -174,7 +175,7 @@ pub async fn retry_message(
         None
     };
 
-    let (conversation, history, user_message, provider_id, model_used) = state
+    let (conversation, history, user_message, provider_id, model_used, retry_error) = state
         .db
         .call(move |conn| {
             history::retry_turn(
@@ -189,6 +190,16 @@ pub async fn retry_message(
         })
         .await
         .map_err(turn_error)?;
+
+    let resume_context = retry_error.map(|previous_error| {
+        format!(
+            "[Note: The previous response was paused after reaching the tool call limit. \
+             The user has clicked 'Continue' to let you proceed.\n\n\
+             Previous tool call summary:\n{previous_error}\n\n\
+             Resume from where you left off. If you were in the middle of gathering \
+             information, continue doing so. You have a fresh tool-round budget.]"
+        )
+    });
     let provider = state
         .providers
         .find_for_role(Some(&provider_id), ProviderRole::Chat)
@@ -230,6 +241,7 @@ pub async fn retry_message(
         history,
         model_used,
         tx,
+        resume_context,
     }));
 
     Ok(Sse::new(ReceiverStream::new(rx)).keep_alive(KeepAlive::default()))
@@ -248,6 +260,10 @@ struct GenerationJob {
     history: Vec<MessageSummary>,
     model_used: String,
     tx: EventSender,
+    /// When set, the model's turn was resumed after interruption. The string
+    /// contains a human-readable summary of what happened (tool-call list) that
+    /// is injected into the message list so the model knows its context.
+    resume_context: Option<String>,
 }
 
 /// Build the text used to recall relevant memories for this turn.
@@ -402,7 +418,15 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         .unwrap_or_else(|_| Event::default());
     let _ = job.tx.send(Ok(context_event)).await;
 
-    for round in 0..=8 {
+    // Inject resume context when the user clicked "Continue" on an
+    // interrupted message so the model knows it was paused and can
+    // pick up where it left off.
+    if let Some(ref ctx) = job.resume_context {
+        messages.push(ChatMessage::user(ctx.as_str()));
+    }
+
+    let mut round: u32 = 0;
+    loop {
         let (assistant_content, tool_calls) =
             complete_provider_round(job, &messages, tool_catalog.definitions()).await?;
         if tool_calls.is_empty() {
@@ -421,8 +445,53 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
             let _ = job.tx.send(Ok(event)).await;
             return Ok(());
         }
-        if round == 8 {
-            anyhow::bail!("plugin tool loop exceeded the maximum of eight rounds");
+
+        // Re-check the limit each iteration — the model may have called
+        // `request_rounds` which increases max_rounds dynamically.
+        let curr_max = tool_catalog.max_rounds();
+        if round >= curr_max.saturating_sub(1) {
+            // Build a summary of all tool calls made so far so the user and
+            // model both know what was done before the pause.
+            let summary_items: Vec<String> = messages
+                .iter()
+                .filter(|m| m.role == "tool")
+                .map(|m| {
+                    let name = m.tool_name.as_deref().unwrap_or("unknown");
+                    let ok = m.content.contains("\"ok\":true");
+                    let status = if ok { "ok" } else { "error" };
+                    format!("{name} → {status}")
+                })
+                .collect();
+            let summary = if summary_items.is_empty() {
+                format!(
+                    "Tool round limit reached ({round} rounds). The model had tool calls but no results persisted yet."
+                )
+            } else {
+                let indexed: Vec<String> = summary_items
+                    .iter()
+                    .enumerate()
+                    .map(|(i, item)| format!("{}. {}", i + 1, item))
+                    .collect();
+                format!("Tool calls made ({round} rounds):\n{}", indexed.join("\n"))
+            };
+
+            // Mark the message as interrupted (not failed) so the UI can show
+            // a "Continue" button instead of "Retry".
+            let message_id = job.assistant_message_id.clone();
+            let persisted_summary = summary.clone();
+            job.state
+                .db
+                .call(move |conn| {
+                    history::interrupt_assistant_message(conn, &message_id, &persisted_summary)
+                })
+                .await?;
+
+            let event = Event::default()
+                .event("interrupted")
+                .json_data(serde_json::json!({ "message": summary }))
+                .unwrap_or_else(|_| Event::default());
+            let _ = job.tx.send(Ok(event)).await;
+            return Ok(());
         }
 
         let mut results = Vec::with_capacity(tool_calls.len());
@@ -475,8 +544,17 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         for (call, result) in results {
             messages.push(ChatMessage::tool(call.id, call.name, result));
         }
+
+        // Inject a running counter so the model knows how many rounds remain.
+        let remaining = curr_max.saturating_sub(round + 1);
+        messages.push(ChatMessage::system(format!(
+            "[Tool round: {}/{} — {} remaining before a pause is required]",
+            round + 1,
+            curr_max,
+            remaining,
+        )));
+        round += 1;
     }
-    unreachable!()
 }
 
 async fn complete_provider_round(
@@ -846,5 +924,42 @@ mod tests {
         );
         assert!(query.contains("It's 12 degrees and cloudy."));
         assert!(query.contains("what's the weather"));
+    }
+
+    #[test]
+    fn tool_error_code_classifies_exceeds_limit() {
+        assert_eq!(
+            tool_error_code("result exceeds the allowed limit"),
+            "TOO_LARGE"
+        );
+        assert_eq!(
+            tool_error_code("HTTP response exceeds the 1 MiB limit"),
+            "TOO_LARGE"
+        );
+    }
+
+    #[test]
+    fn tool_error_code_classifies_not_found() {
+        assert_eq!(
+            tool_error_code("model requested unknown tool foo"),
+            "NOT_FOUND"
+        );
+    }
+
+    #[test]
+    fn tool_error_code_classifies_invalid_input() {
+        assert_eq!(
+            tool_error_code("the path must be within the workspace"),
+            "INVALID_INPUT"
+        );
+        assert_eq!(
+            tool_error_code("tool call must contain a valid identifier"),
+            "INVALID_INPUT"
+        );
+    }
+
+    #[test]
+    fn tool_error_code_defaults_to_unknown() {
+        assert_eq!(tool_error_code("some unexpected failure"), "UNKNOWN");
     }
 }
