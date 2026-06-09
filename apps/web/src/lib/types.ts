@@ -150,6 +150,8 @@ export interface SseToolResult {
   id: string;
   name: string;
   result: string;
+  /** Whether the result was truncated for context limits. */
+  truncated?: boolean;
 }
 
 /** SSE event signalling the stream has finished cleanly. */

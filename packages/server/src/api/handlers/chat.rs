@@ -30,6 +30,11 @@ use crate::{
     state::AppState,
 };
 
+/// Maximum characters of a tool result forwarded to the model.
+/// Results beyond this length are truncated to avoid exhausting the output token budget
+/// when the model re-emits content in downstream tool calls.
+const MAX_TOOL_RESULT_CHARS: usize = 10_000;
+
 type EventSender = tokio::sync::mpsc::Sender<Result<Event, Infallible>>;
 
 // ── POST /api/chat ─────────────────────────────────────────────────────────────
@@ -505,15 +510,33 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
                 })
                 .unwrap_or_else(|_| Event::default());
             let _ = job.tx.send(Ok(call_event)).await;
-            let result = match tool_catalog
+            let (truncated, result) = match tool_catalog
                 .execute(&job.state, &job.user_id, Some(&job.conversation_id), call)
                 .await
             {
-                Ok(result) => serde_json::json!({"ok": true, "result": result}).to_string(),
+                Ok(raw) => {
+                    let trunc = raw.len() > MAX_TOOL_RESULT_CHARS;
+                    let body = if trunc {
+                        let mut cut = raw;
+                        cut.truncate(MAX_TOOL_RESULT_CHARS);
+                        cut.push_str("\n[... truncated at 10KB]");
+                        cut
+                    } else {
+                        raw
+                    };
+                    (
+                        trunc,
+                        serde_json::json!({"ok": true, "result": body, "truncated": trunc})
+                            .to_string(),
+                    )
+                }
                 Err(error) => {
                     let msg = error.to_string();
                     let code = tool_error_code(&msg);
-                    serde_json::json!({"ok": false, "error": msg, "code": code}).to_string()
+                    (
+                        false,
+                        serde_json::json!({"ok": false, "error": msg, "code": code}).to_string(),
+                    )
                 }
             };
             let result_event = Event::default()
@@ -522,6 +545,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
                     id: call.id.clone(),
                     name: call.name.clone(),
                     result: result.clone(),
+                    truncated,
                 })
                 .unwrap_or_else(|_| Event::default());
             let _ = job.tx.send(Ok(result_event)).await;

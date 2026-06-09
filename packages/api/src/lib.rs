@@ -265,6 +265,9 @@ pub struct SseToolResult {
     pub name: String,
     /// The tool execution result as a string.
     pub result: String,
+    /// Whether the result was truncated for context limits.
+    #[serde(default)]
+    pub truncated: bool,
 }
 
 // ── Conversations ─────────────────────────────────────────────────────────────
