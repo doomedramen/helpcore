@@ -29,14 +29,14 @@ pub struct Config {
 }
 
 /// Docker sandbox configuration for safe command execution.
-#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct SandboxConfig {
     /// Whether the sandbox is enabled.
     #[serde(default)]
     pub enabled: bool,
 
     /// Docker image to use for sandbox containers.
-    /// Defaults to ghcr.io/doomedramen/helpcore-sandbox:latest
+    /// Defaults to ubuntu:latest.
     #[serde(default = "default_sandbox_image")]
     pub image: String,
 
@@ -51,6 +51,18 @@ pub struct SandboxConfig {
     /// Optional Docker host URL (e.g. unix:///var/run/docker.sock or tcp://1.2.3.4:2375).
     /// If omitted, defaults to local system defaults (respecting DOCKER_HOST env var).
     pub host: Option<String>,
+}
+
+impl Default for SandboxConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            image: default_sandbox_image(),
+            timeout: default_sandbox_timeout(),
+            memory_mb: default_sandbox_memory(),
+            host: None,
+        }
+    }
 }
 
 fn default_sandbox_image() -> String {
