@@ -143,7 +143,17 @@ pub async fn compact_conversation(
         }
     }
 
-    if summary.trim().is_empty() {
+    // Strip <summary> wrapper tags if the model returned them.
+    let summary = summary
+        .trim()
+        .strip_prefix("<summary>")
+        .unwrap_or(&summary)
+        .strip_suffix("</summary>")
+        .unwrap_or(&summary)
+        .trim()
+        .to_string();
+
+    if summary.is_empty() {
         anyhow::bail!("provider returned an empty summary — compaction aborted");
     }
 
