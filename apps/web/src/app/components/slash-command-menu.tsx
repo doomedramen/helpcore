@@ -2,13 +2,6 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/app/components/ui/popover";
-import {
-  Command,
-  CommandEmpty,
-  CommandGroup,
-  CommandItem,
-  CommandList,
-} from "@/app/components/ui/command";
 import { useOptionalPromptInputController } from "@/components/ai-elements/prompt-input";
 import { type SlashCommand, filterCommands, shouldShowMenu } from "@/lib/commands";
 import { cn } from "@/lib/utils";
@@ -25,6 +18,7 @@ export function SlashCommandMenu({ commands, className }: SlashCommandMenuProps)
   const setInput = controller?.textInput.setInput;
 
   const [open, setOpen] = useState(false);
+  const [selectedIndex, setSelectedIndex] = useState(0);
 
   const commandDefs = useMemo(
     () => commands.map(({ slash, label, description }) => ({ slash, label, description })),
@@ -37,6 +31,7 @@ export function SlashCommandMenu({ commands, className }: SlashCommandMenuProps)
   // Sync popover open state with visibility.
   useEffect(() => {
     setOpen(show);
+    if (show) setSelectedIndex(0);
   }, [show]);
 
   // Filter commands based on typed prefix.
@@ -69,23 +64,35 @@ export function SlashCommandMenu({ commands, className }: SlashCommandMenuProps)
           the `open` prop, so we don't need a visible trigger element. */}
       <PopoverTrigger className="absolute inset-0 pointer-events-none" />
       <PopoverContent side="top" align="start" sideOffset={8} className={cn("w-72 p-0", className)}>
-        <Command>
-          <CommandList>
-            <CommandGroup heading="Commands">
-              {filtered.map((cmd) => (
-                <CommandItem
+        <div className="overflow-hidden p-1">
+          <div className="px-2 py-1.5 text-xs font-medium text-muted-foreground">Commands</div>
+          {filtered.length > 0 ? (
+            <div className="flex flex-col">
+              {filtered.map((cmd, i) => (
+                <button
                   key={cmd.slash}
-                  value={cmd.slash}
-                  onSelect={() => handleSelect(cmd.slash)}
+                  type="button"
+                  onMouseDown={(e) => {
+                    // Prevent the popover trigger from stealing focus on click.
+                    e.preventDefault();
+                    handleSelect(cmd.slash);
+                  }}
+                  className={cn(
+                    "flex items-center gap-2 rounded-sm px-2 py-1.5 text-sm text-left",
+                    i === selectedIndex ? "bg-muted text-foreground" : "text-popover-foreground",
+                  )}
                 >
-                  <span className="font-medium">{cmd.slash}</span>
-                  <span className="ml-2 truncate text-muted-foreground">{cmd.description}</span>
-                </CommandItem>
+                  <span className="font-medium shrink-0">{cmd.slash}</span>
+                  <span className="truncate text-muted-foreground">{cmd.description}</span>
+                </button>
               ))}
-            </CommandGroup>
-            <CommandEmpty>No matching commands</CommandEmpty>
-          </CommandList>
-        </Command>
+            </div>
+          ) : (
+            <div className="py-6 text-center text-sm text-muted-foreground">
+              No matching commands
+            </div>
+          )}
+        </div>
       </PopoverContent>
     </Popover>
   );
