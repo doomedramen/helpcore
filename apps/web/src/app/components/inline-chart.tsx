@@ -142,6 +142,24 @@ export function InlineChart({ variant, content, onError }: RendererProps) {
     }
   }, [error, onError]);
 
+  const handleDownload = React.useCallback(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const svg = container.querySelector("svg");
+    if (!svg) return;
+
+    const svgData = new XMLSerializer().serializeToString(svg);
+    const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `chart-${Date.now()}.svg`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, []);
+
   React.useEffect(() => {
     setError(null);
     setData(null);
@@ -275,24 +293,6 @@ export function InlineChart({ variant, content, onError }: RendererProps) {
     const color = ds.color ?? ds.fill ?? pickColor(j, palette, useCssVars);
     config[key] = { label: ds.label ?? key, color };
   }
-
-  const handleDownload = React.useCallback(() => {
-    const container = containerRef.current;
-    if (!container) return;
-    const svg = container.querySelector("svg");
-    if (!svg) return;
-
-    const svgData = new XMLSerializer().serializeToString(svg);
-    const blob = new Blob([svgData], { type: "image/svg+xml;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url;
-    a.download = `chart-${Date.now()}.svg`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, []);
 
   const renderChart = () => {
     switch (chartType) {

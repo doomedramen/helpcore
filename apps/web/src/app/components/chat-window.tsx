@@ -31,11 +31,18 @@ import {
 import { Message as AIMessage, MessageContent } from "@/components/ai-elements/message";
 import {
   PromptInput,
-  type PromptInputMessage,
+  PromptInputActionAddAttachments,
+  PromptInputActionAddScreenshot,
+  PromptInputActionMenu,
+  PromptInputActionMenuContent,
+  PromptInputActionMenuTrigger,
   PromptInputBody,
-  PromptInputTextarea,
-  PromptInputSubmit,
+  PromptInputButton,
+  type PromptInputMessage,
   PromptInputFooter,
+  PromptInputProvider,
+  PromptInputSubmit,
+  PromptInputTextarea,
   PromptInputTools,
 } from "@/components/ai-elements/prompt-input";
 import {
@@ -62,7 +69,7 @@ import { MessageContentWithAssets } from "./asset-renderer";
 import PromptAttachments from "./prompt-attachments";
 import CodeBlockInjector from "./code-copy-button";
 import { Badge } from "@/app/components/ui/badge";
-import { Shuffle, Sparkles, Terminal } from "lucide-react";
+import { Shuffle, Terminal } from "lucide-react";
 
 interface QueueItem {
   id: string;
@@ -99,6 +106,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     });
   }, []);
   const [selectedProviderId, setSelectedProviderId] = useState("");
+  const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [shuffleKey, setShuffleKey] = useState(0);
   const [liveToolCalls, setLiveToolCalls] = useState<Record<string, string>>({});
   const providerSelectionsRef = useRef<Record<string, string>>({});
@@ -306,9 +314,14 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
 
   const handlePromptSubmit = useCallback(
     (message: PromptInputMessage) => {
-      if (message.text.trim()) {
-        handleSend(message.text.trim());
+      const hasText = message.text.trim().length > 0;
+      const hasFiles = message.files.length > 0;
+
+      if (!(hasText || hasFiles)) {
+        return;
       }
+
+      handleSend(message.text.trim());
     },
     [handleSend],
   );
@@ -707,60 +720,78 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
 
       {/* Input */}
       <div className="mx-auto w-full max-w-4xl px-3 pb-3 pt-2 sm:px-5 sm:pb-5">
-        <PromptInput onSubmit={handlePromptSubmit} globalDrop>
-          <PromptInputBody>
-            <PromptInputTextarea
-              placeholder={
-                providers.length === 0 ? "Configure a chat provider to begin." : "Message helpcore…"
-              }
-            />
-          </PromptInputBody>
-          <PromptAttachments />
-          <PromptInputFooter>
-            <PromptInputTools>
-              <Sparkles size={13} className="shrink-0 text-indigo-500 dark:text-indigo-400" />
-              <ModelSelector>
-                <ModelSelectorTrigger className="h-7 max-w-[13rem] border-border/30 px-1.5 text-xs shadow-none hover:bg-muted data-[popup-open]:bg-muted">
-                  {(() => {
-                    const p = providers.find((p) => p.id === selectedProviderId);
-                    return p ? (
-                      <span className="flex items-center gap-1.5 truncate">
-                        <ModelSelectorName>{p.name}</ModelSelectorName>
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">
-                        {providers.length === 0 ? "No chat provider" : "Select provider"}
-                      </span>
-                    );
-                  })()}
-                </ModelSelectorTrigger>
-                <ModelSelectorContent>
-                  <ModelSelectorInput placeholder="Search providers..." />
-                  <ModelSelectorList>
-                    {providers.map((p) => (
-                      <ModelSelectorItem
-                        key={p.id}
-                        value={p.id}
-                        onSelect={() => handleProviderChange(p.id)}
-                      >
-                        <ModelSelectorName>{p.name}</ModelSelectorName>
-                        <span className="ml-auto text-muted-foreground text-xs">
-                          {p.default_model}
-                        </span>
-                      </ModelSelectorItem>
-                    ))}
-                  </ModelSelectorList>
-                </ModelSelectorContent>
-              </ModelSelector>
-            </PromptInputTools>
-            <div className="flex items-center gap-2">
-              <span className="hidden text-[11px] text-muted-foreground sm:block">
-                Enter to send · Shift + Enter for new line
-              </span>
-              <PromptInputSubmit status={active ? "streaming" : "ready"} onStop={handleStop} />
-            </div>
-          </PromptInputFooter>
-        </PromptInput>
+        <PromptInputProvider>
+          <PromptInput globalDrop multiple onSubmit={handlePromptSubmit}>
+            <PromptAttachments />
+            <PromptInputBody>
+              <PromptInputTextarea
+                placeholder={
+                  providers.length === 0
+                    ? "Configure a chat provider to begin."
+                    : "Message helpcore…"
+                }
+              />
+            </PromptInputBody>
+            <PromptInputFooter>
+              <PromptInputTools>
+                <PromptInputActionMenu>
+                  <PromptInputActionMenuTrigger />
+                  <PromptInputActionMenuContent>
+                    <PromptInputActionAddAttachments />
+                    <PromptInputActionAddScreenshot />
+                  </PromptInputActionMenuContent>
+                </PromptInputActionMenu>
+                <ModelSelector
+                  open={modelSelectorOpen}
+                  onOpenChange={(open) => setModelSelectorOpen(open)}
+                >
+                  <ModelSelectorTrigger
+                    render={
+                      <PromptInputButton size="xs" className="max-w-[13rem]">
+                        {(() => {
+                          const p = providers.find((p) => p.id === selectedProviderId);
+                          return p ? (
+                            <ModelSelectorName>{p.name}</ModelSelectorName>
+                          ) : (
+                            <span className="text-muted-foreground">
+                              {providers.length === 0 ? "No chat provider" : "Select provider"}
+                            </span>
+                          );
+                        })()}
+                      </PromptInputButton>
+                    }
+                  />
+                  <ModelSelectorContent>
+                    <ModelSelectorInput placeholder="Search providers..." />
+                    <ModelSelectorList>
+                      {providers.map((p) => (
+                        <ModelSelectorItem
+                          key={p.id}
+                          value={p.id}
+                          onSelect={() => {
+                            handleProviderChange(p.id);
+                            setModelSelectorOpen(false);
+                          }}
+                        >
+                          <ModelSelectorName>{p.name}</ModelSelectorName>
+                          <span className="ml-auto text-xs text-muted-foreground">
+                            {p.default_model}
+                          </span>
+                        </ModelSelectorItem>
+                      ))}
+                    </ModelSelectorList>
+                  </ModelSelectorContent>
+                </ModelSelector>
+              </PromptInputTools>
+              <div className="flex items-center gap-2">
+                <span className="hidden text-[11px] text-muted-foreground sm:block">
+                  Enter to send · Shift + Enter for new line
+                </span>
+                <PromptInputSubmit status={active ? "streaming" : "ready"} onStop={handleStop} />
+              </div>
+            </PromptInputFooter>
+          </PromptInput>
+        </PromptInputProvider>
       </div>
     </div>
   );
