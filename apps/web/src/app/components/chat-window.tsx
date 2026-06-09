@@ -807,7 +807,7 @@ export default function ChatWindow({
                             className={`text-xs ${message.status === "interrupted" ? "text-amber-600 dark:text-amber-400" : "text-destructive"}`}
                           >
                             {message.status === "interrupted"
-                              ? "Paused at tool call limit. Continue?"
+                              ? message.error || "Paused at tool call limit. Continue?"
                               : message.error || "This response did not finish."}
                           </p>
                           <button
