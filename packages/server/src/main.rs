@@ -133,13 +133,13 @@ async fn main() -> anyhow::Result<()> {
                     host = %host_info,
                     "sandbox: Docker client initialised"
                 );
-                Some(helpcore_server::sandbox::SandboxState {
+                Some(helpcore_server::sandbox::SandboxState::new(
                     docker,
-                    image: config.sandbox.image.clone(),
-                    timeout: config.sandbox.timeout,
-                    memory_mb: config.sandbox.memory_mb,
-                    host_info,
-                })
+                    host_info.clone(),
+                    config.sandbox.image.clone(),
+                    config.sandbox.timeout,
+                    config.sandbox.memory_mb,
+                ))
             }
             Err(e) => {
                 tracing::warn!(

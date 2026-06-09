@@ -128,6 +128,14 @@ pub async fn update_config(
 
     state.providers.replace(prepared);
 
+    if let Some(ref sandbox) = state.sandbox {
+        sandbox.update_config(
+            &config.sandbox.image,
+            config.sandbox.timeout,
+            config.sandbox.memory_mb,
+        );
+    }
+
     let blacklist = config.plugins.blacklist.clone();
     state
         .db

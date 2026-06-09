@@ -11,6 +11,10 @@ use bollard::{
 };
 use futures_util::StreamExt;
 use serde::Serialize;
+use std::sync::{
+    Arc, RwLock,
+    atomic::{AtomicU64, Ordering},
+};
 use std::time::Duration;
 use tokio::time::timeout;
 
@@ -18,18 +22,63 @@ const WORKSPACE_VOLUME: &str = "helpcore-sandbox-workspace";
 const MAX_OUTPUT_BYTES: usize = 100_000;
 
 /// Shared sandbox state.
+///
+/// `docker` and `host_info` are immutable once created. `image`, `timeout`,
+/// and `memory_mb` are wrapped in atomics / locks so the admin config UI can
+/// update them at runtime without restarting the server.
 #[derive(Clone)]
 pub struct SandboxState {
     /// Bollard Docker client.
     pub docker: Docker,
-    /// Configured sandbox image.
-    pub image: String,
-    /// Default execution timeout in seconds.
-    pub timeout: u64,
-    /// Memory limit in MB.
-    pub memory_mb: u64,
+    /// Configured sandbox image (updatable via admin config).
+    image: Arc<RwLock<String>>,
+    /// Default execution timeout in seconds (updatable via admin config).
+    timeout: Arc<AtomicU64>,
+    /// Memory limit in MB (updatable via admin config).
+    memory_mb: Arc<AtomicU64>,
     /// Human-readable Docker connection info for error messages.
     pub host_info: String,
+}
+
+impl SandboxState {
+    /// Create new sandbox state with the given Docker client and config values.
+    pub fn new(
+        docker: Docker,
+        host_info: String,
+        image: String,
+        timeout: u64,
+        memory_mb: u64,
+    ) -> Self {
+        Self {
+            docker,
+            image: Arc::new(RwLock::new(image)),
+            timeout: Arc::new(AtomicU64::new(timeout)),
+            memory_mb: Arc::new(AtomicU64::new(memory_mb)),
+            host_info,
+        }
+    }
+
+    /// Read the current sandbox image.
+    pub fn image(&self) -> String {
+        self.image.read().unwrap_or_else(|e| e.into_inner()).clone()
+    }
+
+    /// Read the current timeout in seconds.
+    pub fn timeout(&self) -> u64 {
+        self.timeout.load(Ordering::Relaxed)
+    }
+
+    /// Read the current memory limit in MB.
+    pub fn memory_mb(&self) -> u64 {
+        self.memory_mb.load(Ordering::Relaxed)
+    }
+
+    /// Update the mutable config fields from an admin config change.
+    pub fn update_config(&self, image: &str, timeout: u64, memory_mb: u64) {
+        *self.image.write().unwrap_or_else(|e| e.into_inner()) = image.to_string();
+        self.timeout.store(timeout, Ordering::Relaxed);
+        self.memory_mb.store(memory_mb, Ordering::Relaxed);
+    }
 }
 
 /// Result of a sandboxed command execution.
@@ -92,12 +141,14 @@ pub async fn exec(
     timeout_secs: Option<u64>,
 ) -> Result<SandboxResult, SandboxError> {
     let start = std::time::Instant::now();
-    let timeout_secs = timeout_secs.unwrap_or(state.timeout).min(600);
+    let timeout_secs = timeout_secs.unwrap_or(state.timeout()).min(600);
+
+    let image = state.image();
 
     // Ensure image is pulled
     let mut pull_stream = state.docker.create_image(
         Some(CreateImageOptions {
-            from_image: state.image.as_str(),
+            from_image: image.as_str(),
             ..Default::default()
         }),
         None,
@@ -109,14 +160,14 @@ pub async fn exec(
 
     // Create container
     let config = Config {
-        image: Some(state.image.as_str()),
+        image: Some(image.as_str()),
         cmd: Some(vec!["/bin/sh", "-c", command]),
         working_dir: Some("/workspace"),
         host_config: Some(HostConfig {
             readonly_rootfs: Some(false),
             privileged: Some(false),
             // Resources
-            memory: Some((state.memory_mb * 1024 * 1024) as i64),
+            memory: Some((state.memory_mb() * 1024 * 1024) as i64),
             nano_cpus: Some(1_000_000_000), // 1 CPU
             pids_limit: Some(100),
             // Network
