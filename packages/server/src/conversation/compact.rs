@@ -252,6 +252,50 @@ mod tests {
     }
 
     #[test]
+    fn extract_summary_with_full_tags() {
+        let raw = "<summary>The user asked about Rust async patterns.</summary>";
+        assert_eq!(
+            extract_summary(raw),
+            "The user asked about Rust async patterns."
+        );
+    }
+
+    #[test]
+    fn extract_summary_with_preamble_and_postamble() {
+        let raw = "Here's the summary:\n<summary>\nKey decisions were made.\n</summary>\nI hope this helps!";
+        assert_eq!(extract_summary(raw), "Key decisions were made.");
+    }
+
+    #[test]
+    fn extract_summary_opening_tag_only() {
+        let raw = "<summary>The user asked about async.";
+        assert_eq!(extract_summary(raw), "The user asked about async.");
+    }
+
+    #[test]
+    fn extract_summary_closing_tag_only() {
+        let raw = "The user asked about async.</summary>";
+        assert_eq!(extract_summary(raw), "The user asked about async.");
+    }
+
+    #[test]
+    fn extract_summary_no_tags() {
+        let raw = "The user asked about Rust async patterns.";
+        assert_eq!(extract_summary(raw), raw);
+    }
+
+    #[test]
+    fn extract_summary_empty_tags() {
+        assert_eq!(extract_summary("<summary></summary>"), "");
+    }
+
+    #[test]
+    fn extract_summary_multiple_tags_uses_first_open_and_last_close() {
+        let raw = "pre <summary>inner1</summary> mid <summary>inner2</summary> post";
+        assert_eq!(extract_summary(raw), "inner1</summary> mid <summary>inner2");
+    }
+
+    #[test]
     fn needs_compaction_threshold() {
         // 1000 messages × 400 chars each = 400 000 chars → ~100 000 tokens
         let msgs: Vec<ChatMessage> = (0..1000)
