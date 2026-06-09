@@ -116,7 +116,7 @@ pub async fn exec(
             // Security
             cap_drop: Some(vec!["ALL".to_string()]),
             security_opt: Some(vec!["no-new-privileges:true".to_string()]),
-            readonly_rootfs: Some(true),
+            readonly_rootfs: Some(false),
             privileged: Some(false),
             // Resources
             memory: Some((state.memory_mb * 1024 * 1024) as i64),
@@ -136,7 +136,6 @@ pub async fn exec(
             auto_remove: Some(true),
             ..Default::default()
         }),
-        user: Some("1000:1000"),
         ..Default::default()
     };
 
