@@ -162,12 +162,20 @@ pub async fn exec(
     let exit_code = match wait_result {
         Ok(Some(Ok(output))) => output.status_code,
         Ok(Some(Err(e))) => {
-            let _ = state
-                .docker
-                .remove_container(&id, None)
-                .await
-                .inspect_err(|e| tracing::warn!("sandbox: remove after wait error failed: {e}"));
-            return Err(SandboxError::docker("wait_container", &state.host_info, e));
+            // bollard treats non-zero container exit codes as errors.
+            // Extract the real exit code so the caller can inspect stdout/stderr.
+            if let bollard::errors::Error::DockerContainerWaitError { code, .. } = &e {
+                *code
+            } else {
+                let _ = state
+                    .docker
+                    .remove_container(&id, None)
+                    .await
+                    .inspect_err(|e| {
+                        tracing::warn!("sandbox: remove after wait error failed: {e}")
+                    });
+                return Err(SandboxError::docker("wait_container", &state.host_info, e));
+            }
         }
         Ok(None) => {
             let _ = state
