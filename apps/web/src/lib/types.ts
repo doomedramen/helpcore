@@ -158,11 +158,25 @@ export interface SseDone {
   message_id: string;
 }
 
+/** SSE event reporting context window usage. */
+export interface SseContext {
+  used_tokens: number;
+  max_tokens: number;
+}
+
+/** Response from a conversation compaction. */
+export interface CompactResponse {
+  conversation_id: string;
+  messages_compacted: number;
+  summary_length: number;
+}
+
 /** Brief info about a configured LLM provider. */
 export interface ProviderInfo {
   id: string;
   name: string;
   default_model: string;
+  context_limit: number;
 }
 
 /** Response listing all available providers. */

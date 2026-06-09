@@ -7,6 +7,7 @@ import {
   ApiError,
   cancelGeneration,
   chat,
+  compactConversation,
   getMessages,
   listConversations,
   listProviders,
@@ -17,6 +18,7 @@ import { useAuth } from "@/context/auth";
 import type {
   ConversationSummary,
   Message,
+  SseContext,
   SseDone,
   SseStarted,
   SseToolCall,
@@ -63,6 +65,15 @@ import {
 } from "@/components/ai-elements/queue";
 import { Suggestions, Suggestion } from "@/components/ai-elements/suggestion";
 import { Shimmer } from "@/components/ai-elements/shimmer";
+import {
+  Context,
+  ContextContent,
+  ContextContentBody,
+  ContextContentHeader,
+  ContextTrigger,
+} from "@/components/ai-elements/context";
+import { SlashCommandMenu } from "./slash-command-menu";
+import { type SlashCommand } from "@/lib/commands";
 import BrandMark from "./brand-mark";
 import ToolMessageAdapter, { getToolLabel, getToolColor, getToolIcon } from "./tool-adapter";
 import { MessageContentWithAssets } from "./asset-renderer";
@@ -93,6 +104,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   const { mutate: mutateGlobal } = useSWRConfig();
   const [retryingId, setRetryingId] = useState<string | null>(null);
   const [error, setError] = useState("");
+  const [infoMessage, setInfoMessage] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
   const [showToolLogs, setShowToolLogs] = useState(true);
   useEffect(() => {
@@ -109,6 +121,10 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [shuffleKey, setShuffleKey] = useState(0);
   const [liveToolCalls, setLiveToolCalls] = useState<Record<string, string>>({});
+  const [contextUsage, setContextUsage] = useState<{
+    usedTokens: number;
+    maxTokens: number;
+  } | null>(null);
   const providerSelectionsRef = useRef<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const processingRef = useRef(false);
@@ -172,8 +188,16 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
       prevConvRef.current = conversationId;
       setQueue([]);
       setLiveToolCalls({});
+      setContextUsage(null);
     }
   }, [conversationId]);
+
+  useEffect(() => {
+    if (infoMessage) {
+      const timer = setTimeout(() => setInfoMessage(""), 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [infoMessage]);
 
   const refreshConversation = useCallback(
     async (id: string) => {
@@ -209,6 +233,9 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
             router.replace(`/chat/?id=${started.conversation_id}`, { scroll: false });
           }
           void refreshConversation(started.conversation_id);
+        },
+        onContext: (ctx: SseContext) => {
+          setContextUsage({ usedTokens: ctx.used_tokens, maxTokens: ctx.max_tokens });
         },
         onChunk: (_delta: string) => {
           const id = activeConversationId;
@@ -312,6 +339,51 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     [selectedProviderId],
   );
 
+  const handleCompact = useCallback(async () => {
+    if (!conversationId || !accessToken) return;
+    setInfoMessage("Compacting…");
+    try {
+      const result = await compactConversation(conversationId, accessToken);
+      if (result.messages_compacted > 0) {
+        setInfoMessage(
+          `Compacted ${result.messages_compacted} message${result.messages_compacted === 1 ? "" : "s"} into a summary.`,
+        );
+        await refreshConversation(conversationId);
+      } else {
+        setInfoMessage("Nothing to compact — conversation is already short.");
+      }
+    } catch (err) {
+      if (err instanceof ApiError && err.status === 401) {
+        const fresh = await refreshAccessToken();
+        if (fresh) {
+          const result = await compactConversation(conversationId, fresh);
+          if (result.messages_compacted > 0) {
+            setInfoMessage(
+              `Compacted ${result.messages_compacted} message${result.messages_compacted === 1 ? "" : "s"} into a summary.`,
+            );
+            await refreshConversation(conversationId);
+          } else {
+            setInfoMessage("Nothing to compact — conversation is already short.");
+          }
+          return;
+        }
+      }
+      setError(err instanceof ApiError ? err.message : "Compaction failed. Try again.");
+    }
+  }, [conversationId, accessToken, refreshConversation, refreshAccessToken]);
+
+  const commandActions = useMemo<SlashCommand[]>(
+    () => [
+      {
+        slash: "/compact",
+        label: "Compact conversation",
+        description: "Summarize oldest messages to free context",
+        action: handleCompact,
+      },
+    ],
+    [handleCompact],
+  );
+
   const handlePromptSubmit = useCallback(
     (message: PromptInputMessage) => {
       const hasText = message.text.trim().length > 0;
@@ -321,9 +393,30 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
         return;
       }
 
-      handleSend(message.text.trim());
+      const trimmed = message.text.trim();
+
+      // Slash commands — dispatched locally without sending to the model.
+      if (trimmed.startsWith("/")) {
+        const parts = trimmed.split(/\s+/);
+        const cmd = parts[0].toLowerCase();
+        const match = commandActions.find((c) => c.slash === cmd);
+
+        if (match) {
+          setInfoMessage(`Running ${cmd}…`);
+          Promise.resolve(match.action()).catch((err) => {
+            setError(err instanceof ApiError ? err.message : `Command failed: ${cmd}`);
+          });
+          return;
+        }
+
+        // Unknown command — send as a regular message so the model can respond.
+        handleSend(trimmed);
+        return;
+      }
+
+      handleSend(trimmed);
     },
-    [handleSend],
+    [commandActions, handleSend],
   );
 
   const handleSuggestionClick = useCallback((text: string) => {
@@ -480,6 +573,10 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
     return result;
   }, [messages]);
 
+  const selectedProvider = providers.find((p) => p.id === selectedProviderId);
+  const contextMaxTokens = contextUsage?.maxTokens ?? selectedProvider?.context_limit ?? 0;
+  const contextUsedTokens = contextUsage?.usedTokens ?? 0;
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -492,29 +589,48 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
             {providers.find((p) => p.id === selectedProviderId)?.name || "Choose a provider below"}
           </p>
         </div>
-        {Object.keys(liveToolCalls).length > 0 && (
-          <span className="flex items-center gap-1.5 text-[11px] text-indigo-600 dark:text-indigo-400">
-            <span className="size-1.5 rounded-full bg-current animate-pulse" />
-            {Object.values(liveToolCalls)
-              .map((n) => getToolLabel(n))
-              .join(", ")}
-          </span>
-        )}
-        {toolCount > 0 && (
-          <button
-            type="button"
-            onClick={toggleToolLogs}
-            className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition ${
-              showToolLogs
-                ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
-                : "text-slate-400 hover:bg-white hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-            }`}
-          >
-            <Terminal size={12} />
-            <span>Tool logs</span>
-            {!showToolLogs && <span className="ml-0.5 tabular-nums">({toolCount})</span>}
-          </button>
-        )}
+        <div className="flex items-center gap-1.5">
+          {Object.keys(liveToolCalls).length > 0 && (
+            <span className="flex items-center gap-1.5 text-[11px] text-indigo-600 dark:text-indigo-400">
+              <span className="size-1.5 rounded-full bg-current animate-pulse" />
+              {Object.values(liveToolCalls)
+                .map((n) => getToolLabel(n))
+                .join(", ")}
+            </span>
+          )}
+          {contextMaxTokens > 0 && conversationId && (
+            <Context usedTokens={contextUsedTokens} maxTokens={contextMaxTokens}>
+              <ContextTrigger />
+              <ContextContent>
+                <ContextContentHeader />
+                <ContextContentBody>
+                  <button
+                    type="button"
+                    onClick={handleCompact}
+                    className="w-full rounded-md border px-2.5 py-1.5 text-xs font-medium transition-colors hover:bg-muted"
+                  >
+                    Compact conversation
+                  </button>
+                </ContextContentBody>
+              </ContextContent>
+            </Context>
+          )}
+          {toolCount > 0 && (
+            <button
+              type="button"
+              onClick={toggleToolLogs}
+              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition ${
+                showToolLogs
+                  ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
+                  : "text-slate-400 hover:bg-white hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
+              }`}
+            >
+              <Terminal size={12} />
+              <span>Tool logs</span>
+              {!showToolLogs && <span className="ml-0.5 tabular-nums">({toolCount})</span>}
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Conversation */}
@@ -669,6 +785,11 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
                 );
               })}
 
+              {infoMessage && (
+                <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
+                  {infoMessage}
+                </div>
+              )}
               {visibleError && (
                 <div className="rounded-lg border border-destructive/20 bg-destructive/10 px-3 py-2 text-sm text-destructive">
                   {visibleError}
@@ -723,6 +844,7 @@ export default function ChatWindow({ conversationId, onConversationCreated }: Pr
         <PromptInputProvider>
           <PromptInput globalDrop multiple onSubmit={handlePromptSubmit}>
             <PromptAttachments />
+            <SlashCommandMenu commands={commandActions} />
             <PromptInputBody>
               <PromptInputTextarea
                 placeholder={

@@ -17,7 +17,7 @@ use serde::Deserialize;
 
 use helpcore_api::{
     ChatRequest, CompactResponse, ConversationSummary, MessageSummary, RenameConversationRequest,
-    RetryRequest, SseChunk, SseDone, SseStarted, SseToolCall, SseToolResult,
+    RetryRequest, SseChunk, SseContext, SseDone, SseStarted, SseToolCall, SseToolResult,
 };
 
 use crate::{
@@ -391,6 +391,17 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         + 4;
 
     let mut messages = context::assemble(&job.history, &job.user_content, make_opts(est));
+
+    // Emit context window usage to the frontend.
+    let context_event = Event::default()
+        .event("context")
+        .json_data(SseContext {
+            used_tokens: est,
+            max_tokens: job.provider.context_limit(),
+        })
+        .unwrap_or_else(|_| Event::default());
+    let _ = job.tx.send(Ok(context_event)).await;
+
     for round in 0..=8 {
         let (assistant_content, tool_calls) =
             complete_provider_round(job, &messages, tool_catalog.definitions()).await?;

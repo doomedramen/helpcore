@@ -190,6 +190,8 @@ pub struct ProviderInfo {
     pub name: String,
     /// Default model used by this provider.
     pub default_model: String,
+    /// Maximum context window in tokens.
+    pub context_limit: u32,
 }
 
 /// Response listing all available AI providers.
@@ -224,6 +226,15 @@ pub struct SseDone {
     pub conversation_id: String,
     /// ID of the completed assistant message.
     pub message_id: String,
+}
+
+/// Sent as SSE `event: context` data — reports context window usage.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SseContext {
+    /// Estimated tokens currently in context.
+    pub used_tokens: usize,
+    /// Maximum context window size in tokens.
+    pub max_tokens: u32,
 }
 
 /// Request to retry the last assistant turn in a conversation.

@@ -22,12 +22,13 @@ struct RuntimeProvider {
 /// Prepared but not yet registered providers — returned by [`ProviderRegistry::prepare`].
 pub struct PreparedProviders(Vec<RuntimeProvider>);
 
-/// Describes a provider for API responses (id, display name, default model).
+/// Describes a provider for API responses (id, display name, default model, context limit).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ProviderDescriptor {
     pub id: String,
     pub name: String,
     pub default_model: String,
+    pub context_limit: u32,
 }
 
 /// Thread-safe registry of chat providers, indexed by role.
@@ -109,6 +110,7 @@ impl ProviderRegistry {
                 id: entry.provider.id().to_string(),
                 name: entry.provider.name().to_string(),
                 default_model: entry.provider.default_model().to_string(),
+                context_limit: entry.provider.context_limit(),
             })
             .collect()
     }

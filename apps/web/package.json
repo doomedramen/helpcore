@@ -8,7 +8,9 @@
     "start": "next start --port 3001",
     "lint": "oxlint",
     "format": "oxfmt --write",
-    "format:check": "oxfmt --check"
+    "format:check": "oxfmt --check",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
@@ -58,17 +60,22 @@
   "devDependencies": {
     "@serwist/turbopack": "^9.5.11",
     "@tailwindcss/postcss": "^4",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@vitejs/plugin-react": "^6.0.2",
     "esbuild": "^0.28.0",
+    "jsdom": "^29.1.1",
     "lefthook": "^2.1.9",
     "oxfmt": "^0.53.0",
     "oxlint": "^1.68.0",
     "serwist": "^9.5.11",
     "sharp": "^0.34.5",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "vitest": "^4.1.8"
   },
   "overrides": {
     "@swc/helpers": "0.5.23"

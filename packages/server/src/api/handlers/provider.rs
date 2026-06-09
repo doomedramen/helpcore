@@ -42,6 +42,7 @@ pub async fn list_providers(
                 id: provider.id,
                 name: provider.name,
                 default_model: provider.default_model,
+                context_limit: provider.context_limit,
             })
             .collect(),
     }))

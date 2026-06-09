@@ -34,6 +34,7 @@ Managed by lefthook. All run in parallel.
 | Rust tests | `cargo test --workspace` | Server tests use in-process axum (no real network) |
 | Rust audit | `cargo audit` | |
 | TypeScript | `npx tsc --noEmit` | Run from `apps/web/` |
+| Web tests | `npm run test` | Run from `apps/web/` |
 
 ## CI extras (not in lefthook, but run in CI)
 

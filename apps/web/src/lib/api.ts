@@ -3,6 +3,7 @@ import type {
   AdminConfigUpdate,
   AdminListUsersResponse,
   AdminUserSummary,
+  CompactResponse,
   ConversationSummary,
   CreateApiKeyResponse,
   CurrentUser,
@@ -18,6 +19,7 @@ import type {
   ProviderListResponse,
   RefreshResponse,
   SetupStatusResponse,
+  SseContext,
   SseDone,
   SseStarted,
   SseToolCall,
@@ -172,6 +174,16 @@ export function cancelGeneration(id: string, token: string): Promise<void> {
 }
 
 /**
+ * Compacts a conversation's history by summarising the oldest messages.
+ * @param id - Conversation ID.
+ * @param token - Access token.
+ * @returns Compaction result with the number of messages compacted and summary length.
+ */
+export function compactConversation(id: string, token: string): Promise<CompactResponse> {
+  return req(`/conversations/${id}/compact`, { method: "POST" }, token);
+}
+
+/**
  * List available LLM providers.
  * @param token - Access token.
  */
@@ -186,6 +198,7 @@ export function listProviders(token: string): Promise<ProviderListResponse> {
  * @param args.providerId - Optional provider override.
  * @param args.token - Access token.
  * @param args.onStarted - Called when the SSE stream starts.
+ * @param args.onContext - Called with context window usage data.
  * @param args.onChunk - Called with each text delta.
  * @param args.onToolCall - Optional, called when the model requests a tool.
  * @param args.onToolResult - Optional, called with the result of a tool callback.
@@ -198,6 +211,7 @@ export function retryMessage(args: {
   providerId?: string;
   token: string;
   onStarted: (started: SseStarted) => void;
+  onContext?: (context: SseContext) => void;
   onChunk: (delta: string) => void;
   onToolCall?: (call: SseToolCall) => void;
   onToolResult?: (result: SseToolResult) => void;
@@ -210,6 +224,7 @@ export function retryMessage(args: {
     method: "POST",
     body: JSON.stringify({ provider_id: args.providerId ?? null }),
     onStarted: args.onStarted,
+    onContext: args.onContext,
     onChunk: args.onChunk,
     onToolCall: args.onToolCall,
     onToolResult: args.onToolResult,
@@ -626,6 +641,7 @@ export async function submitFeedback(
  * @param args.provider_id - Optional provider override.
  * @param args.token - Access token.
  * @param args.onStarted - Called when the SSE stream starts.
+ * @param args.onContext - Called with context window usage data.
  * @param args.onChunk - Called with each text delta.
  * @param args.onToolCall - Optional, called when the model requests a tool.
  * @param args.onToolResult - Optional, called with the result of a tool callback.
@@ -638,6 +654,7 @@ export async function chat(args: {
   provider_id?: string;
   token: string;
   onStarted: (started: SseStarted) => void;
+  onContext?: (context: SseContext) => void;
   onChunk: (delta: string) => void;
   onToolCall?: (call: SseToolCall) => void;
   onToolResult?: (result: SseToolResult) => void;
@@ -650,6 +667,7 @@ export async function chat(args: {
     provider_id,
     token,
     onStarted,
+    onContext,
     onChunk,
     onToolCall,
     onToolResult,
@@ -662,6 +680,7 @@ export async function chat(args: {
     method: "POST",
     body: JSON.stringify({ message, conversation_id, provider_id }),
     onStarted,
+    onContext,
     onChunk,
     onToolCall,
     onToolResult,
@@ -676,6 +695,7 @@ async function consumeChatStream(args: {
   method: "POST";
   body?: string;
   onStarted: (started: SseStarted) => void;
+  onContext?: (context: SseContext) => void;
   onChunk: (delta: string) => void;
   onToolCall?: (call: SseToolCall) => void;
   onToolResult?: (result: SseToolResult) => void;
@@ -742,6 +762,7 @@ function processChatEvent(
   raw: string,
   handlers: {
     onStarted: (started: SseStarted) => void;
+    onContext?: (context: SseContext) => void;
     onChunk: (delta: string) => void;
     onToolCall?: (call: SseToolCall) => void;
     onToolResult?: (result: SseToolResult) => void;
@@ -758,6 +779,8 @@ function processChatEvent(
 
   if (eventName === "started") {
     handlers.onStarted(JSON.parse(eventData) as SseStarted);
+  } else if (eventName === "context") {
+    handlers.onContext?.(JSON.parse(eventData) as SseContext);
   } else if (eventName === "chunk") {
     handlers.onChunk((JSON.parse(eventData) as { delta: string }).delta);
   } else if (eventName === "tool_call") {
