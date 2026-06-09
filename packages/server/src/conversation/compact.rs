@@ -17,6 +17,32 @@ use crate::{
 /// Prompt used when asking the model to summarise a segment.
 const COMPACT_INSTRUCTIONS: &str = include_str!("../../../../prompts/compact.md");
 
+/// Extracts summary content from the model's response, handling `<summary>` wrapper
+/// tags robustly. Falls back to raw text when tags are absent or malformed.
+fn extract_summary(raw: &str) -> String {
+    let raw = raw.trim();
+
+    // Full tags present — extract content between them, even with
+    // preamble or postamble.
+    if let (Some(start), Some(end)) = (raw.find("<summary>"), raw.rfind("</summary>")) {
+        let content = &raw[start + "<summary>".len()..end];
+        return content.trim().to_string();
+    }
+
+    // Only opening tag — strip it, take everything after.
+    if let Some(rest) = raw.strip_prefix("<summary>") {
+        return rest.trim().to_string();
+    }
+
+    // Only closing tag — strip it, take everything before.
+    if let Some(content) = raw.strip_suffix("</summary>") {
+        return content.trim().to_string();
+    }
+
+    // No tags at all — return raw text as-is.
+    raw.to_string()
+}
+
 /// Approximate token count for an assembled message list.
 /// Uses ~4 chars/token + 4 tokens of role-framing overhead per message,
 /// matching the design doc's estimation heuristic.
@@ -143,15 +169,9 @@ pub async fn compact_conversation(
         }
     }
 
-    // Strip <summary> wrapper tags if the model returned them.
-    let summary = summary
-        .trim()
-        .strip_prefix("<summary>")
-        .unwrap_or(&summary)
-        .strip_suffix("</summary>")
-        .unwrap_or(&summary)
-        .trim()
-        .to_string();
+    // Extract content from <summary>…</summary> wrapper tags if present.
+    // Handles preamble/postamble, missing closing tag, and bare responses.
+    let summary = extract_summary(&summary);
 
     if summary.is_empty() {
         anyhow::bail!("provider returned an empty summary — compaction aborted");
