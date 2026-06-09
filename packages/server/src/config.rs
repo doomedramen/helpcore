@@ -408,6 +408,16 @@ impl Config {
             }
         }
 
+        if self.sandbox.image.trim().is_empty() {
+            anyhow::bail!("sandbox image cannot be empty");
+        }
+        if self.sandbox.timeout == 0 {
+            anyhow::bail!("sandbox timeout must be greater than zero");
+        }
+        if self.sandbox.memory_mb < 64 {
+            anyhow::bail!("sandbox memory limit must be at least 64MB");
+        }
+
         Ok(())
     }
 
