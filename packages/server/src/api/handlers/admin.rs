@@ -43,6 +43,11 @@ pub async fn update_config(
     config.sandbox.image = req.sandbox.image.trim().to_string();
     config.sandbox.timeout = req.sandbox.timeout;
     config.sandbox.memory_mb = req.sandbox.memory_mb;
+    config.sandbox.host = req
+        .sandbox
+        .host
+        .map(|h| h.trim().to_string())
+        .filter(|h| !h.is_empty());
 
     let mut blacklist = req
         .plugin_blacklist
@@ -197,6 +202,7 @@ fn config_response(state: &AppState, config: &Config) -> AdminConfigResponse {
             image: config.sandbox.image.clone(),
             timeout: config.sandbox.timeout,
             memory_mb: config.sandbox.memory_mb,
+            host: config.sandbox.host.clone(),
         },
         restart_required: config.server.port != state.config.server.port
             || config.logging.level != state.config.logging.level,

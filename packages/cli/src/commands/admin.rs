@@ -16,6 +16,10 @@ pub async fn sandbox_status(server_flag: Option<&str>) -> anyhow::Result<()> {
 
     println!("Sandbox Enabled: {}", sandbox.enabled);
     println!("Docker Image:    {}", sandbox.image);
+    println!(
+        "Docker Host:     {}",
+        sandbox.host.unwrap_or_else(|| "Default".into())
+    );
     println!("Timeout:         {}s", sandbox.timeout);
     println!("Memory Limit:    {}MB", sandbox.memory_mb);
 

@@ -47,10 +47,14 @@ pub struct SandboxConfig {
     /// Max memory in MB.
     #[serde(default = "default_sandbox_memory")]
     pub memory_mb: u64,
+
+    /// Optional Docker host URL (e.g. unix:///var/run/docker.sock or tcp://1.2.3.4:2375).
+    /// If omitted, defaults to local system defaults (respecting DOCKER_HOST env var).
+    pub host: Option<String>,
 }
 
 fn default_sandbox_image() -> String {
-    "ghcr.io/doomedramen/helpcore-sandbox:latest".into()
+    "ubuntu:latest".into()
 }
 fn default_sandbox_timeout() -> u64 {
     120

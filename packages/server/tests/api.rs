@@ -60,6 +60,7 @@ url  = "http://localhost:3000""#,
         db: db_pool,
         providers: ProviderRegistry::from_providers(providers),
         config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
+        sandbox: None,
     })
 }
 
@@ -381,7 +382,14 @@ roles = ["chat"]
                 "roles": ["chat"],
                 "num_ctx": null,
                 "num_predict": null
-            }]
+            }],
+            "sandbox": {
+                "enabled": false,
+                "image": "ghcr.io/doomedramen/helpcore-sandbox:latest",
+                "timeout": 120,
+                "memory_mb": 512,
+                "host": null
+            }
         }),
     )
     .await;
@@ -418,7 +426,14 @@ async fn admin_provider_changes_hot_reload_and_report_restart_state() {
                 "roles": ["chat"],
                 "num_ctx": 4096,
                 "num_predict": 1024
-            }]
+            }],
+            "sandbox": {
+                "enabled": false,
+                "image": "ghcr.io/doomedramen/helpcore-sandbox:latest",
+                "timeout": 120,
+                "memory_mb": 512,
+                "host": null
+            }
         }),
     )
     .await;
@@ -457,7 +472,14 @@ async fn admin_provider_changes_hot_reload_and_report_restart_state() {
                 "roles": ["code"],
                 "num_ctx": null,
                 "num_predict": null
-            }]
+            }],
+            "sandbox": {
+                "enabled": false,
+                "image": "ghcr.io/doomedramen/helpcore-sandbox:latest",
+                "timeout": 120,
+                "memory_mb": 512,
+                "host": null
+            }
         }),
     )
     .await;
@@ -541,7 +563,14 @@ async fn invalid_provider_save_preserves_file_and_live_registry() {
                 "roles": ["chat"],
                 "num_ctx": null,
                 "num_predict": null
-            }]
+            }],
+            "sandbox": {
+                "enabled": false,
+                "image": "ghcr.io/doomedramen/helpcore-sandbox:latest",
+                "timeout": 120,
+                "memory_mb": 512,
+                "host": null
+            }
         }),
     )
     .await;
@@ -624,7 +653,14 @@ async fn admin_accepts_hosted_and_compatible_provider_types() {
                     "num_ctx": null,
                     "num_predict": null
                 }
-            ]
+            ],
+            "sandbox": {
+                "enabled": false,
+                "image": "ghcr.io/doomedramen/helpcore-sandbox:latest",
+                "timeout": 120,
+                "memory_mb": 512,
+                "host": null
+            }
         }),
     )
     .await;

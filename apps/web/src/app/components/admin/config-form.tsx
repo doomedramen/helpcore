@@ -302,7 +302,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
             <Field label="Docker image" hint="The image used for sandbox containers.">
               <input
                 {...register("sandbox.image")}
-                placeholder="ghcr.io/doomedramen/helpcore-sandbox:latest"
+                placeholder="ubuntu:latest"
                 className={inputClass}
               />
             </Field>
@@ -322,6 +322,16 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                 min={64}
                 {...register("sandbox.memory_mb", { valueAsNumber: true })}
                 placeholder="512"
+                className={inputClass}
+              />
+            </Field>
+            <Field
+              label="Docker host URL"
+              hint="Optional. e.g. unix:///var/run/docker.sock. Defaults to system settings."
+            >
+              <input
+                {...register("sandbox.host", { setValueAs: (v) => (v === "" ? null : v) })}
+                placeholder="Default"
                 className={inputClass}
               />
             </Field>

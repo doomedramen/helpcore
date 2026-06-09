@@ -114,9 +114,19 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let sandbox = if config.sandbox.enabled {
-        match bollard::Docker::connect_with_local_defaults() {
+        let docker_res = if let Some(host) = &config.sandbox.host {
+            bollard::Docker::connect_with_http(host, 120, bollard::API_DEFAULT_VERSION)
+        } else {
+            bollard::Docker::connect_with_local_defaults()
+        };
+
+        match docker_res {
             Ok(docker) => {
-                tracing::info!(image = %config.sandbox.image, "sandbox: Docker client initialised");
+                tracing::info!(
+                    image = %config.sandbox.image,
+                    host = ?config.sandbox.host,
+                    "sandbox: Docker client initialised"
+                );
                 Some(helpcore_server::sandbox::SandboxState {
                     docker,
                     image: config.sandbox.image.clone(),

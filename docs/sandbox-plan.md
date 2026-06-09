@@ -9,7 +9,7 @@ The sandbox is implemented as a **built-in tool** (`sandbox_exec`) in the `helpc
 ### Key Components
 
 - **Built-in Tool:** `sandbox_exec` registered in `plugins/runtime.rs`.
-- **Sandbox Image:** A minimal Node/Git/Rust-ready image (`docker/sandbox.Dockerfile`).
+- **Sandbox Image:** A standard image (defaults to `ubuntu:latest`).
 - **Persistence:** A named Docker volume `helpcore-sandbox-workspace` mounted at `/workspace`.
 - **Security:** Zero network access, dropped capabilities, non-root user, and resource limits.
 
@@ -55,7 +55,7 @@ bollard = "0.18"
 ### 1.1 — Configuration
 Add `SandboxConfig` to `packages/server/src/config.rs`.
 - `enabled`: bool (default false)
-- `image`: string (default "helpcore-sandbox:latest")
+- `image`: string (default "ubuntu:latest")
 - `timeout`: u64 (default 120s)
 - `memory_mb`: u64 (default 512)
 
@@ -89,6 +89,14 @@ Update `packages/server/src/plugins/runtime.rs`:
 - **Resource Limits:** Hard caps on Memory (512MB), CPU (1 core), and PIDs (100).
 - **Hard Timeout:** Container killed after timeout (max 600s).
 - **Output Truncation:** Logs capped at 100KB to prevent memory DoS.
+
+## Production Considerations
+
+When running in a production Docker environment (e.g. Linux):
+
+1. **Socket Permissions:** Ensure the `helpcore` user in the container has permission to read/write the mounted `/var/run/docker.sock`. You may need to match the GID of the `docker` group on the host.
+2. **Security Proxy (Recommended):** Instead of mounting the raw socket, use a security proxy like `tecnativa/docker-socket-proxy`. Configure it to only allow `POST /containers/create` and `POST /containers/start`, and point `helpcore` to the proxy via the `host` setting.
+3. **Persistence:** Ensure the `helpcore-sandbox-workspace` volume is backed up if it contains important AI-generated state.
 
 ---
 

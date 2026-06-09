@@ -636,6 +636,8 @@ pub struct AdminSandboxConfig {
     pub timeout: u64,
     /// Max memory in MB.
     pub memory_mb: u64,
+    /// Optional Docker host URL override.
+    pub host: Option<String>,
 }
 
 /// Response containing the full admin-viewable server configuration.

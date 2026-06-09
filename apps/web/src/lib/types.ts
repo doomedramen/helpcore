@@ -294,6 +294,7 @@ export interface AdminSandboxConfig {
   image: string;
   timeout: number;
   memory_mb: number;
+  host: string | null;
 }
 
 /** The full admin configuration payload. */
