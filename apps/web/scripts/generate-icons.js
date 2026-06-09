@@ -22,12 +22,28 @@ async function generate() {
     const base = path.basename(src, ".svg");
     const suffix = base === "icon-light" ? "light" : null;
 
+    const isPrimary = suffix === null;
+
     for (const size of sizes) {
       const name = suffix ? `icon-${size}x${size}-${suffix}.png` : `icon-${size}x${size}.png`;
 
-      const regular = sharp(Buffer.from(svg)).resize(size, size).png();
+      const iconBuf = await sharp(Buffer.from(svg)).resize(size, size).png().toBuffer();
 
-      await regular.toFile(path.join(OUT_DIR, name));
+      if (isPrimary) {
+        await sharp({
+          create: {
+            width: size,
+            height: size,
+            channels: 4,
+            background: { r: 255, g: 255, b: 255, alpha: 1 },
+          },
+        })
+          .png()
+          .composite([{ input: iconBuf }])
+          .toFile(path.join(OUT_DIR, name));
+      } else {
+        await sharp(iconBuf).toFile(path.join(OUT_DIR, name));
+      }
       console.log(`Generated ${name}`);
 
       const safeZone = Math.round(size * 0.8);
@@ -36,18 +52,25 @@ async function generate() {
         ? `icon-${size}x${size}-maskable-${suffix}.png`
         : `icon-${size}x${size}-maskable.png`;
 
-      const icon = await sharp(Buffer.from(svg)).resize(safeZone, safeZone).png().toBuffer();
+      const maskableIcon = await sharp(Buffer.from(svg))
+        .resize(safeZone, safeZone)
+        .png()
+        .toBuffer();
+
+      const maskableCanvasBg = isPrimary
+        ? { r: 255, g: 255, b: 255, alpha: 1 }
+        : { r: 0, g: 0, b: 0, alpha: 0 };
 
       await sharp({
         create: {
           width: size,
           height: size,
           channels: 4,
-          background: { r: 0, g: 0, b: 0, alpha: 0 },
+          background: maskableCanvasBg,
         },
       })
         .png()
-        .composite([{ input: icon, top: padding, left: padding }])
+        .composite([{ input: maskableIcon, top: padding, left: padding }])
         .toFile(path.join(OUT_DIR, maskableName));
       console.log(`Generated ${maskableName}`);
     }
@@ -55,8 +78,18 @@ async function generate() {
 
   const [primarySvg] = variants;
   const primaryBuf = fs.readFileSync(path.join(IN_DIR, primarySvg), "utf-8");
-  const appleIcon = sharp(Buffer.from(primaryBuf)).resize(180, 180).png();
-  await appleIcon.toFile(path.join(OUT_DIR, "apple-touch-icon.png"));
+  const appleIconBuf = await sharp(Buffer.from(primaryBuf)).resize(180, 180).png().toBuffer();
+  await sharp({
+    create: {
+      width: 180,
+      height: 180,
+      channels: 4,
+      background: { r: 255, g: 255, b: 255, alpha: 1 },
+    },
+  })
+    .png()
+    .composite([{ input: appleIconBuf }])
+    .toFile(path.join(OUT_DIR, "apple-touch-icon.png"));
   console.log("Generated apple-touch-icon.png");
 
   const splashBg =
