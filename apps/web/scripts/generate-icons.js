@@ -76,19 +76,21 @@ async function generate() {
     }
   }
 
-  const [primarySvg] = variants;
-  const primaryBuf = fs.readFileSync(path.join(IN_DIR, primarySvg), "utf-8");
-  const appleIconBuf = await sharp(Buffer.from(primaryBuf)).resize(180, 180).png().toBuffer();
+  // apple-touch-icon: dark brand background (#0f172a) + white icon.
+  // A solid background is required — iOS renders the PNG as-is, so transparent
+  // areas become the user's wallpaper colour (invisible on dark wallpapers).
+  const appleLightSvg = fs.readFileSync(path.join(IN_DIR, "icon-light.svg"), "utf-8");
+  const appleIconSize = 120; // icon at 67 % of canvas — matches safe-zone feel
+  const appleIconBuf = await sharp(Buffer.from(appleLightSvg))
+    .resize(appleIconSize, appleIconSize)
+    .png()
+    .toBuffer();
+  const applePad = Math.round((180 - appleIconSize) / 2);
   await sharp({
-    create: {
-      width: 180,
-      height: 180,
-      channels: 4,
-      background: { r: 255, g: 255, b: 255, alpha: 1 },
-    },
+    create: { width: 180, height: 180, channels: 4, background: { r: 15, g: 23, b: 42, alpha: 1 } },
   })
     .png()
-    .composite([{ input: appleIconBuf }])
+    .composite([{ input: appleIconBuf, top: applePad, left: applePad }])
     .toFile(path.join(OUT_DIR, "apple-touch-icon.png"));
   console.log("Generated apple-touch-icon.png");
 
