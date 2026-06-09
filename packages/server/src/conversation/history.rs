@@ -3,6 +3,7 @@
 use anyhow::Context;
 use chrono::Utc;
 use rusqlite::Connection;
+use rusqlite::OptionalExtension;
 use uuid::Uuid;
 
 use helpcore_api::{ConversationSummary, MessageStatus, MessageSummary};
@@ -358,7 +359,10 @@ pub fn append_assistant_content(
         rusqlite::params![content, now, message_id],
     )?;
     if changed == 0 {
-        anyhow::bail!("assistant message is not active");
+        tracing::warn!(
+            message_id,
+            "append_assistant_content: message is no longer active (cancelled or completed)"
+        );
     }
     Ok(())
 }
@@ -368,7 +372,7 @@ pub fn finish_assistant_message(conn: &Connection, message_id: &str) -> anyhow::
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "UPDATE messages SET status = 'complete', error = NULL, updated_at = ?1
-         WHERE id = ?2 AND role = 'assistant'",
+         WHERE id = ?2 AND role = 'assistant' AND status IN ('pending', 'streaming')",
         rusqlite::params![now, message_id],
     )?;
     Ok(())
@@ -382,13 +386,7 @@ pub fn persist_tool_round(
     results: &[(crate::providers::types::ToolCall, String)],
 ) -> anyhow::Result<()> {
     let tx = conn.unchecked_transaction()?;
-    let (conversation_id, sequence, content, provider_id, model): (
-        String,
-        i64,
-        String,
-        Option<String>,
-        Option<String>,
-    ) = tx
+    let row: Option<(String, i64, String, Option<String>, Option<String>)> = tx
         .query_row(
             "SELECT conversation_id, sequence, content, provider_id, model
              FROM messages
@@ -404,7 +402,18 @@ pub fn persist_tool_round(
                 ))
             },
         )
-        .context("assistant message is not active")?;
+        .optional()?;
+
+    let (conversation_id, sequence, content, provider_id, model) = match row {
+        Some(row) => row,
+        None => {
+            tracing::warn!(
+                assistant_message_id,
+                "persist_tool_round: message is no longer active (cancelled or completed)"
+            );
+            return Ok(());
+        }
+    };
     let inserted_count = 1_i64 + results.len() as i64;
     let now = Utc::now().to_rfc3339();
     tx.execute(
@@ -480,7 +489,7 @@ pub fn fail_assistant_message(
     let now = Utc::now().to_rfc3339();
     conn.execute(
         "UPDATE messages SET status = 'failed', error = ?1, updated_at = ?2
-         WHERE id = ?3 AND role = 'assistant'",
+         WHERE id = ?3 AND role = 'assistant' AND status NOT IN ('interrupted', 'complete')",
         rusqlite::params![error, now, message_id],
     )?;
     Ok(())

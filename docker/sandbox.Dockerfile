@@ -1,18 +1,17 @@
-# Minimal sandbox image for helpcore command execution.
-FROM node:22-slim
+FROM ubuntu:24.04
 
-# Install basic tools for code exploration and building.
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
-    ca-certificates \
     curl \
+    ca-certificates \
+    python3 \
+    python3-pip \
+    jq \
+    build-essential \
     && rm -rf /var/lib/apt/lists/*
 
-# Enable pnpm for web app tasks.
-RUN corepack enable && corepack prepare pnpm@latest --activate
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+ENV PATH="/root/.cargo/bin:${PATH}"
 
-USER node
+RUN mkdir -p /workspace
 WORKDIR /workspace
-
-# Trust the workspace for git operations.
-RUN git config --global safe.directory /workspace

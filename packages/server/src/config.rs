@@ -66,7 +66,7 @@ impl Default for SandboxConfig {
 }
 
 fn default_sandbox_image() -> String {
-    "ubuntu:latest".into()
+    "helpcore-sandbox:latest".into()
 }
 fn default_sandbox_timeout() -> u64 {
     120

@@ -130,7 +130,6 @@ pub async fn exec(
                 ..Default::default()
             }]),
             // Auto-cleanup
-            auto_remove: Some(true),
             ..Default::default()
         }),
         ..Default::default()
@@ -163,11 +162,30 @@ pub async fn exec(
     let exit_code = match wait_result {
         Ok(Some(Ok(output))) => output.status_code,
         Ok(Some(Err(e))) => {
+            let _ = state
+                .docker
+                .remove_container(&id, None)
+                .await
+                .inspect_err(|e| tracing::warn!("sandbox: remove after wait error failed: {e}"));
             return Err(SandboxError::docker("wait_container", &state.host_info, e));
         }
-        Ok(None) => return Err(anyhow::anyhow!("container disappeared before exiting").into()),
+        Ok(None) => {
+            let _ = state
+                .docker
+                .remove_container(&id, None)
+                .await
+                .inspect_err(|e| {
+                    tracing::warn!("sandbox: remove after disappeared container failed: {e}")
+                });
+            return Err(anyhow::anyhow!("container disappeared before exiting").into());
+        }
         Err(_) => {
             let _ = state.docker.kill_container::<String>(&id, None).await;
+            let _ = state
+                .docker
+                .remove_container(&id, None)
+                .await
+                .inspect_err(|e| tracing::warn!("sandbox: remove after timeout failed: {e}"));
             return Err(SandboxError::Timeout(timeout_secs));
         }
     };
@@ -222,6 +240,13 @@ pub async fn exec(
             break;
         }
     }
+
+    // Remove container now that logs are collected.
+    let _ = state
+        .docker
+        .remove_container(&id, None)
+        .await
+        .inspect_err(|e| tracing::warn!("sandbox: remove after exec failed: {e}"));
 
     Ok(SandboxResult {
         stdout,
