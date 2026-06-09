@@ -37,6 +37,21 @@ fi
 # volume root; files created below it will inherit the unprivileged user.
 chown helpcore:helpcore "$data_dir"
 
+# If a Docker socket is mounted, add the helpcore user to its group so the
+# sandbox can connect via bollard.
+DOCKER_SOCK="/var/run/docker.sock"
+if [ -S "$DOCKER_SOCK" ] && [ "$(id -u)" = "0" ]; then
+    DOCKER_GID="$(stat -c '%g' "$DOCKER_SOCK" 2>/dev/null || true)"
+    if [ -n "$DOCKER_GID" ] && [ "$DOCKER_GID" != "0" ]; then
+        if getent group "$DOCKER_GID" >/dev/null 2>&1; then
+            addgroup helpcore "$(getent group "$DOCKER_GID" | cut -d: -f1)" 2>/dev/null || true
+        else
+            addgroup -g "$DOCKER_GID" docker 2>/dev/null || true
+            addgroup helpcore docker 2>/dev/null || true
+        fi
+    fi
+fi
+
 if [ "$(id -u)" = "0" ]; then
     exec su-exec helpcore "$@"
 fi
