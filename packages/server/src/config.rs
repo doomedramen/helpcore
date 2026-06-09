@@ -486,10 +486,10 @@ impl Config {
                 path.display()
             ));
         }
-        if path.exists() {
-            if let Err(error) = std::fs::OpenOptions::new().write(true).open(path) {
-                return Err(format!("{} is not writable: {error}", path.display()));
-            }
+        if path.exists()
+            && let Err(error) = std::fs::OpenOptions::new().write(true).open(path)
+        {
+            return Err(format!("{} is not writable: {error}", path.display()));
         }
         let parent = path.parent().unwrap_or_else(|| Path::new("."));
         if !parent.exists() {

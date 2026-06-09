@@ -109,16 +109,14 @@ pub async fn compact_conversation(
     let segment_len = {
         let mut ids_in_segment = std::collections::HashSet::new();
         for msg in &candidates[..segment_len] {
-            if msg.role == "assistant" {
-                if let Some(ref tc_json) = msg.tool_calls {
-                    if let Ok(calls) = serde_json::from_str::<serde_json::Value>(tc_json) {
-                        if let Some(arr) = calls.as_array() {
-                            for call in arr {
-                                if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
-                                    ids_in_segment.insert(id.to_string());
-                                }
-                            }
-                        }
+            if msg.role == "assistant"
+                && let Some(ref tc_json) = msg.tool_calls
+                && let Ok(calls) = serde_json::from_str::<serde_json::Value>(tc_json)
+                && let Some(arr) = calls.as_array()
+            {
+                for call in arr {
+                    if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
+                        ids_in_segment.insert(id.to_string());
                     }
                 }
             }

@@ -143,12 +143,10 @@ async fn download(url: &str, expected_size: Option<u64>) -> anyhow::Result<Vec<u
 }
 
 fn validate_download_size(actual: usize, expected: Option<u64>) -> anyhow::Result<()> {
-    if let Some(expected) = expected {
-        if actual as u64 != expected {
-            anyhow::bail!(
-                "plugin package size mismatch: expected {expected} bytes, received {actual}"
-            );
-        }
+    if let Some(expected) = expected
+        && actual as u64 != expected
+    {
+        anyhow::bail!("plugin package size mismatch: expected {expected} bytes, received {actual}");
     }
     Ok(())
 }
