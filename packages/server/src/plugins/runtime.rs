@@ -196,6 +196,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "sandbox_ps",
     "sandbox_logs",
     "sandbox_kill",
+    "git_commit_push",
 ];
 
 /// Directory inside the sandbox container holding background process logs and
@@ -679,6 +680,24 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     }
                 },
                 "required": ["process_id"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "git_commit_push".into(),
+            description: "Stage all changes, commit with a message, and push to the \\\\
+                          remote repository in the helpcore workspace. Returns the \\\\
+                          commit hash and push output. The repo must have a configured \\\\
+                          git remote and credentials.".into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "message": {
+                        "type": "string",
+                        "description": "Commit message"
+                    }
+                },
+                "required": ["message"],
                 "additionalProperties": false
             }),
         },
@@ -1524,6 +1543,29 @@ async fn execute_builtin(
                 "result": result.stdout.trim()
             })
             .to_string())
+        }
+        "git_commit_push" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let message = require_str_arg(&call.arguments, "message")?;
+            let msg_b64 = base64::engine::general_purpose::STANDARD.encode(message);
+            let cmd = format!(
+                "cd /workspace/helpcore && \\
+                 git add -A && \\
+                 git commit -m \"$(echo '{}' | base64 -d)\" 2>&1 && \\
+                 git push 2>&1",
+                msg_b64
+            );
+            let result = crate::sandbox::exec(sandbox, &cmd, Some(60)).await?;
+            if result.exit_code != 0 {
+                anyhow::bail!("git commit/push failed: {}", result.stderr.trim());
+            }
+            Ok(serde_json::json!({
+                "action": "git_commit_push",
+                "output": result.stdout
+            }).to_string())
         }
         other => anyhow::bail!("unknown built-in tool {other}"),
     }
