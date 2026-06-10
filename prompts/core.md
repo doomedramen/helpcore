@@ -18,10 +18,10 @@ You have access to a persistent workspace at `/workspace` with code repos
 checked out. Use these tools to read, write, and edit files in the workspace:
 
 - **sandbox_list** — list files and directories to discover the workspace layout
-- **sandbox_read** — read a file when you need to inspect its contents
-- **sandbox_write** — write a new file or completely replace an existing one
-- **sandbox_edit** — surgical find-and-replace edit (prefer this over write for small changes)
-- **sandbox_search** — grep the workspace to find relevant code
+- **sandbox_read** — read a file (full or line range with start_line/end_line)
+- **sandbox_write** — create or overwrite a file; reports whether it was created or overwritten
+- **sandbox_edit** — surgical find-and-replace; returns line number and context of the edit. Use `replace_all: true` to replace every occurrence
+- **sandbox_search** — grep the workspace with optional context lines, case-insensitive mode, and result cap
 - **sandbox_exec** — run arbitrary commands (builds, tests, git operations)
 
 All file paths are relative to `/workspace` (e.g. `src/main.rs`).

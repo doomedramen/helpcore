@@ -105,7 +105,7 @@ impl ToolCatalog {
         Ok(Self {
             definitions,
             tools,
-            max_rounds: Arc::new(AtomicU32::new(8)),
+            max_rounds: Arc::new(AtomicU32::new(75)),
         })
     }
 
@@ -115,21 +115,21 @@ impl ToolCatalog {
     }
 
     /// Returns the current maximum number of tool-call rounds for this turn.
-    /// Defaults to 8, but may be increased by the model via `request_rounds`.
+    /// Defaults to 75, but may be increased by the model via `request_rounds`.
     pub fn max_rounds(&self) -> u32 {
         self.max_rounds.load(Ordering::Relaxed)
     }
 
-    /// Increases the tool-call round limit by `count`, capped at 50 total.
+    /// Increases the tool-call round limit by `count`, capped at 500 total.
     /// Returns the new maximum.
     pub fn request_rounds(&self, count: u32) -> u32 {
-        let clamped = count.min(50);
+        let clamped = count.min(100);
         self.max_rounds
             .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
-                Some((cur + clamped).min(50))
+                Some((cur + clamped).min(500))
             })
-            .map(|old| (old + clamped).min(50))
-            .unwrap_or(50)
+            .map(|old| (old + clamped).min(500))
+            .unwrap_or(500)
     }
 
     /// Dispatches a tool call to the appropriate runtime (built-in, WASM, or bridge).
@@ -383,7 +383,7 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "request_rounds".into(),
             description: "Request more tool-call rounds for the current turn. \
-                You start with 8 rounds per turn (each round = one text reply + \
+                You start with 75 rounds per turn (each round = one text reply + \
                 optional tool calls). Use this when you know you'll need many tool \
                 calls in one burst (e.g. reading a large codebase or doing extensive \
                 research). After each tool result you see [Tool round: N/M] so you \
@@ -399,8 +399,8 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "count": {
                         "type": "integer",
                         "minimum": 1,
-                        "maximum": 50,
-                        "description": "Number of ADDITIONAL rounds you need (capped at 50 total)"
+                        "maximum": 100,
+                        "description": "Number of ADDITIONAL rounds you need (capped at 500 total)"
                     }
                 },
                 "required": ["reason", "count"],
@@ -433,7 +433,9 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "sandbox_read".into(),
             description: "Read a file from the sandbox workspace. \
-                          Returns the full file content. Errors if the file does not exist."
+                          Returns the full file content, or a line range when \
+                          start_line/end_line are provided. \
+                          Errors if the file does not exist."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -441,6 +443,16 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     "path": {
                         "type": "string",
                         "description": "Path relative to /workspace, e.g. 'src/main.rs'"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "First line to read (1-based, default 1)",
+                        "minimum": 1
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Last line to read (1-based, inclusive). Omit or set high to read to EOF.",
+                        "minimum": 1
                     }
                 },
                 "required": ["path"],
@@ -472,8 +484,10 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "sandbox_edit".into(),
             description: "Perform a surgical find-and-replace in a file in the sandbox workspace. \
-                          Replaces the first occurrence of 'old' with 'new'. \
+                          Replaces the first occurrence of 'old' with 'new' by default, \
+                          or all occurrences when replace_all is true. \
                           Prefer this over sandbox_write for small changes. \
+                          Returns the line number and surrounding context of the edit. \
                           Errors if the pattern is not found."
                 .into(),
             input_schema: serde_json::json!({
@@ -485,11 +499,15 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     },
                     "old": {
                         "type": "string",
-                        "description": "Exact text to find and replace (first occurrence)"
+                        "description": "Exact text to find and replace"
                     },
                     "new": {
                         "type": "string",
                         "description": "Replacement text"
+                    },
+                    "replace_all": {
+                        "type": "boolean",
+                        "description": "Replace all occurrences instead of just the first (default false)"
                     }
                 },
                 "required": ["path", "old", "new"],
@@ -806,14 +824,14 @@ async fn execute_builtin(
                 .get("count")
                 .and_then(serde_json::Value::as_u64)
                 .context("request_rounds requires a numeric 'count' argument")?;
-            let count = count.min(50) as u32;
+            let count = count.min(100) as u32;
             let current = max_rounds.load(Ordering::Relaxed);
             let new_max = max_rounds
                 .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
-                    Some((cur + count).min(50))
+                    Some((cur + count).min(500))
                 })
-                .map(|old| (old + count).min(50))
-                .unwrap_or_else(|_| (current + count).min(50));
+                .map(|old| (old + count).min(500))
+                .unwrap_or_else(|_| (current + count).min(500));
             Ok(serde_json::json!({
                 "action": "request_rounds",
                 "previous_max": current,
@@ -858,7 +876,26 @@ async fn execute_builtin(
             let path = require_str_arg(&call.arguments, "path")?;
             let workspace_path = validate_workspace_path(path)?;
             let escaped = shell_escape(&workspace_path);
-            let cmd = format!("cat {escaped}");
+
+            let start_line = call
+                .arguments
+                .get("start_line")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(1)
+                .max(1);
+            let end_line = call
+                .arguments
+                .get("end_line")
+                .and_then(serde_json::Value::as_u64);
+
+            let cmd = if let Some(end) = end_line {
+                format!("sed -n '{start_line},{end}p' {escaped}")
+            } else if start_line > 1 {
+                format!("sed -n '{start_line},$p' {escaped}")
+            } else {
+                format!("cat {escaped}")
+            };
+
             let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
             if result.exit_code != 0 {
                 anyhow::bail!("file not found: {path}\n{}", result.stderr.trim());
@@ -880,12 +917,19 @@ async fn execute_builtin(
                 .unwrap_or_else(|| "/workspace".to_string());
             let escaped_dir = shell_escape(&parent);
             let b64 = base64::engine::general_purpose::STANDARD.encode(content);
-            let cmd = format!("mkdir -p {escaped_dir} && echo '{b64}' | base64 -d > {escaped}");
+            let cmd = format!(
+                "if test -f {escaped}; then echo 'EXISTS'; else echo 'NEW'; fi && mkdir -p {escaped_dir} && echo '{b64}' | base64 -d > {escaped}"
+            );
             let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
             if result.exit_code != 0 {
                 anyhow::bail!("failed to write {path}: {}", result.stderr.trim());
             }
-            Ok(serde_json::json!({ "written": path }).to_string())
+            let action = if result.stdout.starts_with("EXISTS") {
+                "overwritten"
+            } else {
+                "created"
+            };
+            Ok(serde_json::json!({ action: path }).to_string())
         }
         "sandbox_edit" => {
             let sandbox = state
@@ -895,23 +939,40 @@ async fn execute_builtin(
             let path = require_str_arg(&call.arguments, "path")?;
             let old = require_str_arg(&call.arguments, "old")?;
             let new = require_str_arg(&call.arguments, "new")?;
+            let replace_all = call
+                .arguments
+                .get("replace_all")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
             let workspace_path = validate_workspace_path(path)?;
             let escaped = shell_escape(&workspace_path);
             let old_b64 = base64::engine::general_purpose::STANDARD.encode(old);
             let new_b64 = base64::engine::general_purpose::STANDARD.encode(new);
+            let ra = if replace_all { "true" } else { "false" };
             let cmd = format!(
                 r#"python3 -c '
-import sys, base64
+import sys, base64, json
 f = sys.argv[1]
 o = base64.b64decode(sys.argv[2]).decode()
 n = base64.b64decode(sys.argv[3]).decode()
+replace_all = sys.argv[4] == "true"
 c = open(f).read()
 if o not in c:
     print("ERROR: pattern not found", file=sys.stderr)
     sys.exit(1)
-open(f, "w").write(c.replace(o, n, 1))
-print("replaced")
-' {escaped} {old_b64} {new_b64}"#
+count = c.count(o) if replace_all else 1
+new_c = c.replace(o, n) if replace_all else c.replace(o, n, 1)
+open(f, "w").write(new_c)
+idx = c.find(o)
+line = c[:idx].count("\n") + 1
+lines = c.split("\n")
+ctx_start = max(0, line - 3)
+ctx_end = min(len(lines), line + 3)
+ctx_lines = []
+for i in range(ctx_start, ctx_end):
+    ctx_lines.append(f"{{i + 1}}: {{lines[i]}}")
+print(json.dumps({{"line": line, "replacements": count, "context": "\n".join(ctx_lines)}}))
+' {escaped} {old_b64} {new_b64} {ra}"#
             );
             let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
             if result.exit_code != 0 {
@@ -920,7 +981,9 @@ print("replaced")
                 }
                 anyhow::bail!("failed to edit {path}: {}", result.stderr.trim());
             }
-            Ok(serde_json::json!({ "replaced": path }).to_string())
+            let mut response: serde_json::Value = serde_json::from_str(result.stdout.trim())?;
+            response["replaced"] = serde_json::Value::String(path.to_string());
+            Ok(response.to_string())
         }
         "sandbox_search" => {
             let sandbox = state
@@ -1637,45 +1700,54 @@ mod tests {
         let catalog = ToolCatalog {
             definitions: Vec::new(),
             tools: HashMap::new(),
-            max_rounds: Arc::new(AtomicU32::new(8)),
+            max_rounds: Arc::new(AtomicU32::new(75)),
         };
 
-        assert_eq!(catalog.max_rounds(), 8);
+        assert_eq!(catalog.max_rounds(), 75);
 
         let new = catalog.request_rounds(5);
-        assert_eq!(new, 13);
-        assert_eq!(catalog.max_rounds(), 13);
+        assert_eq!(new, 80);
+        assert_eq!(catalog.max_rounds(), 80);
 
         let new = catalog.request_rounds(10);
-        assert_eq!(new, 23);
-        assert_eq!(catalog.max_rounds(), 23);
+        assert_eq!(new, 90);
+        assert_eq!(catalog.max_rounds(), 90);
     }
 
     #[test]
-    fn request_rounds_caps_at_50() {
+    fn request_rounds_caps_at_500() {
         let catalog = ToolCatalog {
             definitions: Vec::new(),
             tools: HashMap::new(),
-            max_rounds: Arc::new(AtomicU32::new(8)),
+            max_rounds: Arc::new(AtomicU32::new(75)),
         };
 
+        // Each call adds at most 100, total capped at 500
         let new = catalog.request_rounds(100);
-        assert_eq!(new, 50, "should cap at 50");
-        assert_eq!(catalog.max_rounds(), 50);
+        assert_eq!(new, 175);
+        let new = catalog.request_rounds(100);
+        assert_eq!(new, 275);
+        let new = catalog.request_rounds(100);
+        assert_eq!(new, 375);
+        let new = catalog.request_rounds(100);
+        assert_eq!(new, 475);
+        let new = catalog.request_rounds(100);
+        assert_eq!(new, 500, "should cap at 500");
+        assert_eq!(catalog.max_rounds(), 500);
 
-        // Already at 50 — further calls shouldn't increase
+        // Already at 500 — further calls shouldn't increase
         let new = catalog.request_rounds(1);
-        assert_eq!(new, 50, "should stay at 50");
-        assert_eq!(catalog.max_rounds(), 50);
+        assert_eq!(new, 500, "should stay at 500");
+        assert_eq!(catalog.max_rounds(), 500);
     }
 
     #[test]
-    fn request_rounds_defaults_to_8() {
+    fn request_rounds_defaults_to_75() {
         let catalog = ToolCatalog {
             definitions: Vec::new(),
             tools: HashMap::new(),
-            max_rounds: Arc::new(AtomicU32::new(8)),
+            max_rounds: Arc::new(AtomicU32::new(75)),
         };
-        assert_eq!(catalog.max_rounds(), 8);
+        assert_eq!(catalog.max_rounds(), 75);
     }
 }
