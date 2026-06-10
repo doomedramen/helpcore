@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 
 .PHONY: help run check test build build-headless install uninstall \
-        docker-up docker-down docker-logs docs
+        docker-up docker-down docker-logs docs sandbox-image
 
 WEB_DIR := $(CURDIR)/apps/web
 CARGO := cargo
@@ -53,3 +53,6 @@ docker-down: ## Stop the Docker stack
 
 docker-logs: ## Follow server logs
 	docker compose logs -f helpcore
+
+sandbox-image: ## Build the sandbox container image (helpcore-sandbox:latest)
+	docker build -t helpcore-sandbox:latest -f docker/sandbox.Dockerfile docker

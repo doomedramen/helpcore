@@ -1,5 +1,6 @@
 //! Plugin system: manifests, package installation, WASM/bridge runtimes, secrets, and tokens.
 
+pub mod edit;
 pub mod package;
 pub mod registry;
 pub mod runtime;

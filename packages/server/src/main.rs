@@ -136,9 +136,7 @@ async fn main() -> anyhow::Result<()> {
                 Some(helpcore_server::sandbox::SandboxState::new(
                     docker,
                     host_info.clone(),
-                    config.sandbox.image.clone(),
-                    config.sandbox.timeout,
-                    config.sandbox.memory_mb,
+                    &config.sandbox,
                 ))
             }
             Err(e) => {

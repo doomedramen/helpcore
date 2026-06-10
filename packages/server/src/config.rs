@@ -36,7 +36,7 @@ pub struct SandboxConfig {
     pub enabled: bool,
 
     /// Docker image to use for sandbox containers.
-    /// Defaults to ubuntu:latest.
+    /// Defaults to helpcore-sandbox:latest (build with `make sandbox-image`).
     #[serde(default = "default_sandbox_image")]
     pub image: String,
 
@@ -44,13 +44,43 @@ pub struct SandboxConfig {
     #[serde(default = "default_sandbox_timeout")]
     pub timeout: u64,
 
-    /// Max memory in MB.
+    /// Max memory in MB. Compilers and test suites need real headroom, so the
+    /// default is generous.
     #[serde(default = "default_sandbox_memory")]
     pub memory_mb: u64,
+
+    /// CPU limit for the sandbox container (fractional values allowed).
+    #[serde(default = "default_sandbox_cpus")]
+    pub cpus: f64,
 
     /// Optional Docker host URL (e.g. unix:///var/run/docker.sock or tcp://1.2.3.4:2375).
     /// If omitted, defaults to local system defaults (respecting DOCKER_HOST env var).
     pub host: Option<String>,
+
+    /// Git identity and credentials applied inside the sandbox.
+    #[serde(default)]
+    pub git: SandboxGitConfig,
+
+    /// Repository URLs cloned into /workspace when the session container
+    /// starts (skipped when the target directory already exists).
+    #[serde(default)]
+    pub repos: Vec<String>,
+}
+
+/// Git settings applied inside the sandbox session container so commits and
+/// pushes work out of the box.
+#[derive(Debug, Clone, Deserialize, Serialize, Default)]
+pub struct SandboxGitConfig {
+    /// Commit author/committer name (git config user.name).
+    pub user_name: Option<String>,
+    /// Commit author/committer email (git config user.email).
+    pub user_email: Option<String>,
+    /// Access token for HTTPS git remotes. Exposed to the container as
+    /// GIT_TOKEN and wired into a git credential helper.
+    pub token: Option<String>,
+    /// Username paired with the token (defaults to "x-access-token", which
+    /// GitHub accepts for fine-grained and installation tokens).
+    pub token_user: Option<String>,
 }
 
 impl Default for SandboxConfig {
@@ -60,7 +90,10 @@ impl Default for SandboxConfig {
             image: default_sandbox_image(),
             timeout: default_sandbox_timeout(),
             memory_mb: default_sandbox_memory(),
+            cpus: default_sandbox_cpus(),
             host: None,
+            git: SandboxGitConfig::default(),
+            repos: Vec::new(),
         }
     }
 }
@@ -72,7 +105,10 @@ fn default_sandbox_timeout() -> u64 {
     120
 }
 fn default_sandbox_memory() -> u64 {
-    512
+    4096
+}
+fn default_sandbox_cpus() -> f64 {
+    2.0
 }
 
 /// Plugin management configuration including blacklists and local plugins.

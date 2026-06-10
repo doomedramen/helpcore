@@ -35,6 +35,47 @@ blacklist = []
 # Direct URL to a plugin registry JSON file. This can be self-hosted.
 url = "https://github.com/doomedramen/helpcore-plugins/releases/download/plugins-latest/plugins.json"
 
+[sandbox]
+# Docker sandbox for the assistant's workspace tools (sandbox_exec & friends).
+# Commands run in a long-lived session container with a persistent volume
+# mounted at /workspace; the container is recreated when settings change and
+# removed after 30 minutes idle.
+enabled = false
+
+# Image for the session container. Build the bundled image with:
+#   make sandbox-image
+# Any image with /bin/sh and coreutils (timeout) works.
+image = "helpcore-sandbox:latest"
+
+# Default per-command timeout in seconds (commands may request up to 600).
+timeout = 120
+
+# Resource limits for the session container. Compilers and test suites need
+# real headroom — raise these if builds are slow or get OOM-killed.
+memory_mb = 4096
+cpus = 2.0
+
+# Docker host. Leave unset for the local daemon (respects DOCKER_HOST), or
+# point at a remote daemon, e.g. "tcp://192.168.1.10:2375".
+# host = "unix:///var/run/docker.sock"
+
+# Repositories cloned into /workspace when the session container starts
+# (skipped if the directory already exists).
+# repos = ["https://github.com/you/your-project.git"]
+
+# [sandbox.git]
+# Git identity used for commits made inside the sandbox.
+# user_name  = "My Assistant"
+# user_email = "assistant@example.com"
+#
+# Access token for HTTPS git remotes (cloning private repos, pushing).
+# The token is injected into the container environment and used via a git
+# credential helper; it is never written to disk inside the container.
+# For GitHub, a fine-grained PAT with contents read/write works; token_user
+# can usually stay at its default ("x-access-token").
+# token      = "github_pat_..."
+# token_user = "x-access-token"
+
 # ── Providers ──────────────────────────────────────────────────────────────────
 # At least one provider with role "chat" is required for /chat to work.
 # Multiple providers can be listed; the first matching role is used unless

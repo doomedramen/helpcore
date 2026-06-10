@@ -20,6 +20,11 @@ const CHARTS_CAPABILITIES: &str = include_str!("../../../../prompts/charts.md");
 /// Rules injected when the user has memory files — edit `prompts/memory_rules.md`.
 const MEMORY_RULES: &str = include_str!("../../../../prompts/memory_rules.md");
 
+/// Workspace / sandbox tool guidance — only injected when the sandbox is
+/// enabled and Docker is reachable, matching when the sandbox_* tools are
+/// actually offered. Edit `prompts/sandbox.md`.
+const SANDBOX_CAPABILITIES: &str = include_str!("../../../../prompts/sandbox.md");
+
 /// Optional context layers injected between the core instructions and history.
 ///
 /// All fields default to empty / None so callers that don't have memory yet
@@ -47,6 +52,9 @@ pub struct ContextOptions<'a> {
     pub context_limit: Option<u32>,
     /// Estimated token count of the assembled message list.
     pub estimated_tokens: Option<usize>,
+    /// Whether the execution sandbox is available. Gates the workspace tool
+    /// guidance so the model is never prompted about tools it doesn't have.
+    pub sandbox_enabled: bool,
 }
 
 /// Assembles the full message list sent to the provider.
@@ -116,6 +124,11 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
     // Capabilities — non-negotiable, always present regardless of personality
     out.push_str("\n\n");
     out.push_str(CHARTS_CAPABILITIES);
+
+    if opts.sandbox_enabled {
+        out.push_str("\n\n");
+        out.push_str(SANDBOX_CAPABILITIES);
+    }
 
     if let Some(soul) = opts.soul {
         out.push_str("\n\n## Soul\n");
@@ -370,5 +383,28 @@ mod tests {
             messages[0].content.contains("## Current date"),
             "missing current date"
         );
+    }
+
+    #[test]
+    fn workspace_guidance_follows_sandbox_availability() {
+        let without = assemble(&[], "hi", ContextOptions::default());
+        assert!(
+            !without[0].content.contains("## Workspace editing"),
+            "workspace guidance must be absent when the sandbox is unavailable"
+        );
+
+        let with = assemble(
+            &[],
+            "hi",
+            ContextOptions {
+                sandbox_enabled: true,
+                ..Default::default()
+            },
+        );
+        assert!(
+            with[0].content.contains("## Workspace editing"),
+            "workspace guidance missing despite sandbox being enabled"
+        );
+        assert!(with[0].content.contains("sandbox_exec"));
     }
 }

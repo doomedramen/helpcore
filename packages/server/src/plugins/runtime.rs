@@ -83,6 +83,13 @@ impl ToolCatalog {
             .call(move |conn| crate::plugins::registry::list_enabled(conn, &user_id))
             .await?;
         let mut definitions = builtin_tool_definitions();
+        // Don't offer the sandbox tools when the sandbox is disabled or
+        // Docker is unreachable — advertising tools that can only fail wastes
+        // context and invites doomed calls. The names stay reserved (plugins
+        // still can't shadow them) and the handlers keep their own guard.
+        if state.sandbox.is_none() {
+            definitions.retain(|definition| !definition.name.starts_with("sandbox_"));
+        }
         let mut tools = HashMap::new();
         for plugin in plugins.into_iter().filter(|plugin| plugin.enabled) {
             for tool in &plugin.tools.tools {
@@ -186,7 +193,15 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "sandbox_edit",
     "sandbox_search",
     "sandbox_exec",
+    "sandbox_ps",
+    "sandbox_logs",
+    "sandbox_kill",
 ];
+
+/// Directory inside the sandbox container holding background process logs and
+/// metadata. Lives on the container's own filesystem (not /workspace) so its
+/// lifetime matches the processes themselves.
+const SANDBOX_PROC_DIR: &str = "/tmp/helpcore-proc";
 
 pub(crate) fn is_builtin_tool(name: &str) -> bool {
     BUILTIN_TOOL_NAMES.contains(&name)
@@ -433,9 +448,14 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "sandbox_read".into(),
             description: "Read a file from the sandbox workspace. \
-                          Returns the full file content, or a line range when \
-                          start_line/end_line are provided. \
-                          Errors if the file does not exist."
+                          Each line is prefixed with its line number (like cat -n), \
+                          and the file's total line count is returned alongside. \
+                          Reads up to 2000 lines from start_line by default; when the \
+                          file is longer, the response includes a hint with the \
+                          start_line to continue from. Lines longer than 2000 \
+                          characters are clipped. \
+                          If the path does not exist, the error suggests similarly \
+                          named files in the workspace."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -484,11 +504,16 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "sandbox_edit".into(),
             description: "Perform a surgical find-and-replace in a file in the sandbox workspace. \
-                          Replaces the first occurrence of 'old' with 'new' by default, \
-                          or all occurrences when replace_all is true. \
+                          'old' must identify ONE place in the file: if it matches several, \
+                          the call fails with the matching line numbers — add surrounding \
+                          lines to 'old' to pinpoint one, or set replace_all to change every \
+                          occurrence. Matching tolerates small whitespace/indentation \
+                          differences (the response reports which match_strategy was used; \
+                          'exact' means a verbatim match). \
                           Prefer this over sandbox_write for small changes. \
-                          Returns the line number and surrounding context of the edit. \
-                          Errors if the pattern is not found."
+                          Returns the line number and post-edit context so you can verify \
+                          the change. If the pattern is not found, the error lists the \
+                          closest near-matches so you can correct it."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -516,9 +541,11 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "sandbox_search".into(),
-            description: "Search for a pattern in the sandbox workspace using grep. \
+            description: "Search for a regex pattern in the sandbox workspace \
+                          (ripgrep, falling back to grep; .gitignore'd files are \
+                          skipped when ripgrep is available). \
                           Returns matching lines in <file>:<line>:<text> format. \
-                          Use an optional path filter to narrow the search scope. \
+                          Use an optional path or glob filter to narrow the search scope. \
                           Supports context lines, case-insensitive search, and a result cap."
                 .into(),
             input_schema: serde_json::json!({
@@ -526,11 +553,15 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                 "properties": {
                     "pattern": {
                         "type": "string",
-                        "description": "Regex pattern to search for (grep -rn)"
+                        "description": "Regex pattern to search for"
                     },
                     "path": {
                         "type": "string",
                         "description": "Optional directory or file to limit search scope, e.g. 'src/'"
+                    },
+                    "glob": {
+                        "type": "string",
+                        "description": "Optional filename glob to filter results, e.g. '*.rs'"
                     },
                     "context": {
                         "type": "integer",
@@ -555,11 +586,15 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         },
         ToolDefinition {
             name: "sandbox_exec".into(),
-            description: "Execute a shell command in a sandboxed Docker container. \
-                          The workspace /workspace is persistent across calls. \
-                          The container has no network access and is destroyed \
-                          after execution. Use this to explore files, run builds, \
-                          test code, and perform other system-level tasks."
+            description: "Execute a shell command in the sandbox: a persistent Linux \
+                          container with network access (git clone/push, curl, and \
+                          package installs all work). /workspace is on a persistent \
+                          volume and survives across commands; toolchain caches \
+                          (cargo, pip, npm) persist under /workspace/.cache, so \
+                          repeated builds are incremental. Use this for builds, \
+                          tests, git operations, and installs. Set background=true \
+                          to start a long-running process (e.g. a dev server) and \
+                          manage it with sandbox_ps / sandbox_logs / sandbox_kill."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
@@ -573,9 +608,77 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                         "description": "Max execution time in seconds (default 120, max 600)",
                         "minimum": 1,
                         "maximum": 600
+                    },
+                    "cwd": {
+                        "type": "string",
+                        "description": "Working directory relative to /workspace, e.g. 'myrepo' (default: /workspace)"
+                    },
+                    "env": {
+                        "type": "object",
+                        "description": "Extra environment variables for this command, e.g. {\"RUST_BACKTRACE\": \"1\"}",
+                        "additionalProperties": { "type": "string" }
+                    },
+                    "background": {
+                        "type": "boolean",
+                        "description": "Start the command as a background process and return immediately with a process_id (default false)"
                     }
                 },
                 "required": ["command"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "sandbox_ps".into(),
+            description: "List background processes started with sandbox_exec \
+                          (background=true): process id, pid, running/exited status, \
+                          start time, and command."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {},
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "sandbox_logs".into(),
+            description: "Show the captured output (stdout and stderr combined) of a \
+                          background process started with sandbox_exec, plus whether \
+                          it is still running. Returns the last N lines."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "process_id": {
+                        "type": "string",
+                        "description": "Process id returned by sandbox_exec with background=true"
+                    },
+                    "lines": {
+                        "type": "integer",
+                        "description": "Number of trailing log lines to return (default 100, max 2000)",
+                        "minimum": 1,
+                        "maximum": 2000
+                    }
+                },
+                "required": ["process_id"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "sandbox_kill".into(),
+            description: "Stop a background process started with sandbox_exec. Sends \
+                          SIGTERM to the process group, waits a few seconds, then \
+                          SIGKILLs if it is still alive. The process log remains \
+                          readable with sandbox_logs afterwards."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "process_id": {
+                        "type": "string",
+                        "description": "Process id returned by sandbox_exec with background=true"
+                    }
+                },
+                "required": ["process_id"],
                 "additionalProperties": false
             }),
         },
@@ -589,11 +692,7 @@ fn require_str_arg<'a>(arguments: &'a serde_json::Value, key: &str) -> anyhow::R
         .with_context(|| format!("tool call is missing required string argument '{key}'"))
 }
 
-/// Escapes a string for use inside single quotes in a POSIX shell command.
-/// Replaces embedded `'` with `'\''` and wraps the result in single quotes.
-fn shell_escape(s: &str) -> String {
-    format!("'{}'", s.replace('\'', "'\\''"))
-}
+use crate::sandbox::shell_escape;
 
 /// Validates that a path does not traverse outside `/workspace` and
 /// returns a normalized absolute workspace path.
@@ -622,6 +721,160 @@ fn validate_workspace_path(path: &str) -> anyhow::Result<String> {
         }
     }
     Ok(result)
+}
+
+/// Parses the optional `env` object argument into KEY=VALUE pairs, rejecting
+/// names that are not valid environment variable identifiers.
+fn parse_env_arg(arguments: &serde_json::Value) -> anyhow::Result<Vec<String>> {
+    let Some(env) = arguments.get("env") else {
+        return Ok(Vec::new());
+    };
+    let env = env
+        .as_object()
+        .context("'env' must be an object of string values")?;
+    let mut pairs = Vec::with_capacity(env.len());
+    for (key, value) in env {
+        let valid = !key.is_empty()
+            && !key.starts_with(|c: char| c.is_ascii_digit())
+            && key.chars().all(|c| c == '_' || c.is_ascii_alphanumeric());
+        if !valid {
+            anyhow::bail!("invalid environment variable name '{key}'");
+        }
+        let value = value
+            .as_str()
+            .with_context(|| format!("env value for '{key}' must be a string"))?;
+        pairs.push(format!("{key}={value}"));
+    }
+    Ok(pairs)
+}
+
+/// Validates a background process id (as returned by `sandbox_exec` with
+/// `background=true`) so it can be safely interpolated into shell commands.
+fn validate_process_id(id: &str) -> anyhow::Result<&str> {
+    if id.is_empty() || id.len() > 16 || !id.chars().all(|c| c.is_ascii_alphanumeric()) {
+        anyhow::bail!("invalid process id '{id}'");
+    }
+    Ok(id)
+}
+
+/// Maximum file size sandbox_edit will read and rewrite. Larger files should
+/// be modified with sandbox_exec instead.
+const EDIT_MAX_BYTES: usize = 4 * 1024 * 1024;
+
+/// Lines returned by sandbox_read when no end_line is given. The response
+/// carries an explicit continuation hint when the file is longer.
+const READ_DEFAULT_LINES: u64 = 2000;
+
+/// Builds up to three numbered context blocks around lines that nearly match
+/// the first meaningful line of `pattern`. Used to enrich "pattern not found"
+/// errors so the caller can correct its pattern in one step.
+fn near_match_report(content: &str, pattern: &str) -> Option<String> {
+    let probe = pattern.lines().map(str::trim).find(|l| !l.is_empty())?;
+    let lines: Vec<&str> = content.split('\n').collect();
+    let mut hits: Vec<usize> = lines
+        .iter()
+        .enumerate()
+        .filter(|(_, line)| line.contains(probe))
+        .map(|(i, _)| i)
+        .take(3)
+        .collect();
+    if hits.is_empty() {
+        // Retry with collapsed whitespace, the most common near-miss.
+        let normalize = |s: &str| s.split_whitespace().collect::<Vec<_>>().join(" ");
+        let probe = normalize(probe);
+        if !probe.is_empty() {
+            hits = lines
+                .iter()
+                .enumerate()
+                .filter(|(_, line)| normalize(line).contains(&probe))
+                .map(|(i, _)| i)
+                .take(3)
+                .collect();
+        }
+    }
+    if hits.is_empty() {
+        return None;
+    }
+    let blocks: Vec<String> = hits
+        .iter()
+        .map(|&i| {
+            let start = i.saturating_sub(2);
+            let end = (i + 3).min(lines.len());
+            (start..end)
+                .map(|j| format!("{}: {}", j + 1, lines[j]))
+                .collect::<Vec<_>>()
+                .join("\n")
+        })
+        .collect();
+    Some(blocks.join("\n---\n"))
+}
+
+/// Returns the 1-based line number of byte offset `idx` in `content`, plus a
+/// numbered context block of the surrounding lines.
+fn edit_context(content: &str, idx: usize) -> (usize, String) {
+    let line = content[..idx].matches('\n').count() + 1;
+    let lines: Vec<&str> = content.split('\n').collect();
+    let start = line.saturating_sub(3);
+    let end = (line + 3).min(lines.len());
+    let context = (start..end)
+        .map(|i| format!("{}: {}", i + 1, lines[i]))
+        .collect::<Vec<_>>()
+        .join("\n");
+    (line, context)
+}
+
+/// Starts a command as a detached background process in the sandbox and
+/// returns a JSON payload with its process id.
+async fn start_background_process(
+    sandbox: &crate::sandbox::SandboxState,
+    command: &str,
+    cwd: Option<String>,
+    env: Vec<String>,
+) -> anyhow::Result<String> {
+    let id = format!("{:08x}", rand::random::<u32>());
+    let escaped_cmd = shell_escape(command);
+    let cmd_b64 = base64::engine::general_purpose::STANDARD.encode(command);
+    // setsid detaches the process into its own session (and process group, so
+    // sandbox_kill can signal the whole tree); the meta file records pid,
+    // start time, and the command for sandbox_ps. mkdir must be separated
+    // with ';' — with '&&' it would become part of the backgrounded list and
+    // race the foreground meta-file write.
+    let launcher = format!(
+        "mkdir -p {dir} || exit 1; \
+         setsid /bin/sh -c {escaped_cmd} > {dir}/{id}.log 2>&1 < /dev/null & \
+         PID=$!; \
+         printf '%s\\n%s\\n%s\\n' \"$PID\" \"$(date -Iseconds)\" '{cmd_b64}' > {dir}/{id}.meta; \
+         echo \"$PID\"",
+        dir = SANDBOX_PROC_DIR,
+    );
+    let result = crate::sandbox::exec_with(
+        sandbox,
+        &launcher,
+        crate::sandbox::ExecOptions {
+            timeout_secs: Some(30),
+            cwd,
+            env,
+            ..Default::default()
+        },
+    )
+    .await?;
+    if result.exit_code != 0 {
+        anyhow::bail!(
+            "failed to start background process: {}",
+            result.stderr.trim()
+        );
+    }
+    let pid = result.stdout.trim().to_string();
+    Ok(serde_json::json!({
+        "action": "background_start",
+        "process_id": id,
+        "pid": pid,
+        "message": format!(
+            "Process started in the background. Check output with sandbox_logs \
+             (process_id '{id}'), list processes with sandbox_ps, stop it with sandbox_kill."
+        )
+    })
+    .to_string())
 }
 
 async fn execute_builtin(
@@ -883,24 +1136,73 @@ async fn execute_builtin(
                 .and_then(serde_json::Value::as_u64)
                 .unwrap_or(1)
                 .max(1);
+            // Without an explicit end_line, read a capped window rather than
+            // the whole file: an unbounded read of a big file would blow the
+            // output cap and silently drop the middle.
             let end_line = call
                 .arguments
                 .get("end_line")
-                .and_then(serde_json::Value::as_u64);
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(start_line + READ_DEFAULT_LINES - 1)
+                .max(start_line);
 
-            let cmd = if let Some(end) = end_line {
-                format!("sed -n '{start_line},{end}p' {escaped}")
-            } else if start_line > 1 {
-                format!("sed -n '{start_line},$p' {escaped}")
-            } else {
-                format!("cat {escaped}")
-            };
+            // First output line is the file's total line count; the rest is
+            // the requested range with `<number>\t<line>` formatting. Very
+            // long lines are clipped so one minified file can't eat the
+            // whole output budget.
+            let cmd = format!(
+                "test -f {escaped} || {{ echo 'not a regular file' >&2; exit 1; }}; \
+                 wc -l < {escaped}; \
+                 awk -v s={start_line} -v e={end_line} 'NR>=s && NR<=e {{ \
+                     line=$0; \
+                     if (length(line) > 2000) line = substr(line, 1, 2000) \"... (line truncated)\"; \
+                     printf \"%d\\t%s\\n\", NR, line \
+                 }}' {escaped}"
+            );
 
             let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
             if result.exit_code != 0 {
-                anyhow::bail!("file not found: {path}\n{}", result.stderr.trim());
+                // Suggest similarly named files before giving up — a wrong
+                // directory prefix is the most common mistake.
+                let basename = std::path::Path::new(&workspace_path)
+                    .file_name()
+                    .map(|n| n.to_string_lossy().to_string())
+                    .unwrap_or_default();
+                let mut suggestion = String::new();
+                if !basename.is_empty() {
+                    let find_cmd = format!(
+                        "find /workspace -maxdepth 8 -iname {} -not -path '*/.git/*' 2>/dev/null \
+                         | sed 's|^/workspace/||' | head -5",
+                        shell_escape(&basename)
+                    );
+                    if let Ok(found) = crate::sandbox::exec(sandbox, &find_cmd, Some(30)).await {
+                        let hits = found.stdout.trim();
+                        if !hits.is_empty() {
+                            suggestion = format!("\nDid you mean one of these?\n{hits}");
+                        }
+                    }
+                }
+                anyhow::bail!("file not found: {path}{suggestion}");
             }
-            Ok(serde_json::json!({ "content": result.stdout }).to_string())
+            let (total, content) = result
+                .stdout
+                .split_once('\n')
+                .unwrap_or((result.stdout.trim(), ""));
+            let total_lines = total.trim().parse::<u64>().unwrap_or(0);
+            let shown_end = end_line.min(total_lines);
+            let mut response = serde_json::json!({
+                "content": content,
+                "total_lines": total_lines,
+                "truncated": result.truncated
+            });
+            if total_lines > shown_end {
+                response["hint"] = serde_json::Value::String(format!(
+                    "Showing lines {start_line}-{shown_end} of {total_lines}. \
+                     Continue with start_line={}.",
+                    shown_end + 1
+                ));
+            }
+            Ok(response.to_string())
         }
         "sandbox_write" => {
             let sandbox = state
@@ -916,11 +1218,20 @@ async fn execute_builtin(
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|| "/workspace".to_string());
             let escaped_dir = shell_escape(&parent);
-            let b64 = base64::engine::general_purpose::STANDARD.encode(content);
+            // Content travels via stdin: embedding it in the command string
+            // would hit the kernel's per-argument size limit on larger files.
             let cmd = format!(
-                "if test -f {escaped}; then echo 'EXISTS'; else echo 'NEW'; fi && mkdir -p {escaped_dir} && echo '{b64}' | base64 -d > {escaped}"
+                "if test -f {escaped}; then echo 'EXISTS'; else echo 'NEW'; fi && mkdir -p {escaped_dir} && cat > {escaped}"
             );
-            let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
+            let result = crate::sandbox::exec_with(
+                sandbox,
+                &cmd,
+                crate::sandbox::ExecOptions {
+                    stdin: Some(content.as_bytes().to_vec()),
+                    ..Default::default()
+                },
+            )
+            .await?;
             if result.exit_code != 0 {
                 anyhow::bail!("failed to write {path}: {}", result.stderr.trim());
             }
@@ -946,44 +1257,83 @@ async fn execute_builtin(
                 .unwrap_or(false);
             let workspace_path = validate_workspace_path(path)?;
             let escaped = shell_escape(&workspace_path);
-            let old_b64 = base64::engine::general_purpose::STANDARD.encode(old);
-            let new_b64 = base64::engine::general_purpose::STANDARD.encode(new);
-            let ra = if replace_all { "true" } else { "false" };
-            let cmd = format!(
-                r#"python3 -c '
-import sys, base64, json
-f = sys.argv[1]
-o = base64.b64decode(sys.argv[2]).decode()
-n = base64.b64decode(sys.argv[3]).decode()
-replace_all = sys.argv[4] == "true"
-c = open(f).read()
-if o not in c:
-    print("ERROR: pattern not found", file=sys.stderr)
-    sys.exit(1)
-count = c.count(o) if replace_all else 1
-new_c = c.replace(o, n) if replace_all else c.replace(o, n, 1)
-open(f, "w").write(new_c)
-idx = c.find(o)
-line = c[:idx].count("\n") + 1
-lines = c.split("\n")
-ctx_start = max(0, line - 3)
-ctx_end = min(len(lines), line + 3)
-ctx_lines = []
-for i in range(ctx_start, ctx_end):
-    ctx_lines.append(f"{{i + 1}}: {{lines[i]}}")
-print(json.dumps({{"line": line, "replacements": count, "context": "\n".join(ctx_lines)}}))
-' {escaped} {old_b64} {new_b64} {ra}"#
-            );
-            let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
-            if result.exit_code != 0 {
-                if result.stderr.contains("pattern not found") {
-                    anyhow::bail!("pattern not found in {path}");
-                }
-                anyhow::bail!("failed to edit {path}: {}", result.stderr.trim());
+
+            // Read the file, do the replacement server-side, write it back
+            // via stdin. Files are treated as UTF-8 text.
+            let read = crate::sandbox::exec_with(
+                sandbox,
+                &format!("cat {escaped}"),
+                crate::sandbox::ExecOptions {
+                    output_limit: Some(EDIT_MAX_BYTES),
+                    ..Default::default()
+                },
+            )
+            .await?;
+            if read.exit_code != 0 {
+                anyhow::bail!("file not found: {path}\n{}", read.stderr.trim());
             }
-            let mut response: serde_json::Value = serde_json::from_str(result.stdout.trim())?;
-            response["replaced"] = serde_json::Value::String(path.to_string());
-            Ok(response.to_string())
+            if read.truncated {
+                anyhow::bail!(
+                    "{path} is larger than {EDIT_MAX_BYTES} bytes — edit it with sandbox_exec instead"
+                );
+            }
+            let content = read.stdout;
+
+            let Some(matches) = crate::plugins::edit::find_matches(&content, old) else {
+                match near_match_report(&content, old) {
+                    Some(report) => {
+                        anyhow::bail!("pattern not found in {path}; closest matches:\n{report}")
+                    }
+                    None => anyhow::bail!("pattern not found in {path}"),
+                }
+            };
+            // Never guess between occurrences: editing the wrong one corrupts
+            // the file silently.
+            if !replace_all && matches.ranges.len() > 1 {
+                let lines: Vec<String> = matches
+                    .ranges
+                    .iter()
+                    .take(5)
+                    .map(|range| (content[..range.start].matches('\n').count() + 1).to_string())
+                    .collect();
+                anyhow::bail!(
+                    "pattern matches {} locations in {path} (lines {}). Add more \
+                     surrounding context to 'old' to pinpoint one occurrence, or \
+                     set replace_all to change every occurrence.",
+                    matches.ranges.len(),
+                    lines.join(", ")
+                );
+            }
+            let ranges = if replace_all {
+                matches.ranges.as_slice()
+            } else {
+                &matches.ranges[..1]
+            };
+            let new_content = crate::plugins::edit::apply_replacements(&content, ranges, new);
+
+            let write = crate::sandbox::exec_with(
+                sandbox,
+                &format!("cat > {escaped}"),
+                crate::sandbox::ExecOptions {
+                    stdin: Some(new_content.clone().into_bytes()),
+                    ..Default::default()
+                },
+            )
+            .await?;
+            if write.exit_code != 0 {
+                anyhow::bail!("failed to write {path}: {}", write.stderr.trim());
+            }
+
+            // Show the post-edit state so the result doubles as verification.
+            let (line, context) = edit_context(&new_content, ranges[0].start);
+            Ok(serde_json::json!({
+                "replaced": path,
+                "line": line,
+                "replacements": ranges.len(),
+                "match_strategy": matches.strategy,
+                "context": context
+            })
+            .to_string())
         }
         "sandbox_search" => {
             let sandbox = state
@@ -1016,18 +1366,32 @@ print(json.dumps({{"line": line, "replacements": count, "context": "\n".join(ctx
                 .unwrap_or(".");
             let workspace_search = validate_workspace_path(search_path)?;
             let escaped_search = shell_escape(&workspace_search);
+            let glob = call
+                .arguments
+                .get("glob")
+                .and_then(serde_json::Value::as_str);
 
-            let mut grep_opts = String::from("-rn");
-            if case_insensitive {
-                grep_opts.push('i');
-            }
+            let case_flag = if case_insensitive { "-i " } else { "" };
             let context_flag = if context > 0 {
                 format!("-C {context} ")
             } else {
                 String::new()
             };
+            let rg_glob = glob
+                .map(|g| format!("-g {} ", shell_escape(g)))
+                .unwrap_or_default();
+            let grep_glob = glob
+                .map(|g| format!("--include={} ", shell_escape(g)))
+                .unwrap_or_default();
+            // Prefer ripgrep (faster, skips .gitignore'd files like target/);
+            // fall back to grep for images without it.
             let cmd = format!(
-                "OUT=$(grep {grep_opts} {context_flag}{escaped_pattern} {escaped_search} 2>/dev/null | head -n {max_results}); if [ -n \"$OUT\" ]; then echo \"$OUT\"; else echo 'no matches'; fi"
+                "if command -v rg >/dev/null 2>&1; then \
+                     OUT=$(rg -n --no-heading -H {case_flag}{context_flag}{rg_glob}{escaped_pattern} {escaped_search} 2>/dev/null | head -n {max_results}); \
+                 else \
+                     OUT=$(grep -rn {case_flag}{context_flag}{grep_glob}{escaped_pattern} {escaped_search} 2>/dev/null | head -n {max_results}); \
+                 fi; \
+                 if [ -n \"$OUT\" ]; then echo \"$OUT\"; else echo 'no matches'; fi"
             );
             let result = crate::sandbox::exec(sandbox, &cmd, None).await?;
             Ok(serde_json::json!({ "matches": result.stdout }).to_string())
@@ -1039,9 +1403,127 @@ print(json.dumps({{"line": line, "replacements": count, "context": "\n".join(ctx
                 .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
             let command = require_str_arg(&call.arguments, "command")?;
             let timeout = call.arguments.get("timeout").and_then(|v| v.as_u64());
+            let background = call
+                .arguments
+                .get("background")
+                .and_then(serde_json::Value::as_bool)
+                .unwrap_or(false);
+            let cwd = call
+                .arguments
+                .get("cwd")
+                .and_then(serde_json::Value::as_str)
+                .map(validate_workspace_path)
+                .transpose()?;
+            let env = parse_env_arg(&call.arguments)?;
 
-            let result = crate::sandbox::exec(sandbox, command, timeout).await?;
+            if background {
+                return start_background_process(sandbox, command, cwd, env).await;
+            }
+
+            let result = crate::sandbox::exec_with(
+                sandbox,
+                command,
+                crate::sandbox::ExecOptions {
+                    timeout_secs: timeout,
+                    cwd,
+                    env,
+                    ..Default::default()
+                },
+            )
+            .await?;
             Ok(serde_json::to_string(&result)?)
+        }
+        "sandbox_ps" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let cmd = format!(
+                "if [ -d {dir} ]; then \
+                     for m in {dir}/*.meta; do \
+                         [ -e \"$m\" ] || continue; \
+                         id=$(basename \"$m\" .meta); \
+                         pid=$(sed -n 1p \"$m\"); \
+                         started=$(sed -n 2p \"$m\"); \
+                         cmd=$(sed -n 3p \"$m\" | base64 -d | tr '\\n' ' ' | head -c 200); \
+                         if kill -0 \"$pid\" 2>/dev/null; then st=running; else st=exited; fi; \
+                         printf '%s pid=%s status=%s started=%s cmd=%s\\n' \"$id\" \"$pid\" \"$st\" \"$started\" \"$cmd\"; \
+                     done; \
+                 fi; \
+                 true",
+                dir = SANDBOX_PROC_DIR,
+            );
+            let result = crate::sandbox::exec(sandbox, &cmd, Some(30)).await?;
+            let listing = if result.stdout.trim().is_empty() {
+                "no background processes".to_string()
+            } else {
+                result.stdout
+            };
+            Ok(serde_json::json!({ "processes": listing }).to_string())
+        }
+        "sandbox_logs" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let id = validate_process_id(require_str_arg(&call.arguments, "process_id")?)?;
+            let lines = call
+                .arguments
+                .get("lines")
+                .and_then(serde_json::Value::as_u64)
+                .unwrap_or(100)
+                .clamp(1, 2000);
+            let cmd = format!(
+                "L={dir}/{id}.log; M={dir}/{id}.meta; \
+                 if [ ! -f \"$L\" ]; then echo 'no such process: {id}' >&2; exit 1; fi; \
+                 PID=$(sed -n 1p \"$M\" 2>/dev/null); \
+                 if [ -n \"$PID\" ] && kill -0 \"$PID\" 2>/dev/null; \
+                     then echo \"status: running (pid $PID)\"; \
+                     else echo 'status: exited'; \
+                 fi; \
+                 tail -n {lines} \"$L\"",
+                dir = SANDBOX_PROC_DIR,
+            );
+            let result = crate::sandbox::exec(sandbox, &cmd, Some(30)).await?;
+            if result.exit_code != 0 {
+                anyhow::bail!("{}", result.stderr.trim());
+            }
+            Ok(
+                serde_json::json!({ "logs": result.stdout, "truncated": result.truncated })
+                    .to_string(),
+            )
+        }
+        "sandbox_kill" => {
+            let sandbox = state
+                .sandbox
+                .as_ref()
+                .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
+            let id = validate_process_id(require_str_arg(&call.arguments, "process_id")?)?;
+            // TERM the whole process group (setsid made the process a group
+            // leader), then escalate to KILL if it survives the grace period.
+            let cmd = format!(
+                "M={dir}/{id}.meta; \
+                 if [ ! -f \"$M\" ]; then echo 'no such process: {id}' >&2; exit 1; fi; \
+                 PID=$(sed -n 1p \"$M\"); \
+                 if ! kill -0 \"$PID\" 2>/dev/null; then echo 'already exited'; exit 0; fi; \
+                 kill -TERM -- \"-$PID\" 2>/dev/null || kill -TERM \"$PID\" 2>/dev/null; \
+                 for i in 1 2 3 4 5; do \
+                     sleep 1; \
+                     kill -0 \"$PID\" 2>/dev/null || {{ echo terminated; exit 0; }}; \
+                 done; \
+                 kill -KILL -- \"-$PID\" 2>/dev/null || kill -KILL \"$PID\" 2>/dev/null; \
+                 echo killed",
+                dir = SANDBOX_PROC_DIR,
+            );
+            let result = crate::sandbox::exec(sandbox, &cmd, Some(30)).await?;
+            if result.exit_code != 0 {
+                anyhow::bail!("{}", result.stderr.trim());
+            }
+            Ok(serde_json::json!({
+                "process_id": id,
+                "result": result.stdout.trim()
+            })
+            .to_string())
         }
         other => anyhow::bail!("unknown built-in tool {other}"),
     }
@@ -1693,6 +2175,52 @@ mod tests {
             error.contains("user_data_write"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn near_match_report_finds_whitespace_variants() {
+        let content = "fn main() {\n    let x = 1;\n    println!(\"{x}\");\n}\n";
+        // Exact substring of a line.
+        let report = near_match_report(content, "let x = 1;\nlet y = 2;").unwrap();
+        assert!(report.contains("2:     let x = 1;"), "report: {report}");
+        // Whitespace-collapsed match.
+        let report = near_match_report(content, "let  x  =  1;").unwrap();
+        assert!(report.contains("let x = 1;"), "report: {report}");
+        // No plausible match.
+        assert!(near_match_report(content, "completely absent").is_none());
+    }
+
+    #[test]
+    fn edit_context_reports_line_and_neighbours() {
+        let content = "one\ntwo\nthree\nfour\nfive\nsix\nseven";
+        let idx = content.find("four").unwrap();
+        let (line, context) = edit_context(content, idx);
+        assert_eq!(line, 4);
+        assert!(context.contains("4: four"));
+        assert!(context.contains("2: two"));
+        assert!(context.contains("6: six"));
+    }
+
+    #[test]
+    fn parse_env_arg_validates_names() {
+        let args = serde_json::json!({"env": {"RUST_BACKTRACE": "1", "FOO_2": "bar"}});
+        let mut env = parse_env_arg(&args).unwrap();
+        env.sort();
+        assert_eq!(env, vec!["FOO_2=bar", "RUST_BACKTRACE=1"]);
+
+        assert!(parse_env_arg(&serde_json::json!({"env": {"2BAD": "x"}})).is_err());
+        assert!(parse_env_arg(&serde_json::json!({"env": {"A=B": "x"}})).is_err());
+        assert!(parse_env_arg(&serde_json::json!({"env": {"OK": 1}})).is_err());
+        assert!(parse_env_arg(&serde_json::json!({})).unwrap().is_empty());
+    }
+
+    #[test]
+    fn process_ids_are_validated() {
+        assert!(validate_process_id("a1b2c3d4").is_ok());
+        assert!(validate_process_id("").is_err());
+        assert!(validate_process_id("../etc").is_err());
+        assert!(validate_process_id("abc; rm -rf /").is_err());
+        assert!(validate_process_id("aaaaaaaaaaaaaaaaa").is_err());
     }
 
     #[test]

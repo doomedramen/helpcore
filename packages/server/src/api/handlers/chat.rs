@@ -366,6 +366,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         memory_leaning: Some(job.user_memory_leaning.as_str()),
         context_limit: Some(job.provider.context_limit()),
         estimated_tokens: Some(est),
+        sandbox_enabled: job.state.sandbox.is_some(),
     };
 
     // Rough token estimate from history + user message before assembly.
