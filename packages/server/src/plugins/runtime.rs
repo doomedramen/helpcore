@@ -1606,7 +1606,8 @@ async fn execute_wasm(
     let tool = call.name.clone();
     let input = serde_json::to_string(&call.arguments)?;
     let workspace = state.data_dir.join("users").join(user_id).join("workspace");
-    let permissions = plugin.permissions.iter().cloned().collect();
+    let mut permissions: HashSet<String> = plugin.permissions.iter().cloned().collect();
+    permissions.extend(plugin.manifest.permissions.iter().cloned());
     let allowed_hosts = plugin.manifest.allowed_hosts.clone();
 
     // Non-secret stored config values, exposed via `config-read` without a permission check.
