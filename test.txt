@@ -1,3 +1,0 @@
-hello universe
-this is a test
-goodbye world
