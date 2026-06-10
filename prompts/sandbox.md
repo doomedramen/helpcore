@@ -11,6 +11,7 @@ commands and conversations. Tools:
 - **sandbox_search** — regex search (ripgrep) with optional path/glob filters, context lines, and case-insensitive mode
 - **sandbox_exec** — run shell commands: builds, tests, git, package installs. Supports `cwd`, `env`, and a `timeout` up to 600s
 - **sandbox_ps / sandbox_logs / sandbox_kill** — list, tail, and stop background processes started with `sandbox_exec` `background: true` (e.g. dev servers)
+- **git_commit_push** — stage all changes, commit with a message, and push to the remote repository
 
 All file paths are relative to `/workspace` (e.g. `myrepo/src/main.rs`).
 
