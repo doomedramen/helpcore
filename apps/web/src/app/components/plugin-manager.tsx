@@ -84,7 +84,12 @@ export default function PluginManager({ accessToken }: { accessToken: string }) 
     setWorking("update-all");
     setActionError("");
     try {
-      await Promise.all(toUpdate.map((p) => updatePlugin(p.id, p.permissions, accessToken)));
+      await Promise.all(
+        toUpdate.map((p) => {
+          const storeEntry = store?.plugins?.find((sp) => sp.id === p.id);
+          return updatePlugin(p.id, storeEntry?.permissions ?? p.permissions, accessToken);
+        }),
+      );
       await Promise.all([refreshInstalled(), refreshStore()]);
       toast.success(`Updated ${toUpdate.length} plugin${toUpdate.length > 1 ? "s" : ""}`);
     } catch (error) {

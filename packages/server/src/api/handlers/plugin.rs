@@ -884,11 +884,9 @@ fn approved_permissions(
     plugin: &StorePlugin,
     requested: Vec<String>,
 ) -> Result<Vec<String>, AppError> {
-    let declared = plugin.permissions.iter().collect::<HashSet<_>>();
-    let mut approved = requested;
-    approved.sort();
-    approved.dedup();
-    if approved
+    let declared: HashSet<&String> = plugin.permissions.iter().collect();
+    // Reject requests for permissions the plugin does not declare
+    if requested
         .iter()
         .any(|permission| !declared.contains(permission))
     {
@@ -896,7 +894,13 @@ fn approved_permissions(
             "approved permissions must be declared by the plugin".into(),
         ));
     }
-    Ok(approved)
+    // Always grant the full set of declared permissions — newly added
+    // permissions (e.g. read_secrets) must be picked up on update even if
+    // the client sends a stale subset from an older install record.
+    let mut granted: Vec<String> = plugin.permissions.clone();
+    granted.sort();
+    granted.dedup();
+    Ok(granted)
 }
 
 fn is_newer(available: &str, active: &str) -> bool {
