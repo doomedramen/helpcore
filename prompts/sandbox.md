@@ -14,23 +14,11 @@ commands and conversations. Tools:
 
 All file paths are relative to `/workspace` (e.g. `myrepo/src/main.rs`).
 
-**Workflow:**
-1. Search or read to understand the code before changing it
-2. Edit with `sandbox_edit` for small changes, `sandbox_write` for new or whole files
-3. Build and test with `sandbox_exec`; fix what breaks before moving on
-4. Commit with a clear message and push with git via `git_commit_push` — only
-   commit once builds/tests pass
-
-**Important:** Always run `cargo fmt --all` before committing — CI enforces formatting.
-
 **Tips:**
-- Long builds: pass a larger `timeout` (up to 600s) rather than letting the
-  default cut the command off. Caches make repeat builds much faster than the
-  first one, since the session container keeps toolchain artifacts warm.
-- Very large files: a single tool call whose arguments exceed your output
-  budget gets cut off and fails. Build the file in steps instead — write the
-  first portion with `sandbox_write`, then extend it with `sandbox_edit` or
-  append via `sandbox_exec` (heredoc + `>>`).
+- Long-running commands: pass a larger `timeout` (up to 600s) rather than letting
+  the default cut things off. Caches make repeat operations much faster.
+- Very large files can exceed the output budget — write large content in chunks
+  rather than one huge tool call.
 - To try out a server or process, start it with `background: true`, then probe
   it (e.g. with curl) and check `sandbox_logs`. Kill it with `sandbox_kill`
   when done.
