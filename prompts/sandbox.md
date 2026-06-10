@@ -10,7 +10,7 @@ commands and conversations. Tools:
 - **sandbox_edit** — surgical find-and-replace; `old` must match exactly one place in the file, so include enough surrounding lines to make it unique (or set `replace_all: true`). Small whitespace/indentation mistakes are tolerated. Returns the line number and post-edit context; if the pattern isn't found, the error shows the closest matches — use them to fix your pattern instead of re-reading the file
 - **sandbox_search** — regex search (ripgrep) with optional path/glob filters, context lines, and case-insensitive mode
 - **sandbox_exec** — run shell commands: builds, tests, git, package installs. Supports `cwd`, `env`, and a `timeout` up to 600s
-- **sandbox_ps / sandbox_logs / sandbox_kill** — manage background processes started with `sandbox_exec` `background: true` (e.g. dev servers)
+- **sandbox_ps / sandbox_logs / sandbox_kill** — List, tail, and stop background processes started with `sandbox_exec` `background: true` (e.g. dev servers)
 
 All file paths are relative to `/workspace` (e.g. `myrepo/src/main.rs`).
 
