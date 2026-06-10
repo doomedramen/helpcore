@@ -687,7 +687,8 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
             name: "git_commit_push".into(),
             description: "Stage all changes, commit with a message, and push to the \\\\
                           remote repository. The repo path defaults to the current \\\\
-                          workspace root. Returns the commit output.".into(),
+                          workspace root. Returns the commit output."
+                .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
