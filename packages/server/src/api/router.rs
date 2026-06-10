@@ -77,6 +77,10 @@ pub fn create(state: Arc<AppState>, web_ui: bool) -> Router {
             post(handlers::chat::compact_conversation),
         )
         .route(
+            "/conversations/{id}/generate-title",
+            post(handlers::chat::generate_title),
+        )
+        .route(
             "/conversations/{id}/cancel",
             post(handlers::chat::cancel_conversation),
         )

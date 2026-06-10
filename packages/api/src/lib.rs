@@ -413,6 +413,15 @@ pub struct CompactResponse {
     pub summary_length: usize,
 }
 
+// ── Generate Title ────────────────────────────────────────────────────────────
+
+/// Response from the generate-title endpoint.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct GenerateTitleResponse {
+    /// The generated conversation title.
+    pub title: String,
+}
+
 // ── Plugins ───────────────────────────────────────────────────────────────────
 
 /// A single field in a plugin's configuration schema.

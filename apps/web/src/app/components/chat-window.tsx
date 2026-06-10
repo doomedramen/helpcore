@@ -8,9 +8,11 @@ import {
   cancelGeneration,
   chat,
   compactConversation,
+  generateTitle,
   getMessages,
   listConversations,
   listProviders,
+  renameConversation,
   retryMessage,
   submitFeedback,
 } from "@/lib/api";
@@ -448,6 +450,50 @@ export default function ChatWindow({
     }
   }, [conversationId, accessToken, refreshConversation, refreshAccessToken]);
 
+  const handleRename = useCallback(
+    async (args?: string) => {
+      if (!conversationId || !accessToken) return;
+      const providedTitle = args?.trim();
+      if (providedTitle) {
+        try {
+          await renameConversation(conversationId, providedTitle, accessToken);
+          await refreshConversation(conversationId);
+          setInfoMessage("");
+        } catch (err) {
+          if (err instanceof ApiError && err.status === 401) {
+            const fresh = await refreshAccessToken();
+            if (fresh) {
+              await renameConversation(conversationId, providedTitle, fresh);
+              await refreshConversation(conversationId);
+              setInfoMessage("");
+              return;
+            }
+          }
+          setError(err instanceof ApiError ? err.message : "Rename failed. Try again.");
+        }
+        return;
+      }
+      setInfoMessage("Generating title…");
+      try {
+        await generateTitle(conversationId, accessToken);
+        await refreshConversation(conversationId);
+        setInfoMessage("");
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 401) {
+          const fresh = await refreshAccessToken();
+          if (fresh) {
+            await generateTitle(conversationId, fresh);
+            await refreshConversation(conversationId);
+            setInfoMessage("");
+            return;
+          }
+        }
+        setError(err instanceof ApiError ? err.message : "Title generation failed. Try again.");
+      }
+    },
+    [conversationId, accessToken, refreshConversation, refreshAccessToken],
+  );
+
   const commandActions = useMemo<SlashCommand[]>(
     () => [
       {
@@ -456,8 +502,14 @@ export default function ChatWindow({
         description: "Summarize oldest messages to free context",
         action: handleCompact,
       },
+      {
+        slash: "/rename",
+        label: "Rename conversation",
+        description: "Generate or set a conversation title",
+        action: handleRename,
+      },
     ],
-    [handleCompact],
+    [handleCompact, handleRename],
   );
 
   const handlePromptSubmit = useCallback(
@@ -478,8 +530,9 @@ export default function ChatWindow({
         const match = commandActions.find((c) => c.slash === cmd);
 
         if (match) {
+          const args = parts.slice(1).join(" ");
           setInfoMessage(`Running ${cmd}…`);
-          Promise.resolve(match.action()).catch((err) => {
+          Promise.resolve(match.action(args || undefined)).catch((err) => {
             setError(err instanceof ApiError ? err.message : `Command failed: ${cmd}`);
           });
           return;

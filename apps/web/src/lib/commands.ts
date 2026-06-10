@@ -14,8 +14,9 @@ export interface SlashCommand {
   label: string;
   /** Description shown in the command menu. */
   description: string;
-  /** Executed when the command is dispatched via prompt submit. */
-  action: () => void | Promise<void>;
+  /** Executed when the command is dispatched via prompt submit.
+   *  Receives the text after the command (if any). */
+  action: (args?: string) => void | Promise<void>;
 }
 
 /**
@@ -28,6 +29,11 @@ export const COMMANDS: Omit<SlashCommand, "action">[] = [
     slash: "/compact",
     label: "Compact conversation",
     description: "Summarize oldest messages to free context",
+  },
+  {
+    slash: "/rename",
+    label: "Rename conversation",
+    description: "Generate or set a conversation title",
   },
 ];
 

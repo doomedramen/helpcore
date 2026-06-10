@@ -16,8 +16,9 @@ use tokio_stream::wrappers::ReceiverStream;
 use serde::Deserialize;
 
 use helpcore_api::{
-    ChatRequest, CompactResponse, ConversationSummary, MessageSummary, RenameConversationRequest,
-    RetryRequest, SseChunk, SseContext, SseDone, SseStarted, SseToolCall, SseToolResult,
+    ChatRequest, CompactResponse, ConversationSummary, GenerateTitleResponse, MessageSummary,
+    RenameConversationRequest, RetryRequest, SseChunk, SseContext, SseDone, SseStarted,
+    SseToolCall, SseToolResult,
 };
 
 use crate::{
@@ -900,6 +901,132 @@ pub async fn compact_conversation(
         messages_compacted: result.messages_compacted,
         summary_length: result.summary_length,
     }))
+}
+
+// ── POST /api/conversations/:id/generate-title ────────────────────────────────
+
+/// Prompt used when asking the model to generate a conversation title.
+const RENAME_INSTRUCTIONS: &str = include_str!("../../../../../prompts/rename.md");
+
+/// Extracts title content from the model's response, handling `<title>` wrapper
+/// tags robustly. Falls back to raw text when tags are absent or malformed.
+fn extract_title(raw: &str) -> String {
+    let raw = raw.trim();
+
+    if let (Some(start), Some(end)) = (raw.find("<title>"), raw.rfind("</title>")) {
+        let content = &raw[start + "<title>".len()..end];
+        return content.trim().to_string();
+    }
+
+    if let Some(rest) = raw.strip_prefix("<title>") {
+        return rest.trim().to_string();
+    }
+
+    if let Some(content) = raw.strip_suffix("</title>") {
+        return content.trim().to_string();
+    }
+
+    raw.to_string()
+}
+
+/// POST /api/conversations/{id}/generate-title — generates an AI title for a conversation.
+pub async fn generate_title(
+    State(state): State<Arc<AppState>>,
+    auth_user: AuthUser,
+    Path(conv_id): Path<String>,
+) -> Result<Json<GenerateTitleResponse>, AppError> {
+    let user_id = auth_user.id.clone();
+    let uid = user_id.clone();
+    let cid = conv_id.clone();
+    let conv = state
+        .db
+        .call(move |conn| history::get_conversation(conn, &cid, &uid))
+        .await?
+        .ok_or(AppError::NotFound("conversation not found".into()))?;
+
+    let provider = conv
+        .provider_id
+        .as_deref()
+        .and_then(|pid| state.providers.find_for_role(Some(pid), ProviderRole::Chat))
+        .or_else(|| state.providers.find_for_role(None, ProviderRole::Chat))
+        .ok_or_else(|| AppError::BadRequest("no chat providers configured".into()))?;
+
+    let conv_id = conv.id.clone();
+    let messages = state
+        .db
+        .call(move |conn| history::load_messages(conn, &conv_id))
+        .await?;
+
+    // If there are no messages, use a fallback title.
+    if messages.is_empty() {
+        let title = "New conversation".to_string();
+        let cid = conv.id.clone();
+        let uid = user_id.clone();
+        let title_clone = title.clone();
+        state
+            .db
+            .call(move |conn| history::update_conversation_title(conn, &cid, &uid, &title_clone))
+            .await?;
+        return Ok(Json(GenerateTitleResponse { title }));
+    }
+
+    // Format a sample of messages (first few and last few for context).
+    let formatted = messages
+        .iter()
+        .map(|m| format!("{}: {}", m.role, m.content))
+        .collect::<Vec<_>>()
+        .join("\n\n");
+
+    let prompt_messages = vec![
+        ChatMessage::system(RENAME_INSTRUCTIONS),
+        ChatMessage::user(&formatted),
+    ];
+
+    let mut stream = provider
+        .complete(&prompt_messages, &[], None)
+        .await
+        .map_err(|e| {
+            tracing::error!(error = %e, "title generation failed");
+            AppError::BadRequest(format!("title generation failed: {e}"))
+        })?;
+
+    let mut raw_title = String::new();
+    while let Some(chunk) = stream.next().await {
+        let chunk = chunk.map_err(|e| {
+            tracing::error!(error = %e, "stream error during title generation");
+            AppError::BadRequest(format!("stream error: {e}"))
+        })?;
+        if !chunk.is_final {
+            raw_title.push_str(&chunk.delta);
+        }
+    }
+
+    let title = extract_title(&raw_title);
+    let title = history::truncate_title(&title);
+
+    if title.is_empty() {
+        // Fallback: use truncated first user message.
+        let first_msg = &messages[0];
+        let title = history::truncate_title(&first_msg.content);
+        let cid = conv.id.clone();
+        let uid = user_id.clone();
+        let title_clone = title.clone();
+        state
+            .db
+            .call(move |conn| history::update_conversation_title(conn, &cid, &uid, &title_clone))
+            .await?;
+        return Ok(Json(GenerateTitleResponse { title }));
+    }
+
+    let cid = conv.id.clone();
+    let uid = user_id.clone();
+    let title_clone = title.clone();
+    state
+        .db
+        .call(move |conn| history::update_conversation_title(conn, &cid, &uid, &title_clone))
+        .await?;
+
+    Ok(Json(GenerateTitleResponse { title }))
 }
 
 #[cfg(test)]

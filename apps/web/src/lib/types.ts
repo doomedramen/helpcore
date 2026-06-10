@@ -178,6 +178,11 @@ export interface CompactResponse {
   summary_length: number;
 }
 
+/** Response from the AI title generation endpoint. */
+export interface GenerateTitleResponse {
+  title: string;
+}
+
 /** Brief info about a configured LLM provider. */
 export interface ProviderInfo {
   id: string;

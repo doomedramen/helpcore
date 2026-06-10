@@ -7,6 +7,7 @@ import type {
   ConversationSummary,
   CreateApiKeyResponse,
   CurrentUser,
+  GenerateTitleResponse,
   ListApiKeysResponse,
   ListProviderGrantsResponse,
   LoginResponse,
@@ -192,6 +193,16 @@ export function cancelGeneration(id: string, token: string): Promise<void> {
  */
 export function compactConversation(id: string, token: string): Promise<CompactResponse> {
   return req(`/conversations/${id}/compact`, { method: "POST" }, token);
+}
+
+/**
+ * Generates an AI title for a conversation.
+ * @param id - Conversation ID.
+ * @param token - Access token.
+ * @returns The generated title.
+ */
+export function generateTitle(id: string, token: string): Promise<GenerateTitleResponse> {
+  return req(`/conversations/${id}/generate-title`, { method: "POST" }, token);
 }
 
 /**

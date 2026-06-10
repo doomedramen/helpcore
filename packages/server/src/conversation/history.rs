@@ -718,7 +718,7 @@ fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary> {
 }
 
 /// Truncates text to ≤60 chars at a word boundary, appending "…" if cut.
-fn truncate_title(text: &str) -> String {
+pub fn truncate_title(text: &str) -> String {
     let text = text.lines().next().unwrap_or("").trim();
     if text.chars().count() <= 60 {
         return text.to_string();
