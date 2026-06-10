@@ -686,15 +686,18 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "git_commit_push".into(),
             description: "Stage all changes, commit with a message, and push to the \\\\
-                          remote repository in the helpcore workspace. Returns the \\\\
-                          commit hash and push output. The repo must have a configured \\\\
-                          git remote and credentials.".into(),
+                          remote repository. The repo path defaults to the current \\\\
+                          workspace root. Returns the commit output.".into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
                     "message": {
                         "type": "string",
                         "description": "Commit message"
+                    },
+                    "path": {
+                        "type": "string",
+                        "description": "Optional path to the git repository directory relative to /workspace (defaults to .)"
                     }
                 },
                 "required": ["message"],
@@ -1550,11 +1553,19 @@ async fn execute_builtin(
                 .as_ref()
                 .context("sandbox is not enabled (set sandbox.enabled = true in config.toml) or Docker is unavailable")?;
             let message = require_str_arg(&call.arguments, "message")?;
+            let repo_path = call
+                .arguments
+                .get("path")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or(".");
+            let workspace_repo = validate_workspace_path(repo_path)?;
+            let escaped_repo = shell_escape(&workspace_repo);
             let msg_b64 = base64::engine::general_purpose::STANDARD.encode(message);
             let cmd = format!(
-                "cd /workspace/helpcore && \\
-                 git add -A && \\
-                 git commit -m \"$(echo '{}' | base64 -d)\" 2>&1 && \\
+                "cd {escaped_repo} && \
+                 git add -A 2>&1 && \
+                 git diff --cached --quiet 2>&1 && echo 'nothing to commit' && exit 0; \
+                 git commit -m \"$(echo '{}' | base64 -d)\" 2>&1 && \
                  git push 2>&1",
                 msg_b64
             );
@@ -1562,10 +1573,7 @@ async fn execute_builtin(
             if result.exit_code != 0 {
                 anyhow::bail!("git commit/push failed: {}", result.stderr.trim());
             }
-            Ok(serde_json::json!({
-                "action": "git_commit_push",
-                "output": result.stdout
-            }).to_string())
+            Ok(result.stdout.to_string())
         }
         other => anyhow::bail!("unknown built-in tool {other}"),
     }
