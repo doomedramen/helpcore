@@ -21,6 +21,8 @@ All file paths are relative to `/workspace` (e.g. `myrepo/src/main.rs`).
 4. Commit with a clear message and push with git via `git_commit_push` — only
    commit once builds/tests pass
 
+**Important:** Always run `cargo fmt --all` before committing — CI enforces formatting.
+
 **Tips:**
 - Long builds: pass a larger `timeout` (up to 600s) rather than letting the
   default cut the command off. Caches make repeat builds much faster than the
