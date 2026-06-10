@@ -12,12 +12,14 @@ use tokio_util::io::StreamReader;
 use super::{
     error::{ProviderError, http_error},
     traits::{ChatProvider, ProviderStream},
-    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition},
+    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition, invalid_arguments_reason},
 };
 
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
 const DEFAULT_CONTEXT_LIMIT: u32 = 200_000;
-const DEFAULT_MAX_TOKENS: u32 = 4096;
+// Generous enough for tool calls that carry whole files (e.g. workspace
+// writes); 4096 routinely cut those off mid-argument.
+const DEFAULT_MAX_TOKENS: u32 = 8192;
 const ANTHROPIC_VERSION: &str = "2023-06-01";
 
 pub struct AnthropicProvider {
@@ -118,6 +120,16 @@ struct ToolAccumulator {
     partial_json: String,
 }
 
+/// Per-response accumulation while consuming the SSE stream.
+#[derive(Debug, Default)]
+struct StreamState {
+    tool_calls: BTreeMap<usize, ToolAccumulator>,
+    /// True once a `message_delta` reports `stop_reason: "max_tokens"` — the
+    /// response was cut off by the output token limit, so accumulated
+    /// tool-call arguments may be incomplete.
+    length_limited: bool,
+}
+
 #[async_trait]
 impl ChatProvider for AnthropicProvider {
     fn id(&self) -> &str {
@@ -180,7 +192,7 @@ impl ChatProvider for AnthropicProvider {
 
         tokio::spawn(async move {
             let mut data_lines = Vec::new();
-            let mut tool_calls = BTreeMap::<usize, ToolAccumulator>::new();
+            let mut state = StreamState::default();
             let mut terminated = false;
 
             loop {
@@ -191,7 +203,7 @@ impl ChatProvider for AnthropicProvider {
                         }
                         let data = data_lines.join("\n");
                         data_lines.clear();
-                        match handle_event(&data, &mut tool_calls, &tx).await {
+                        match handle_event(&data, &mut state, &tx).await {
                             Ok(done) => {
                                 if done {
                                     terminated = true;
@@ -212,7 +224,7 @@ impl ChatProvider for AnthropicProvider {
                     Ok(None) => {
                         if !data_lines.is_empty() {
                             let data = data_lines.join("\n");
-                            match handle_event(&data, &mut tool_calls, &tx).await {
+                            match handle_event(&data, &mut state, &tx).await {
                                 Ok(done) => terminated = done,
                                 Err(error) => {
                                     let _ = tx.send(Err(error)).await;
@@ -326,7 +338,7 @@ fn push_message(messages: &mut Vec<AnthropicMessage>, role: &str, blocks: Vec<Co
 
 async fn handle_event(
     data: &str,
-    tool_calls: &mut BTreeMap<usize, ToolAccumulator>,
+    state: &mut StreamState,
     tx: &tokio::sync::mpsc::Sender<Result<StreamChunk, ProviderError>>,
 ) -> Result<bool, ProviderError> {
     let event: serde_json::Value = serde_json::from_str(data).map_err(|error| {
@@ -354,7 +366,7 @@ async fn handle_event(
                     }
                 }
                 Some("tool_use") => {
-                    tool_calls.insert(
+                    state.tool_calls.insert(
                         index,
                         ToolAccumulator {
                             id: content
@@ -396,7 +408,8 @@ async fn handle_event(
                         .get("partial_json")
                         .and_then(serde_json::Value::as_str)
                     {
-                        tool_calls
+                        state
+                            .tool_calls
                             .entry(index)
                             .or_default()
                             .partial_json
@@ -406,8 +419,18 @@ async fn handle_event(
                 _ => {}
             }
         }
+        Some("message_delta") => {
+            if event
+                .pointer("/delta/stop_reason")
+                .and_then(serde_json::Value::as_str)
+                == Some("max_tokens")
+            {
+                state.length_limited = true;
+            }
+        }
         Some("message_stop") => {
-            let calls = finish_tool_calls(std::mem::take(tool_calls))?;
+            let calls =
+                finish_tool_calls(std::mem::take(&mut state.tool_calls), state.length_limited);
             if !calls.is_empty() {
                 let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
             }
@@ -426,31 +449,44 @@ async fn handle_event(
     Ok(false)
 }
 
+/// Assembles the accumulated tool-use blocks. A malformed call — no name, or
+/// argument JSON that doesn't parse (typically because the response hit the
+/// output token limit mid-argument) — is not a request error: it is marked
+/// invalid so the chat loop can report the problem back to the model as a
+/// failed tool result. Failing the whole request would make the turn
+/// unrecoverable, since a retry regenerates the same oversized call.
 fn finish_tool_calls(
     tool_calls: BTreeMap<usize, ToolAccumulator>,
-) -> Result<Vec<ToolCall>, ProviderError> {
+    length_limited: bool,
+) -> Vec<ToolCall> {
     tool_calls
         .into_values()
         .map(|call| {
-            if call.id.is_empty() || call.name.is_empty() {
-                return Err(ProviderError::Request(
-                    "Anthropic returned an incomplete tool call".to_string(),
-                ));
-            }
-            let arguments = if call.partial_json.trim().is_empty() {
-                call.initial_input.unwrap_or_else(|| serde_json::json!({}))
+            let id = if call.id.is_empty() {
+                uuid::Uuid::new_v4().to_string()
             } else {
-                serde_json::from_str(&call.partial_json).map_err(|error| {
-                    ProviderError::Request(format!(
-                        "Anthropic returned invalid tool arguments: {error}"
-                    ))
-                })?
+                call.id
             };
-            Ok(ToolCall {
-                id: call.id,
-                name: call.name,
-                arguments,
-            })
+            if call.name.is_empty() {
+                return ToolCall::invalid(
+                    id,
+                    "unknown_tool",
+                    "The provider returned a tool call without a name. Re-issue the call."
+                        .to_string(),
+                );
+            }
+            if call.partial_json.trim().is_empty() {
+                let arguments = call.initial_input.unwrap_or_else(|| serde_json::json!({}));
+                return ToolCall::new(id, call.name, arguments);
+            }
+            match serde_json::from_str(&call.partial_json) {
+                Ok(arguments) => ToolCall::new(id, call.name, arguments),
+                Err(error) => ToolCall::invalid(
+                    id,
+                    call.name,
+                    invalid_arguments_reason(&error, length_limited),
+                ),
+            }
         })
         .collect()
 }
@@ -535,6 +571,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn truncated_tool_arguments_become_invalid_call_not_error() {
+        let server = MockServer::start().await;
+        // partial_json cut off mid-string, and message_delta reports the
+        // response stopped at the output token limit.
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                "data: {\"type\":\"content_block_start\",\"index\":1,\"content_block\":{\"type\":\"tool_use\",\"id\":\"tool_1\",\"name\":\"write_file\",\"input\":{}}}\n\n\
+                 data: {\"type\":\"content_block_delta\",\"index\":1,\"delta\":{\"type\":\"input_json_delta\",\"partial_json\":\"{\\\"content\\\":\\\"abc\"}}\n\n\
+                 data: {\"type\":\"message_delta\",\"delta\":{\"stop_reason\":\"max_tokens\"}}\n\n\
+                 data: {\"type\":\"message_stop\"}\n\n",
+            ))
+            .mount(&server)
+            .await;
+
+        let mut stream = provider(&server)
+            .complete(&[ChatMessage::user("write")], &[], None)
+            .await
+            .unwrap();
+        let mut calls = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            calls.extend(
+                chunk
+                    .expect("truncation must not be a stream error")
+                    .tool_calls,
+            );
+        }
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].id, "tool_1");
+        assert_eq!(calls[0].name, "write_file");
+        let reason = calls[0].invalid.as_deref().expect("call must be invalid");
+        assert!(reason.contains("output token limit"), "got: {reason}");
+        assert_eq!(calls[0].arguments, serde_json::json!({}));
+    }
+
+    #[tokio::test]
     async fn converts_system_and_tool_history() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
@@ -544,11 +615,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let call = ToolCall {
-            id: "tool_1".to_string(),
-            name: "weather".to_string(),
-            arguments: serde_json::json!({"city": "London"}),
-        };
+        let call = ToolCall::new("tool_1", "weather", serde_json::json!({"city": "London"}));
         let messages = vec![
             ChatMessage::system("Be concise."),
             ChatMessage::assistant_with_tools("", vec![call]),

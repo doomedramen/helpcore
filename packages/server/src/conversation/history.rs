@@ -847,11 +847,11 @@ mod tests {
         pool.call_sync(|conn| {
             let turn = start_turn(conn, &uid, None, "Weather?", "p", "m")?;
             append_assistant_content(conn, &turn.assistant_message_id, "Checking.")?;
-            let call = crate::providers::types::ToolCall {
-                id: "call-1".into(),
-                name: "weather".into(),
-                arguments: serde_json::json!({"city": "London"}),
-            };
+            let call = crate::providers::types::ToolCall::new(
+                "call-1",
+                "weather",
+                serde_json::json!({"city": "London"}),
+            );
             persist_tool_round(
                 conn,
                 &turn.assistant_message_id,

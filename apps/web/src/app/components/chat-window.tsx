@@ -31,7 +31,12 @@ import {
   ConversationScrollButton,
 } from "@/components/ai-elements/conversation";
 import { type StickToBottomContext } from "use-stick-to-bottom";
-import { Message as AIMessage, MessageContent } from "@/components/ai-elements/message";
+import {
+  Message as AIMessage,
+  MessageAction,
+  MessageActions,
+  MessageContent,
+} from "@/components/ai-elements/message";
 import {
   PromptInput,
   PromptInputActionAddAttachments,
@@ -81,7 +86,8 @@ import { MessageContentWithAssets } from "./asset-renderer";
 import PromptAttachments from "./prompt-attachments";
 import CodeBlockInjector from "./code-copy-button";
 import { Badge } from "@/app/components/ui/badge";
-import { ScrollText, Shuffle, Terminal } from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Check, Copy, ScrollText, Shuffle, Terminal } from "lucide-react";
 
 interface QueueItem {
   id: string;
@@ -97,6 +103,42 @@ interface Props {
 
 const isActive = (message: Message) =>
   message.status === "pending" || message.status === "streaming";
+
+function MessageCopyAction({ content, className }: { content: string; className?: string }) {
+  const [copied, setCopied] = useState(false);
+  const timeoutRef = useRef(0);
+  useEffect(() => () => clearTimeout(timeoutRef.current), []);
+
+  const copy = useCallback(async () => {
+    if (typeof navigator?.clipboard?.writeText !== "function") return;
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      timeoutRef.current = window.setTimeout(() => setCopied(false), 2000);
+    } catch {
+      /* clipboard unavailable */
+    }
+  }, [content]);
+
+  const Icon = copied ? Check : Copy;
+  return (
+    <MessageActions
+      className={cn(
+        "opacity-70 transition-opacity md:opacity-0 md:group-hover:opacity-100",
+        className,
+      )}
+    >
+      <MessageAction
+        tooltip={copied ? "Copied" : "Copy message"}
+        label="Copy message"
+        onClick={copy}
+        className="text-muted-foreground hover:text-foreground"
+      >
+        <Icon size={14} />
+      </MessageAction>
+    </MessageActions>
+  );
+}
 
 let nextQueueId = 1;
 
@@ -735,6 +777,7 @@ export default function ChatWindow({
                           <MessageContentWithAssets>{message.content}</MessageContentWithAssets>
                         </CodeBlockInjector>
                       </MessageContent>
+                      <MessageCopyAction content={message.content} className="justify-end" />
                     </AIMessage>
                   );
                 }
@@ -852,6 +895,9 @@ export default function ChatWindow({
                         </div>
                       )}
                     </MessageContent>
+                    {!msgActive && message.content && (
+                      <MessageCopyAction content={message.content} />
+                    )}
                   </AIMessage>
                 );
               })}

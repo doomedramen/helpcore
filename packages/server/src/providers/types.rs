@@ -16,6 +16,65 @@ pub struct ToolCall {
     pub id: String,
     pub name: String,
     pub arguments: serde_json::Value,
+    /// Set when the provider could not assemble usable arguments for this
+    /// call — most commonly because the response was cut off by the output
+    /// token limit partway through the argument JSON. Invalid calls must not
+    /// be executed; the chat loop feeds the reason back to the model as a
+    /// failed tool result so it can adjust and re-issue the call, instead of
+    /// the whole turn failing (and any retry failing identically).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub invalid: Option<String>,
+}
+
+impl ToolCall {
+    /// Create a valid tool call.
+    pub fn new(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        arguments: serde_json::Value,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            arguments,
+            invalid: None,
+        }
+    }
+
+    /// Create a tool call that must not be executed, carrying the reason the
+    /// provider rejected it. The reason is written for the model: it should
+    /// say what went wrong and how to recover.
+    pub fn invalid(id: impl Into<String>, name: impl Into<String>, reason: String) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            arguments: serde_json::json!({}),
+            invalid: Some(reason),
+        }
+    }
+}
+
+/// Builds the model-facing reason for a tool call whose argument JSON did not
+/// parse. When the provider reported that generation stopped at the output
+/// token limit, says so explicitly — the model's recovery is different
+/// (split the work) than for plain malformed JSON (fix the syntax).
+pub(crate) fn invalid_arguments_reason(
+    parse_error: &serde_json::Error,
+    output_limit_hit: bool,
+) -> String {
+    if output_limit_hit {
+        format!(
+            "The arguments for this tool call were cut off because the response hit \
+             the output token limit ({parse_error}). Re-issue the call with smaller \
+             arguments: split large content across multiple calls and build up the \
+             result in steps."
+        )
+    } else {
+        format!(
+            "The arguments for this tool call were not valid JSON ({parse_error}). \
+             Re-issue the call with corrected arguments."
+        )
+    }
 }
 
 /// A single message in a conversation, using role strings to match provider

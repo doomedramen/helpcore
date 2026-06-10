@@ -166,6 +166,16 @@ export function deleteConversation(id: string, token: string): Promise<void> {
 }
 
 /**
+ * Rename a conversation.
+ * @param id - Conversation ID.
+ * @param title - The new title.
+ * @param token - Access token.
+ */
+export function renameConversation(id: string, title: string, token: string): Promise<void> {
+  return req(`/conversations/${id}`, { method: "PATCH", body: JSON.stringify({ title }) }, token);
+}
+
+/**
  * Cancel an in-progress generation for a conversation.
  * @param id - Conversation ID.
  * @param token - Access token.

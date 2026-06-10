@@ -25,6 +25,10 @@ All file paths are relative to `/workspace` (e.g. `myrepo/src/main.rs`).
 - Long builds: pass a larger `timeout` (up to 600s) rather than letting the
   default cut the command off. Caches make repeat builds much faster than the
   first one.
+- Very large files: a single tool call whose arguments exceed your output
+  budget gets cut off and fails. Build the file in steps instead — write the
+  first portion with `sandbox_write`, then extend it with `sandbox_edit` or
+  append via `sandbox_exec` (heredoc + `>>`).
 - To try out a server or app, start it with `background: true`, then probe it
   (e.g. with curl) and check `sandbox_logs`. Kill it with `sandbox_kill` when
   done.

@@ -511,33 +511,46 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
                 })
                 .unwrap_or_else(|_| Event::default());
             let _ = job.tx.send(Ok(call_event)).await;
-            let (truncated, result) = match tool_catalog
-                .execute(&job.state, &job.user_id, Some(&job.conversation_id), call)
-                .await
-            {
-                Ok(raw) => {
-                    let trunc = raw.len() > MAX_TOOL_RESULT_CHARS;
-                    let body = if trunc {
-                        let mut cut = raw;
-                        cut.truncate(MAX_TOOL_RESULT_CHARS);
-                        cut.push_str("\n[... truncated at 10KB]");
-                        cut
-                    } else {
-                        raw
-                    };
-                    (
-                        trunc,
-                        serde_json::json!({"ok": true, "result": body, "truncated": trunc})
-                            .to_string(),
-                    )
-                }
-                Err(error) => {
-                    let msg = error.to_string();
-                    let code = tool_error_code(&msg);
-                    (
-                        false,
-                        serde_json::json!({"ok": false, "error": msg, "code": code}).to_string(),
-                    )
+            // A call the provider marked invalid (e.g. argument JSON cut off
+            // at the output token limit) is never executed — the reason goes
+            // back to the model as a failed result so it can re-issue the
+            // call differently instead of the whole turn failing.
+            let (truncated, result) = if let Some(reason) = call.invalid.as_deref() {
+                (
+                    false,
+                    serde_json::json!({"ok": false, "error": reason, "code": "INVALID_ARGS"})
+                        .to_string(),
+                )
+            } else {
+                match tool_catalog
+                    .execute(&job.state, &job.user_id, Some(&job.conversation_id), call)
+                    .await
+                {
+                    Ok(raw) => {
+                        let trunc = raw.len() > MAX_TOOL_RESULT_CHARS;
+                        let body = if trunc {
+                            let mut cut = raw;
+                            cut.truncate(MAX_TOOL_RESULT_CHARS);
+                            cut.push_str("\n[... truncated at 10KB]");
+                            cut
+                        } else {
+                            raw
+                        };
+                        (
+                            trunc,
+                            serde_json::json!({"ok": true, "result": body, "truncated": trunc})
+                                .to_string(),
+                        )
+                    }
+                    Err(error) => {
+                        let msg = error.to_string();
+                        let code = tool_error_code(&msg);
+                        (
+                            false,
+                            serde_json::json!({"ok": false, "error": msg, "code": code})
+                                .to_string(),
+                        )
+                    }
                 }
             };
             let result_event = Event::default()

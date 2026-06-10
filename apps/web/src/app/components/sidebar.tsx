@@ -1,9 +1,19 @@
 "use client";
 
-import { useState } from "react";
-import { LogOut, Menu, MessageSquarePlus, Search, Settings, Shield, Trash2, X } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import {
+  LogOut,
+  Menu,
+  MessageSquarePlus,
+  Pencil,
+  Search,
+  Settings,
+  Shield,
+  Trash2,
+  X,
+} from "lucide-react";
 import useSWR, { useSWRConfig } from "swr";
-import { deleteConversation, listConversations } from "@/lib/api";
+import { deleteConversation, listConversations, renameConversation } from "@/lib/api";
 import { useAuth } from "@/context/auth";
 import type { ConversationSummary } from "@/lib/types";
 import { usePathname, useRouter } from "next/navigation";
@@ -32,6 +42,32 @@ function isSettingsPath(p: string) {
   );
 }
 
+const DAY_MS = 86_400_000;
+const GROUP_ORDER = ["Today", "Yesterday", "Previous 7 days", "Previous 30 days", "Older"] as const;
+
+function groupLabel(updatedAt: string, startOfToday: number): (typeof GROUP_ORDER)[number] {
+  const t = new Date(updatedAt).getTime();
+  if (Number.isNaN(t) || t >= startOfToday) return "Today";
+  if (t >= startOfToday - DAY_MS) return "Yesterday";
+  if (t >= startOfToday - 7 * DAY_MS) return "Previous 7 days";
+  if (t >= startOfToday - 30 * DAY_MS) return "Previous 30 days";
+  return "Older";
+}
+
+function groupConversations(conversations: ConversationSummary[]) {
+  const startOfToday = new Date().setHours(0, 0, 0, 0);
+  const groups = new Map<string, ConversationSummary[]>();
+  for (const conv of conversations) {
+    const label = groupLabel(conv.updated_at, startOfToday);
+    const bucket = groups.get(label);
+    if (bucket) bucket.push(conv);
+    else groups.set(label, [conv]);
+  }
+  return GROUP_ORDER.filter((label) => groups.has(label)).map(
+    (label) => [label, groups.get(label)!] as const,
+  );
+}
+
 export default function Sidebar({ conversationId, onSelect }: Props) {
   const { accessToken, currentUser, logout } = useAuth();
   const router = useRouter();
@@ -40,6 +76,23 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [mobileOpen, setMobileOpen] = useState(false);
   const [search, setSearch] = useState("");
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingTitle, setEditingTitle] = useState("");
+  const [shortcutHint, setShortcutHint] = useState("");
+  const searchInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    setShortcutHint(/Mac|iPhone|iPad/.test(navigator.userAgent) ? "⌘K" : "Ctrl K");
+    function onKeyDown(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        if (window.matchMedia("(max-width: 767px)").matches) setMobileOpen(true);
+        requestAnimationFrame(() => searchInputRef.current?.focus());
+      }
+    }
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   const { data: conversations = [] } = useSWR<ConversationSummary[]>(
     accessToken ? ["/api/conversations", accessToken] : null,
@@ -52,6 +105,37 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
         (conv.title || "Untitled").toLowerCase().includes(search.trim().toLowerCase()),
       )
     : conversations;
+
+  // Guards against double-commit: closing the editor (Enter/Escape) can fire the
+  // input's blur handler with a stale closure before React re-renders.
+  const renameSettledRef = useRef(false);
+
+  function startRename(conv: ConversationSummary) {
+    renameSettledRef.current = false;
+    setEditingId(conv.id);
+    setEditingTitle(conv.title || "Untitled");
+  }
+
+  function cancelRename() {
+    renameSettledRef.current = true;
+    setEditingId(null);
+  }
+
+  async function commitRename() {
+    if (renameSettledRef.current) return;
+    renameSettledRef.current = true;
+    const id = editingId;
+    const title = editingTitle.trim();
+    setEditingId(null);
+    if (!accessToken || !id || !title) return;
+    const current = conversations.find((c) => c.id === id);
+    if (!current || title === (current.title || "Untitled")) return;
+    try {
+      await renameConversation(id, title, accessToken);
+    } finally {
+      await mutate(["/api/conversations", accessToken]);
+    }
+  }
 
   async function handleDeleteConfirm() {
     if (!accessToken || !deleteTarget) return;
@@ -109,22 +193,22 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
             className="pointer-events-none absolute left-6 top-1/2 -translate-y-1/2 text-sidebar-foreground/35"
           />
           <input
+            ref={searchInputRef}
             type="search"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             placeholder="Search conversations…"
-            className="w-full rounded-xl border border-sidebar-foreground/10 bg-sidebar-foreground/5 py-2 pr-3 pl-8 text-sm text-sidebar-foreground outline-none transition placeholder:text-sidebar-foreground/35 focus:border-sidebar-foreground/20 focus:bg-sidebar-foreground/10"
+            className="w-full rounded-xl border border-sidebar-foreground/10 bg-sidebar-foreground/5 py-2 pr-12 pl-8 text-sm text-sidebar-foreground outline-none transition placeholder:text-sidebar-foreground/35 focus:border-sidebar-foreground/20 focus:bg-sidebar-foreground/10"
           />
+          {shortcutHint && (
+            <kbd className="pointer-events-none absolute right-6 top-1/2 hidden -translate-y-1/2 rounded border border-sidebar-foreground/15 px-1.5 py-0.5 font-sans text-[10px] text-sidebar-foreground/35 md:block">
+              {shortcutHint}
+            </kbd>
+          )}
         </div>
       )}
 
-      <div className="px-5 pb-2 pt-1">
-        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/40">
-          Recent
-        </p>
-      </div>
-
-      <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-3">
+      <nav className="flex-1 space-y-1 overflow-y-auto px-3 pb-3 pt-1">
         {conversations.length === 0 && (
           <p className="px-3 py-3 text-xs leading-5 text-sidebar-foreground/40">
             Your recent conversations will appear here.
@@ -135,36 +219,76 @@ export default function Sidebar({ conversationId, onSelect }: Props) {
             No conversations match “{search.trim()}”.
           </p>
         )}
-        {filteredConversations.map((conv) => {
-          const active = conv.id === conversationId;
-          return (
-            <div
-              key={conv.id}
-              className={`group flex items-center rounded-xl transition ${
-                active
-                  ? "bg-sidebar-foreground/10 text-sidebar-foreground"
-                  : "text-sidebar-foreground/60 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground/85"
-              }`}
-            >
-              <button
-                onClick={() => {
-                  setMobileOpen(false);
-                  onSelect(conv.id);
-                }}
-                className="min-w-0 flex-1 px-3 py-2.5 text-left text-sm"
-              >
-                <span className="block truncate leading-snug">{conv.title || "Untitled"}</span>
-              </button>
-              <button
-                onClick={() => setDeleteTarget(conv.id)}
-                className="mr-1.5 shrink-0 rounded-lg p-1.5 text-sidebar-foreground/40 opacity-70 transition hover:bg-red-500/10 hover:text-red-300 md:opacity-0 md:group-hover:opacity-100"
-                aria-label="Delete conversation"
-              >
-                <Trash2 size={13} />
-              </button>
+        {groupConversations(filteredConversations).map(([label, group]) => (
+          <div key={label} className="pt-3 first:pt-1">
+            <p className="px-2 pb-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-sidebar-foreground/40">
+              {label}
+            </p>
+            <div className="space-y-1">
+              {group.map((conv) => {
+                const active = conv.id === conversationId;
+                const editing = editingId === conv.id;
+                return (
+                  <div
+                    key={conv.id}
+                    className={`group flex items-center rounded-xl transition ${
+                      active
+                        ? "bg-sidebar-foreground/10 text-sidebar-foreground"
+                        : "text-sidebar-foreground/60 hover:bg-sidebar-foreground/[0.055] hover:text-sidebar-foreground/85"
+                    }`}
+                  >
+                    {editing ? (
+                      <input
+                        autoFocus
+                        value={editingTitle}
+                        onChange={(e) => setEditingTitle(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter") {
+                            e.preventDefault();
+                            void commitRename();
+                          } else if (e.key === "Escape") {
+                            cancelRename();
+                          }
+                        }}
+                        onBlur={() => void commitRename()}
+                        aria-label="Conversation title"
+                        className="m-1 min-w-0 flex-1 rounded-lg border border-sidebar-foreground/20 bg-sidebar-foreground/5 px-2 py-1.5 text-sm text-sidebar-foreground outline-none focus:border-sidebar-foreground/35"
+                      />
+                    ) : (
+                      <>
+                        <button
+                          onClick={() => {
+                            setMobileOpen(false);
+                            onSelect(conv.id);
+                          }}
+                          className="min-w-0 flex-1 px-3 py-2.5 text-left text-sm"
+                        >
+                          <span className="block truncate leading-snug">
+                            {conv.title || "Untitled"}
+                          </span>
+                        </button>
+                        <button
+                          onClick={() => startRename(conv)}
+                          className="shrink-0 rounded-lg p-1.5 text-sidebar-foreground/40 opacity-70 transition hover:bg-sidebar-foreground/10 hover:text-sidebar-foreground/85 md:opacity-0 md:group-hover:opacity-100"
+                          aria-label="Rename conversation"
+                        >
+                          <Pencil size={13} />
+                        </button>
+                        <button
+                          onClick={() => setDeleteTarget(conv.id)}
+                          className="mr-1.5 shrink-0 rounded-lg p-1.5 text-sidebar-foreground/40 opacity-70 transition hover:bg-red-500/10 hover:text-red-300 md:opacity-0 md:group-hover:opacity-100"
+                          aria-label="Delete conversation"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      </>
+                    )}
+                  </div>
+                );
+              })}
             </div>
-          );
-        })}
+          </div>
+        ))}
       </nav>
 
       <div className="mx-3 border-t border-sidebar-foreground/[0.08] px-1 pb-3 pt-3">

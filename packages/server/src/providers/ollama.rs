@@ -231,10 +231,12 @@ impl ChatProvider for OllamaProvider {
                                     .message
                                     .tool_calls
                                     .into_iter()
-                                    .map(|call| ToolCall {
-                                        id: uuid::Uuid::new_v4().to_string(),
-                                        name: call.function.name,
-                                        arguments: call.function.arguments,
+                                    .map(|call| {
+                                        ToolCall::new(
+                                            uuid::Uuid::new_v4().to_string(),
+                                            call.function.name,
+                                            call.function.arguments,
+                                        )
                                     })
                                     .collect();
                                 let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
@@ -397,11 +399,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let call = ToolCall {
-            id: "call-1".to_string(),
-            name: "weather".to_string(),
-            arguments: serde_json::json!({"city": "London"}),
-        };
+        let call = ToolCall::new("call-1", "weather", serde_json::json!({"city": "London"}));
         let messages = vec![
             ChatMessage::assistant_with_tools("", vec![call]),
             ChatMessage::tool("call-1", "weather", "{\"ok\":true}"),

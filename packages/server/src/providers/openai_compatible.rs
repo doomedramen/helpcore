@@ -12,11 +12,13 @@ use tokio_util::io::StreamReader;
 use super::{
     error::{ProviderError, http_error},
     traits::{ChatProvider, ProviderStream},
-    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition},
+    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition, invalid_arguments_reason},
 };
 
 const DEFAULT_CONTEXT_LIMIT: u32 = 128_000;
-const DEFAULT_MAX_TOKENS: u32 = 4096;
+// Generous enough for tool calls that carry whole files (e.g. workspace
+// writes); 4096 routinely cut those off mid-argument.
+const DEFAULT_MAX_TOKENS: u32 = 8192;
 
 #[derive(Debug, Clone, Copy)]
 pub enum OutputTokenField {
@@ -140,6 +142,7 @@ struct ApiErrorBody {
 struct StreamChoice {
     #[serde(default)]
     delta: StreamDelta,
+    finish_reason: Option<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -167,6 +170,16 @@ struct ToolAccumulator {
     id: String,
     name: String,
     arguments: String,
+}
+
+/// Per-response accumulation while consuming the SSE stream.
+#[derive(Debug, Default)]
+struct StreamState {
+    tool_calls: BTreeMap<usize, ToolAccumulator>,
+    /// True once any choice reports `finish_reason: "length"` — the response
+    /// was cut off by the output token limit, so accumulated tool-call
+    /// arguments may be incomplete.
+    length_limited: bool,
 }
 
 #[async_trait]
@@ -240,7 +253,7 @@ impl ChatProvider for OpenAiCompatibleProvider {
 
         tokio::spawn(async move {
             let mut data_lines = Vec::new();
-            let mut tool_calls = BTreeMap::<usize, ToolAccumulator>::new();
+            let mut state = StreamState::default();
             let mut terminated = false;
 
             loop {
@@ -251,7 +264,7 @@ impl ChatProvider for OpenAiCompatibleProvider {
                         }
                         let data = data_lines.join("\n");
                         data_lines.clear();
-                        match handle_event(&data, &mut tool_calls, &tx).await {
+                        match handle_event(&data, &mut state, &tx).await {
                             Ok(done) => {
                                 if done {
                                     terminated = true;
@@ -272,7 +285,7 @@ impl ChatProvider for OpenAiCompatibleProvider {
                     Ok(None) => {
                         if !data_lines.is_empty() {
                             let data = data_lines.join("\n");
-                            match handle_event(&data, &mut tool_calls, &tx).await {
+                            match handle_event(&data, &mut state, &tx).await {
                                 Ok(done) => terminated = done,
                                 Err(error) => {
                                     let _ = tx.send(Err(error)).await;
@@ -339,11 +352,11 @@ fn convert_message(message: &ChatMessage) -> WireMessage {
 
 async fn handle_event(
     data: &str,
-    tool_calls: &mut BTreeMap<usize, ToolAccumulator>,
+    state: &mut StreamState,
     tx: &tokio::sync::mpsc::Sender<Result<StreamChunk, ProviderError>>,
 ) -> Result<bool, ProviderError> {
     if data.trim() == "[DONE]" {
-        let calls = finish_tool_calls(std::mem::take(tool_calls))?;
+        let calls = finish_tool_calls(std::mem::take(&mut state.tool_calls), state.length_limited);
         if !calls.is_empty() {
             let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
         }
@@ -365,11 +378,14 @@ async fn handle_event(
     }
 
     for choice in envelope.choices {
+        if choice.finish_reason.as_deref() == Some("length") {
+            state.length_limited = true;
+        }
         if let Some(content) = choice.delta.content.filter(|content| !content.is_empty()) {
             let _ = tx.send(Ok(StreamChunk::delta(content))).await;
         }
         for delta in choice.delta.tool_calls {
-            let call = tool_calls.entry(delta.index).or_default();
+            let call = state.tool_calls.entry(delta.index).or_default();
             if let Some(id) = delta.id {
                 call.id.push_str(&id);
             }
@@ -386,35 +402,43 @@ async fn handle_event(
     Ok(false)
 }
 
+/// Assembles the accumulated tool-call fragments. A malformed call — no name,
+/// or arguments that don't parse (typically because the response hit the
+/// output token limit mid-argument) — is not a request error: it is marked
+/// invalid so the chat loop can report the problem back to the model as a
+/// failed tool result. Failing the whole request would make the turn
+/// unrecoverable, since a retry regenerates the same oversized call.
 fn finish_tool_calls(
     tool_calls: BTreeMap<usize, ToolAccumulator>,
-) -> Result<Vec<ToolCall>, ProviderError> {
+    length_limited: bool,
+) -> Vec<ToolCall> {
     tool_calls
         .into_values()
         .map(|call| {
-            if call.name.is_empty() {
-                return Err(ProviderError::Request(
-                    "provider returned a tool call without a name".to_string(),
-                ));
-            }
-            let arguments = if call.arguments.trim().is_empty() {
-                serde_json::json!({})
+            let id = if call.id.is_empty() {
+                uuid::Uuid::new_v4().to_string()
             } else {
-                serde_json::from_str(&call.arguments).map_err(|error| {
-                    ProviderError::Request(format!(
-                        "provider returned invalid tool arguments: {error}"
-                    ))
-                })?
+                call.id
             };
-            Ok(ToolCall {
-                id: if call.id.is_empty() {
-                    uuid::Uuid::new_v4().to_string()
-                } else {
-                    call.id
-                },
-                name: call.name,
-                arguments,
-            })
+            if call.name.is_empty() {
+                return ToolCall::invalid(
+                    id,
+                    "unknown_tool",
+                    "The provider returned a tool call without a name. Re-issue the call."
+                        .to_string(),
+                );
+            }
+            if call.arguments.trim().is_empty() {
+                return ToolCall::new(id, call.name, serde_json::json!({}));
+            }
+            match serde_json::from_str(&call.arguments) {
+                Ok(arguments) => ToolCall::new(id, call.name, arguments),
+                Err(error) => ToolCall::invalid(
+                    id,
+                    call.name,
+                    invalid_arguments_reason(&error, length_limited),
+                ),
+            }
         })
         .collect()
 }
@@ -509,11 +533,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let call = ToolCall {
-            id: "call_1".to_string(),
-            name: "weather".to_string(),
-            arguments: serde_json::json!({"city": "London"}),
-        };
+        let call = ToolCall::new("call_1", "weather", serde_json::json!({"city": "London"}));
         let messages = vec![
             ChatMessage::assistant_with_tools("", vec![call]),
             ChatMessage::tool("call_1", "weather", "{\"ok\":true}"),
@@ -528,6 +548,65 @@ mod tests {
         let body: serde_json::Value = serde_json::from_slice(&requests[0].body).unwrap();
         assert_eq!(body["messages"][0]["tool_calls"][0]["id"], "call_1");
         assert_eq!(body["messages"][1]["tool_call_id"], "call_1");
+    }
+
+    #[tokio::test]
+    async fn truncated_tool_arguments_become_invalid_call_not_error() {
+        let server = MockServer::start().await;
+        // Arguments cut off mid-string and finish_reason "length": the model
+        // hit the output token limit while emitting the call.
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"write_file\",\"arguments\":\"{\\\"content\\\":\\\"abc\"}}]}}]}\n\n\
+                 data: {\"choices\":[{\"delta\":{},\"finish_reason\":\"length\"}]}\n\n\
+                 data: [DONE]\n\n",
+            ))
+            .mount(&server)
+            .await;
+
+        let mut stream = provider(&server, OutputTokenField::MaxTokens)
+            .complete(&[ChatMessage::user("write")], &[], None)
+            .await
+            .unwrap();
+        let mut calls = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            calls.extend(
+                chunk
+                    .expect("truncation must not be a stream error")
+                    .tool_calls,
+            );
+        }
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].name, "write_file");
+        let reason = calls[0].invalid.as_deref().expect("call must be invalid");
+        assert!(reason.contains("output token limit"), "got: {reason}");
+        assert_eq!(calls[0].arguments, serde_json::json!({}));
+    }
+
+    #[tokio::test]
+    async fn malformed_tool_arguments_without_length_are_invalid_call() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(
+                "data: {\"choices\":[{\"delta\":{\"tool_calls\":[{\"index\":0,\"id\":\"call_1\",\"function\":{\"name\":\"weather\",\"arguments\":\"not json\"}}]}}]}\n\n\
+                 data: [DONE]\n\n",
+            ))
+            .mount(&server)
+            .await;
+
+        let mut stream = provider(&server, OutputTokenField::MaxTokens)
+            .complete(&[ChatMessage::user("weather")], &[], None)
+            .await
+            .unwrap();
+        let mut calls = Vec::new();
+        while let Some(chunk) = stream.next().await {
+            calls.extend(chunk.unwrap().tool_calls);
+        }
+        assert_eq!(calls.len(), 1);
+        let reason = calls[0].invalid.as_deref().expect("call must be invalid");
+        assert!(reason.contains("not valid JSON"), "got: {reason}");
     }
 
     #[tokio::test]

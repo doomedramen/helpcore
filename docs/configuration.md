@@ -129,7 +129,7 @@ num_ctx       = 4096
 | `api_key` | hosted providers | Required for `openai`, `anthropic`, and `deepseek`; optional for local compatible servers |
 | `url` | compatible providers | Required for `openai_compatible`; optional endpoint override for hosted providers |
 | `num_ctx` | no | Context window used for auto-compaction. Defaults: Ollama 8192, Anthropic 200000, OpenAI-compatible providers 128000. Set it to the selected model's actual limit. |
-| `num_predict` | no | Max tokens generated per response. Defaults: Ollama 2048, hosted/compatible providers 4096. |
+| `num_predict` | no | Max tokens generated per response. Defaults: Ollama 2048, hosted/compatible providers 8192. Tool calls that carry whole files need headroom here — if a call's arguments are cut off at this limit, the model is told and asked to split the work rather than the request failing. |
 
 ### Ollama
 
