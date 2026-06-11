@@ -353,7 +353,13 @@ export interface PluginStoreResponse {
 }
 
 /** Supported LLM provider backends. */
-export type ProviderType = "anthropic" | "deepseek" | "openai" | "ollama" | "openai_compatible";
+export type ProviderType =
+  | "anthropic"
+  | "deepseek"
+  | "openai"
+  | "ollama"
+  | "openai_compatible"
+  | "open_router";
 /** Roles a provider can fulfill. */
 export type ProviderRole = "chat" | "code" | "image_gen" | "video_gen" | "embeddings";
 

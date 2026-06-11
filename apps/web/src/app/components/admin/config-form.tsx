@@ -33,6 +33,7 @@ const providerTypes: Array<{ value: ProviderType; label: string }> = [
   { value: "openai", label: "OpenAI (ChatGPT models)" },
   { value: "anthropic", label: "Anthropic Claude" },
   { value: "deepseek", label: "DeepSeek" },
+  { value: "open_router", label: "OpenRouter" },
   { value: "openai_compatible", label: "OpenAI-compatible" },
 ];
 
@@ -59,7 +60,12 @@ function draftFromConfig(config: AdminConfig): AdminConfigUpdate {
   };
 }
 
-const hostedProviderTypes = new Set<ProviderType>(["openai", "anthropic", "deepseek"]);
+const hostedProviderTypes = new Set<ProviderType>([
+  "openai",
+  "anthropic",
+  "deepseek",
+  "open_router",
+]);
 
 function defaultUrl(providerType: ProviderType): string | null {
   switch (providerType) {
@@ -167,6 +173,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
     openai: 128000,
     anthropic: 200000,
     deepseek: 128000,
+    open_router: 128000,
     openai_compatible: 8192,
   };
 
@@ -175,6 +182,7 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
     openai: null,
     anthropic: 4096,
     deepseek: null,
+    open_router: null,
     openai_compatible: null,
   };
 

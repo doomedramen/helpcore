@@ -123,10 +123,10 @@ num_ctx       = 4096
 |---|---|---|
 | `id` | yes | Unique identifier; clients use this to select a provider |
 | `name` | yes | Human-readable display name |
-| `type` | yes | Provider type: `ollama`, `anthropic`, `openai`, `deepseek`, `openai_compatible` |
+| `type` | yes | Provider type: `ollama`, `anthropic`, `openai`, `deepseek`, `open_router`, `openai_compatible` |
 | `default_model` | yes | Model used when the client doesn't specify one |
 | `roles` | yes | List of roles this provider serves; at least one must be `"chat"` |
-| `api_key` | hosted providers | Required for `openai`, `anthropic`, and `deepseek`; optional for local compatible servers |
+| `api_key` | hosted providers | Required for `openai`, `anthropic`, `deepseek`, and `open_router`; optional for local compatible servers |
 | `url` | compatible providers | Required for `openai_compatible`; optional endpoint override for hosted providers |
 | `num_ctx` | no | Context window used for auto-compaction. Defaults: Ollama 8192, Anthropic 200000, OpenAI-compatible providers 128000. Set it to the selected model's actual limit. |
 | `num_predict` | no | Max tokens generated per response. Defaults: Ollama 2048, hosted/compatible providers 8192. Tool calls that carry whole files need headroom here — if a call's arguments are cut off at this limit, the model is told and asked to split the work rather than the request failing. |
@@ -206,6 +206,24 @@ num_predict   = 4096
 ```
 
 DeepSeek uses the shared OpenAI-compatible transport with its official endpoint.
+
+### OpenRouter
+
+```toml
+[[providers]]
+id            = "openrouter"
+name          = "OpenRouter"
+type          = "open_router"
+api_key       = "sk-or-v1-..."
+default_model = "meta-llama/llama-3.3-70b-instruct:free"
+roles         = ["chat", "code"]
+num_ctx       = 128000
+num_predict   = 4096
+```
+
+OpenRouter uses the shared OpenAI-compatible transport against
+`https://openrouter.ai/api/v1`. Use any model slug from the OpenRouter model
+catalog as `default_model`.
 
 ### OpenAI-compatible servers
 

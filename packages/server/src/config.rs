@@ -228,6 +228,7 @@ pub enum ProviderType {
     Openai,
     Ollama,
     OpenaiCompatible,
+    OpenRouter,
 }
 
 impl ProviderType {
@@ -239,6 +240,7 @@ impl ProviderType {
             Self::Openai => "openai",
             Self::Ollama => "ollama",
             Self::OpenaiCompatible => "openai_compatible",
+            Self::OpenRouter => "open_router",
         }
     }
 }
@@ -253,6 +255,7 @@ impl TryFrom<&str> for ProviderType {
             "chatgpt" | "openai" => Ok(Self::Openai),
             "ollama" => Ok(Self::Ollama),
             "openai_compatible" => Ok(Self::OpenaiCompatible),
+            "open_router" => Ok(Self::OpenRouter),
             other => anyhow::bail!("unknown provider type: {other}"),
         }
     }
@@ -431,7 +434,10 @@ impl Config {
             }
             if matches!(
                 provider.provider_type,
-                ProviderType::Anthropic | ProviderType::Deepseek | ProviderType::Openai
+                ProviderType::Anthropic
+                    | ProviderType::Deepseek
+                    | ProviderType::Openai
+                    | ProviderType::OpenRouter
             ) && provider
                 .api_key
                 .as_deref()

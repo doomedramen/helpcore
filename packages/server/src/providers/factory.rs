@@ -15,6 +15,7 @@ use super::{
 const DEFAULT_MAX_RETRIES: u32 = 3;
 const OPENAI_BASE_URL: &str = "https://api.openai.com/v1";
 const DEEPSEEK_BASE_URL: &str = "https://api.deepseek.com";
+const OPENROUTER_BASE_URL: &str = "https://openrouter.ai/api/v1";
 
 /// Builds a `ChatProvider` from a config entry, wrapped in `ReliableProvider`.
 pub fn build(config: &ProviderConfig) -> anyhow::Result<Arc<dyn ChatProvider>> {
@@ -44,6 +45,16 @@ pub fn build(config: &ProviderConfig) -> anyhow::Result<Arc<dyn ChatProvider>> {
             &config.id,
             &config.name,
             config.url.as_deref().unwrap_or(DEEPSEEK_BASE_URL),
+            Some(required_api_key(config)?),
+            &config.default_model,
+            config.num_ctx,
+            config.num_predict,
+            OutputTokenField::MaxTokens,
+        )),
+        ProviderType::OpenRouter => Arc::new(OpenAiCompatibleProvider::new(
+            &config.id,
+            &config.name,
+            config.url.as_deref().unwrap_or(OPENROUTER_BASE_URL),
             Some(required_api_key(config)?),
             &config.default_model,
             config.num_ctx,
@@ -126,6 +137,7 @@ mod tests {
             ProviderType::Openai,
             ProviderType::Deepseek,
             ProviderType::Anthropic,
+            ProviderType::OpenRouter,
         ] {
             let mut cfg = ollama_config();
             cfg.provider_type = provider_type;

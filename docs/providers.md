@@ -57,11 +57,13 @@ Supported chat provider types:
 | `openai` | OpenAI Chat Completions | `https://api.openai.com/v1` |
 | `anthropic` | Anthropic Messages | `https://api.anthropic.com` |
 | `deepseek` | OpenAI-compatible Chat Completions | `https://api.deepseek.com` |
+| `open_router` | OpenAI-compatible Chat Completions | `https://openrouter.ai/api/v1` |
 | `openai_compatible` | OpenAI-compatible Chat Completions | Configured `url` |
 
-OpenAI, Anthropic, and DeepSeek require an API key. OpenAI support uses the
-OpenAI developer API; a consumer ChatGPT subscription is not an API credential.
-Official endpoints can be overridden with `url` for proxies or gateways.
+OpenAI, Anthropic, DeepSeek, and OpenRouter require an API key. OpenAI support
+uses the OpenAI developer API; a consumer ChatGPT subscription is not an API
+credential. Official endpoints can be overridden with `url` for proxies or
+gateways.
 
 Provider changes saved through the admin web interface are validated and
 applied to new requests immediately. Editing `config.toml` directly still
