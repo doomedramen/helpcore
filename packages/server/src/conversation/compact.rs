@@ -338,7 +338,7 @@ mod tests {
             .call_sync(|conn| load_messages(conn, &conv_id))
             .unwrap();
         // Should find the LATEST summary
-        let latest_summary = msgs.iter().filter(|m| m.role == "summary").last().unwrap();
+        let latest_summary = msgs.iter().rfind(|m| m.role == "summary").unwrap();
         assert_eq!(latest_summary.content, "## Goal\n- Updated summary");
     }
 }

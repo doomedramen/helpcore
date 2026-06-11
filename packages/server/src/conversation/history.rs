@@ -782,6 +782,22 @@ pub fn truncate_title(text: &str) -> String {
     }
 }
 
+/// Loads the latest summary message for a conversation, if any.
+pub fn load_latest_summary(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+) -> anyhow::Result<Option<String>> {
+    conn.query_row(
+        "SELECT content FROM messages
+          WHERE conversation_id = ?1 AND role = 'summary'
+          ORDER BY sequence DESC LIMIT 1",
+        [conversation_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(anyhow::Error::from)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -954,20 +970,4 @@ mod tests {
         assert!(title.ends_with('…'));
         assert!(title.len() <= 62);
     }
-}
-
-/// Loads the latest summary message for a conversation, if any.
-pub fn load_latest_summary(
-    conn: &rusqlite::Connection,
-    conversation_id: &str,
-) -> anyhow::Result<Option<String>> {
-    conn.query_row(
-        "SELECT content FROM messages
-          WHERE conversation_id = ?1 AND role = 'summary'
-          ORDER BY sequence DESC LIMIT 1",
-        [conversation_id],
-        |row| row.get(0),
-    )
-    .optional()
-    .map_err(anyhow::Error::from)
 }
