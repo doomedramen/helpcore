@@ -12,7 +12,7 @@ use tokio_util::io::StreamReader;
 use super::{
     error::{ProviderError, http_error},
     traits::{ChatProvider, ProviderStream},
-    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition, invalid_arguments_reason},
+    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition, Usage, invalid_arguments_reason},
 };
 
 const DEFAULT_CONTEXT_LIMIT: u32 = 128_000;
@@ -131,6 +131,20 @@ struct StreamEnvelope {
     #[serde(default)]
     choices: Vec<StreamChoice>,
     error: Option<ApiErrorBody>,
+    usage: Option<StreamUsage>,
+}
+
+#[derive(Debug, Deserialize)]
+struct StreamUsage {
+    prompt_tokens: Option<u32>,
+    completion_tokens: Option<u32>,
+    #[serde(default)]
+    prompt_tokens_details: Option<PromptTokensDetails>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PromptTokensDetails {
+    cached_tokens: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -180,6 +194,10 @@ struct StreamState {
     /// was cut off by the output token limit, so accumulated tool-call
     /// arguments may be incomplete.
     length_limited: bool,
+    /// Token usage accumulated from streaming events.
+    input_tokens: Option<u32>,
+    output_tokens: Option<u32>,
+    cache_read_tokens: Option<u32>,
 }
 
 #[async_trait]
@@ -360,7 +378,20 @@ async fn handle_event(
         if !calls.is_empty() {
             let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
         }
-        let _ = tx.send(Ok(StreamChunk::done())).await;
+        let usage = match (state.input_tokens, state.output_tokens) {
+            (Some(input_tokens), Some(output_tokens)) => Some(Usage {
+                input_tokens,
+                output_tokens,
+                cache_read_tokens: state.cache_read_tokens,
+                cache_write_tokens: None,
+            }),
+            _ => None,
+        };
+        if let Some(u) = usage {
+            let _ = tx.send(Ok(StreamChunk::done_with_usage(u))).await;
+        } else {
+            let _ = tx.send(Ok(StreamChunk::done())).await;
+        }
         return Ok(true);
     }
 
@@ -375,6 +406,14 @@ async fn handle_event(
                 .message
                 .unwrap_or_else(|| "provider returned an error".to_string()),
         ));
+    }
+
+    if let Some(usage) = envelope.usage {
+        state.input_tokens = state.input_tokens.or(usage.prompt_tokens);
+        state.output_tokens = state.output_tokens.or(usage.completion_tokens);
+        state.cache_read_tokens = state
+            .cache_read_tokens
+            .or(usage.prompt_tokens_details.and_then(|d| d.cached_tokens));
     }
 
     for choice in envelope.choices {

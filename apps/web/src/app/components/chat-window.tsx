@@ -25,6 +25,7 @@ import type {
   SseStarted,
   SseToolCall,
   SseToolResult,
+  SseUsage,
 } from "@/lib/types";
 import {
   Conversation,
@@ -175,6 +176,7 @@ export default function ChatWindow({
     usedTokens: number;
     maxTokens: number;
   } | null>(null);
+  const [streamUsage, setStreamUsage] = useState<SseUsage | null>(null);
   const providerSelectionsRef = useRef<Record<string, string>>({});
   const abortRef = useRef<AbortController | null>(null);
   const processingRef = useRef(false);
@@ -249,6 +251,7 @@ export default function ChatWindow({
       setQueue([]);
       setLiveToolCalls({});
       setContextUsage(null);
+      setStreamUsage(null);
       prevMessageCountRef.current = 0;
     }
   }, [conversationId]);
@@ -332,6 +335,7 @@ export default function ChatWindow({
         },
         onDone: (done: SseDone) => {
           setLiveToolCalls({});
+          if (done.usage) setStreamUsage(done.usage);
           void refreshConversation(done.conversation_id);
         },
         onInterrupted: () => {
@@ -712,6 +716,26 @@ export default function ChatWindow({
   const contextMaxTokens = contextUsage?.maxTokens ?? selectedProvider?.context_limit ?? 0;
   const contextUsedTokens = contextUsage?.usedTokens ?? 0;
 
+  const contextModelUsage = useMemo(() => {
+    if (!streamUsage) return undefined;
+    return {
+      inputTokens: streamUsage.input_tokens,
+      inputTokenDetails: {
+        noCacheTokens: undefined,
+        cacheReadTokens: streamUsage.cache_read_tokens ?? undefined,
+        cacheWriteTokens: streamUsage.cache_write_tokens ?? undefined,
+      },
+      outputTokens: streamUsage.output_tokens,
+      outputTokenDetails: {
+        textTokens: undefined,
+        reasoningTokens: undefined,
+      },
+      totalTokens: streamUsage.input_tokens + streamUsage.output_tokens,
+    };
+  }, [streamUsage]);
+
+  const contextModelId = currentConversation?.model ?? undefined;
+
   return (
     <div className="flex h-full flex-col">
       {/* Header */}
@@ -734,7 +758,12 @@ export default function ChatWindow({
             </span>
           )}
           {contextMaxTokens > 0 && conversationId && (
-            <Context usedTokens={contextUsedTokens} maxTokens={contextMaxTokens}>
+            <Context
+              usedTokens={contextUsedTokens}
+              maxTokens={contextMaxTokens}
+              usage={contextModelUsage}
+              modelId={contextModelId}
+            >
               <ContextTrigger />
               <ContextContent>
                 <ContextContentHeader />

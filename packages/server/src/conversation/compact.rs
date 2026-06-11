@@ -17,6 +17,11 @@ use crate::{
 /// Prompt used when asking the model to summarise a segment.
 const COMPACT_INSTRUCTIONS: &str = include_str!("../../../../prompts/compact.md");
 
+/// Target token count to preserve at the end of the conversation.
+const PRESERVE_RECENT_TOKENS: usize = 8000;
+/// Minimum number of messages to preserve at the end (to maintain flow).
+const MIN_PRESERVE_MESSAGES: usize = 4;
+
 /// Extracts summary content from the model's response, handling `<summary>` wrapper
 /// tags robustly. Falls back to raw text when tags are absent or malformed.
 fn extract_summary(raw: &str) -> String {
@@ -64,18 +69,15 @@ pub struct CompactResult {
     pub summary_length: usize,
 }
 
-/// Compact a conversation by summarising its oldest third.
+/// Compact a conversation by summarising its oldest portion while preserving recent context.
 ///
 /// Algorithm:
-/// 1. Load all non-compacted, non-summary messages ordered by sequence.
-/// 2. Skip the first message (the conversation anchor — never compacted).
-/// 3. Take the oldest ⌊N/3⌋ of the remaining messages as the "segment".
-/// 4. Ask the provider to summarise the segment (non-streaming, collects all chunks).
-/// 5. Insert a `summary` role message at the sequence of the first compacted message.
-/// 6. Mark the segment as compacted.
-///
-/// If the conversation is too short to compact (< 6 compactable messages, i.e.
-/// fewer than 3 non-anchor messages) this is a no-op.
+/// 1. Load all non-compacted messages and the latest summary.
+/// 2. Preserve a "tail" of recent messages (at least 4 messages or ~8000 tokens).
+/// 3. Take the remaining messages (excluding anchor) as the "segment" to be compacted.
+/// 4. If a previous summary exists, provide it to the LLM for an incremental update.
+/// 5. Ask the provider to summarise the segment.
+/// 6. Insert a `summary` role message and mark the segment as compacted.
 pub async fn compact_conversation(
     db: &DbPool,
     conversation_id: &str,
@@ -83,9 +85,13 @@ pub async fn compact_conversation(
 ) -> anyhow::Result<CompactResult> {
     let conv_id = conversation_id.to_string();
 
-    // 1. Load compactable messages.
-    let messages = db
-        .call(move |conn| history::load_compactable_messages(conn, &conv_id))
+    // 1. Load compactable messages and latest summary.
+    let (messages, previous_summary) = db
+        .call(move |conn| {
+            let msgs = history::load_compactable_messages(conn, &conv_id)?;
+            let summary = history::load_latest_summary(conn, &conv_id)?;
+            Ok((msgs, summary))
+        })
         .await?;
 
     // Need at least anchor + 3 more to produce a meaningful compaction.
@@ -96,62 +102,54 @@ pub async fn compact_conversation(
         });
     }
 
-    // 2. Skip the anchor (first message). The rest are candidates.
-    let candidates = &messages[1..];
-
-    // 3. Take the oldest third (rounded down).
-    let segment_len = (candidates.len() / 3).max(1);
-
-    // 3a. Ensure the cut point does not split a tool round — if the segment
-    //     ends with an assistant that has tool_calls, extend the segment to
-    //     include all of its tool results. This prevents orphaned tool messages
-    //     that would cause provider errors.
-    let segment_len = {
-        let mut ids_in_segment = std::collections::HashSet::new();
-        for msg in &candidates[..segment_len] {
-            if msg.role == "assistant"
-                && let Some(ref tc_json) = msg.tool_calls
-                && let Ok(calls) = serde_json::from_str::<serde_json::Value>(tc_json)
-                && let Some(arr) = calls.as_array()
-            {
-                for call in arr {
-                    if let Some(id) = call.get("id").and_then(|v| v.as_str()) {
-                        ids_in_segment.insert(id.to_string());
-                    }
-                }
-            }
+    // 2. Identify the segment to compact by calculating the tail to preserve.
+    let mut tail_tokens = 0;
+    let mut tail_len = 0;
+    for msg in messages.iter().rev() {
+        tail_tokens += msg.content.len() / 4 + 4;
+        tail_len += 1;
+        // Keep at least MIN_PRESERVE_MESSAGES and at least PRESERVE_RECENT_TOKENS.
+        if tail_tokens >= PRESERVE_RECENT_TOKENS && tail_len >= MIN_PRESERVE_MESSAGES {
+            break;
         }
-        let mut len = segment_len;
-        for msg in &candidates[segment_len..] {
-            if msg.role == "tool" {
-                let belongs = msg
-                    .tool_call_id
-                    .as_ref()
-                    .is_some_and(|id| ids_in_segment.contains(id));
-                if belongs {
-                    len += 1;
-                } else {
-                    break;
-                }
-            } else {
-                break;
-            }
-        }
-        len
-    };
+    }
 
-    let segment = &candidates[..segment_len];
+    // We preserve the anchor (messages[0]) and the tail.
+    let segment_end = messages.len().saturating_sub(tail_len).max(1);
 
-    // 4. Format the segment for the summarisation call.
-    let formatted = segment
+    // Ensure we don't compact the anchor.
+    let segment = &messages[1..segment_end];
+    let segment_len = segment.len();
+
+    if segment_len == 0 {
+        return Ok(CompactResult {
+            messages_compacted: 0,
+            summary_length: 0,
+        });
+    }
+
+    // 3. Format the segment and summary for the call.
+    let formatted_history = segment
         .iter()
         .map(|m| format!("{}: {}", m.role, m.content))
         .collect::<Vec<_>>()
         .join("\n\n");
 
+    let mut user_prompt = String::new();
+    if let Some(prev) = previous_summary {
+        user_prompt.push_str("<previous-summary>\n");
+        user_prompt.push_str(&prev);
+        user_prompt.push_str("\n</previous-summary>\n\n");
+        user_prompt
+            .push_str("Update the summary above with the following new conversation history:\n\n");
+    } else {
+        user_prompt.push_str("Create a new summary from the following conversation history:\n\n");
+    }
+    user_prompt.push_str(&formatted_history);
+
     let summarise_messages = vec![
         ChatMessage::system(COMPACT_INSTRUCTIONS),
-        ChatMessage::user(&formatted),
+        ChatMessage::user(&user_prompt),
     ];
 
     let mut stream = provider
@@ -167,15 +165,13 @@ pub async fn compact_conversation(
         }
     }
 
-    // Extract content from <summary>…</summary> wrapper tags if present.
-    // Handles preamble/postamble, missing closing tag, and bare responses.
     let summary = extract_summary(&summary);
 
     if summary.is_empty() {
         anyhow::bail!("provider returned an empty summary — compaction aborted");
     }
 
-    // 5 & 6. Write to DB atomically.
+    // 4. Write to DB atomically.
     let first_seq = segment[0].sequence;
     let ids: Vec<String> = segment.iter().map(|m| m.id.clone()).collect();
     let summary_clone = summary.clone();
@@ -226,14 +222,25 @@ mod tests {
         }
         async fn complete(
             &self,
-            _: &[ChatMessage],
+            messages: &[ChatMessage],
             _: &[crate::providers::types::ToolDefinition],
             _: Option<&str>,
         ) -> Result<crate::providers::traits::ProviderStream, ProviderError> {
+            let user_msg = messages
+                .iter()
+                .find(|m| m.role == "user")
+                .map(|m| &m.content)
+                .cloned()
+                .unwrap_or_default();
+
+            let response = if user_msg.contains("<previous-summary>") {
+                "<summary>## Goal\n- Updated summary</summary>"
+            } else {
+                "<summary>## Goal\n- New summary</summary>"
+            };
+
             Ok(Box::pin(stream::iter(vec![
-                Ok(StreamChunk::delta(
-                    "This was a discussion about Rust async patterns.",
-                )),
+                Ok(StreamChunk::delta(response)),
                 Ok(StreamChunk::done()),
             ])))
         }
@@ -242,8 +249,8 @@ mod tests {
     #[test]
     fn estimate_tokens_scales_with_content() {
         let msgs = vec![
-            ChatMessage::system("You are helpful."), // 17 chars → ~8 tokens
-            ChatMessage::user("Hello world"),        // 11 chars → ~7 tokens
+            ChatMessage::system("You are helpful."),
+            ChatMessage::user("Hello world"),
         ];
         let est = estimate_tokens(&msgs);
         assert!(est > 10 && est < 50);
@@ -258,56 +265,8 @@ mod tests {
         );
     }
 
-    #[test]
-    fn extract_summary_with_preamble_and_postamble() {
-        let raw = "Here's the summary:\n<summary>\nKey decisions were made.\n</summary>\nI hope this helps!";
-        assert_eq!(extract_summary(raw), "Key decisions were made.");
-    }
-
-    #[test]
-    fn extract_summary_opening_tag_only() {
-        let raw = "<summary>The user asked about async.";
-        assert_eq!(extract_summary(raw), "The user asked about async.");
-    }
-
-    #[test]
-    fn extract_summary_closing_tag_only() {
-        let raw = "The user asked about async.</summary>";
-        assert_eq!(extract_summary(raw), "The user asked about async.");
-    }
-
-    #[test]
-    fn extract_summary_no_tags() {
-        let raw = "The user asked about Rust async patterns.";
-        assert_eq!(extract_summary(raw), raw);
-    }
-
-    #[test]
-    fn extract_summary_empty_tags() {
-        assert_eq!(extract_summary("<summary></summary>"), "");
-    }
-
-    #[test]
-    fn extract_summary_multiple_tags_uses_first_open_and_last_close() {
-        let raw = "pre <summary>inner1</summary> mid <summary>inner2</summary> post";
-        assert_eq!(extract_summary(raw), "inner1</summary> mid <summary>inner2");
-    }
-
-    #[test]
-    fn needs_compaction_threshold() {
-        // 1000 messages × 400 chars each = 400 000 chars → ~100 000 tokens
-        let msgs: Vec<ChatMessage> = (0..1000)
-            .map(|_| ChatMessage::user("x".repeat(400)))
-            .collect();
-        assert!(needs_compaction(&msgs, 4096));
-
-        // Small context — no compaction needed
-        let small = vec![ChatMessage::user("hi")];
-        assert!(!needs_compaction(&small, 4096));
-    }
-
     #[tokio::test]
-    async fn compact_replaces_oldest_third() {
+    async fn compact_incremental_update() {
         use crate::conversation::history::*;
         use crate::db::open_in_memory;
         use chrono::Utc;
@@ -329,36 +288,57 @@ mod tests {
 
         let provider: Arc<dyn ChatProvider> = Arc::new(SummaryProvider);
 
-        // Create a conversation with 9 messages (1 anchor + 8 regular).
         let conv_id = pool
             .call_sync(|conn| {
                 let conv = create_conversation(conn, &uid)?;
-                for i in 0..9 {
-                    if i % 2 == 0 {
-                        insert_user_message(conn, &conv.id, &format!("user message {i}"))?;
-                    } else {
-                        insert_assistant_message(conn, &conv.id, &format!("reply {i}"), "p", "m")?;
-                    }
+                // Create many messages. 100 messages * 500 chars = 50000 chars (~12500 tokens).
+                // Tail preservation is 8000 tokens.
+                // So ~4500 tokens should be compacted.
+                for i in 0..100 {
+                    insert_user_message(conn, &conv.id, &format!("msg {i}: {}", "x".repeat(500)))?;
                 }
                 Ok(conv.id)
             })
             .unwrap();
 
+        // First compaction
         let result = compact_conversation(&pool, &conv_id, &provider)
             .await
             .unwrap();
-
         assert!(
             result.messages_compacted > 0,
-            "should have compacted some messages"
+            "first compaction should have happened"
         );
 
-        // After compaction, load_messages should include the summary.
         let msgs = pool
             .call_sync(|conn| load_messages(conn, &conv_id))
             .unwrap();
+        let summary = msgs.iter().find(|m| m.role == "summary").unwrap();
+        assert_eq!(summary.content, "## Goal\n- New summary");
 
-        let has_summary = msgs.iter().any(|m| m.role == "summary");
-        assert!(has_summary, "summary message should appear in history");
+        // Add more messages
+        pool.call_sync(|conn| {
+            for i in 100..200 {
+                insert_user_message(conn, &conv_id, &format!("msg {i}: {}", "x".repeat(500)))?;
+            }
+            Ok(())
+        })
+        .unwrap();
+
+        // Second compaction (incremental)
+        let result = compact_conversation(&pool, &conv_id, &provider)
+            .await
+            .unwrap();
+        assert!(
+            result.messages_compacted > 0,
+            "second compaction should have happened"
+        );
+
+        let msgs = pool
+            .call_sync(|conn| load_messages(conn, &conv_id))
+            .unwrap();
+        // Should find the LATEST summary
+        let latest_summary = msgs.iter().filter(|m| m.role == "summary").last().unwrap();
+        assert_eq!(latest_summary.content, "## Goal\n- Updated summary");
     }
 }

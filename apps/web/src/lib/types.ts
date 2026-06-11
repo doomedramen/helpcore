@@ -129,6 +129,8 @@ export interface Message {
   status: "pending" | "streaming" | "complete" | "failed" | "interrupted";
   error: string | null;
   updated_at: string;
+  /** Token usage for assistant messages, when reported by the provider. */
+  usage?: SseUsage | null;
 }
 
 /** SSE event emitted when a streaming response begins. */
@@ -158,6 +160,20 @@ export interface SseToolResult {
 export interface SseDone {
   conversation_id: string;
   message_id: string;
+  /** Token usage reported by the provider for this turn. */
+  usage?: SseUsage | null;
+}
+
+/** Provider-reported token usage for a single generation turn. */
+export interface SseUsage {
+  /** Input (prompt) tokens consumed. */
+  input_tokens: number;
+  /** Output (completion) tokens generated. */
+  output_tokens: number;
+  /** Input tokens read from the provider's cache. */
+  cache_read_tokens?: number | null;
+  /** Input tokens written to the provider's cache. */
+  cache_write_tokens?: number | null;
 }
 
 /** SSE event emitted when the tool-call round limit is reached. */

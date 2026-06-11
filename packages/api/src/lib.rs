@@ -226,6 +226,21 @@ pub struct SseDone {
     pub conversation_id: String,
     /// ID of the completed assistant message.
     pub message_id: String,
+    /// Token usage reported by the provider for this turn.
+    pub usage: Option<SseUsage>,
+}
+
+/// Provider-reported token usage for a single generation turn.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct SseUsage {
+    /// Input (prompt) tokens consumed.
+    pub input_tokens: u32,
+    /// Output (completion) tokens generated.
+    pub output_tokens: u32,
+    /// Input tokens read from the provider's cache.
+    pub cache_read_tokens: Option<u32>,
+    /// Input tokens written to the provider's cache.
+    pub cache_write_tokens: Option<u32>,
 }
 
 /// Sent as SSE `event: context` data — reports context window usage.
@@ -321,6 +336,8 @@ pub struct MessageSummary {
     pub error: Option<String>,
     /// ISO-8601 timestamp of last update.
     pub updated_at: String,
+    /// Token usage for assistant messages, when reported by the provider.
+    pub usage: Option<SseUsage>,
 }
 
 /// Delivery and processing status of a chat message.

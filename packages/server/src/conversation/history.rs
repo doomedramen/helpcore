@@ -6,7 +6,8 @@ use rusqlite::Connection;
 use rusqlite::OptionalExtension;
 use uuid::Uuid;
 
-use helpcore_api::{ConversationSummary, MessageStatus, MessageSummary};
+use crate::providers::types::Usage;
+use helpcore_api::{ConversationSummary, MessageStatus, MessageSummary, SseUsage};
 
 /// Result of starting a new conversation turn — metadata needed for generation.
 pub struct StartedTurn {
@@ -77,7 +78,8 @@ pub fn load_messages(
 ) -> anyhow::Result<Vec<MessageSummary>> {
     let mut stmt = conn.prepare(
         "SELECT id, role, content, tool_call_id, tool_calls, sequence, created_at,
-                status, error, COALESCE(updated_at, created_at)
+                status, error, COALESCE(updated_at, created_at),
+                input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
          FROM messages
          WHERE conversation_id = ?1 AND compacted = 0
          ORDER BY sequence ASC",
@@ -96,7 +98,8 @@ pub fn load_messages_before(
 ) -> anyhow::Result<Vec<MessageSummary>> {
     let mut stmt = conn.prepare(
         "SELECT id, role, content, tool_call_id, tool_calls, sequence, created_at,
-                status, error, COALESCE(updated_at, created_at)
+                status, error, COALESCE(updated_at, created_at),
+                input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
          FROM messages
          WHERE conversation_id = ?1 AND compacted = 0 AND sequence < ?2
          ORDER BY sequence ASC",
@@ -189,7 +192,8 @@ pub fn retry_turn(
     let user_message = tx
         .query_row(
             "SELECT id, role, content, tool_call_id, tool_calls, sequence, created_at,
-                    status, error, COALESCE(updated_at, created_at)
+                    status, error, COALESCE(updated_at, created_at),
+                    input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
              FROM messages
              WHERE conversation_id = ?1 AND role = 'user' AND sequence < ?2
              ORDER BY sequence DESC LIMIT 1",
@@ -303,6 +307,7 @@ pub fn insert_user_message(
         status: MessageStatus::Complete,
         error: None,
         updated_at: now,
+        usage: None,
     })
 }
 
@@ -378,12 +383,32 @@ pub fn finish_assistant_message(conn: &Connection, message_id: &str) -> anyhow::
     Ok(())
 }
 
+/// Persists provider-reported token usage on an assistant message.
+pub fn set_message_usage(conn: &Connection, message_id: &str, usage: &Usage) -> anyhow::Result<()> {
+    conn.execute(
+        "UPDATE messages
+         SET input_tokens = ?1, output_tokens = ?2,
+             cache_read_tokens = ?3, cache_write_tokens = ?4
+         WHERE id = ?5 AND role = 'assistant'",
+        rusqlite::params![
+            usage.input_tokens,
+            usage.output_tokens,
+            usage.cache_read_tokens,
+            usage.cache_write_tokens,
+            message_id,
+        ],
+    )?;
+    Ok(())
+}
+
 /// Persists a tool-call round: bumps the active assistant, inserts tool results.
+/// If `usage` is provided, token counts are saved on the completed assistant message.
 pub fn persist_tool_round(
     conn: &Connection,
     assistant_message_id: &str,
     tool_calls: &[crate::providers::types::ToolCall],
     results: &[(crate::providers::types::ToolCall, String)],
+    usage: Option<&Usage>,
 ) -> anyhow::Result<()> {
     let tx = conn.unchecked_transaction()?;
     let row = tx
@@ -422,11 +447,17 @@ pub fn persist_tool_round(
          WHERE id = ?3",
         rusqlite::params![inserted_count, now, assistant_message_id],
     )?;
+    let input_tokens = usage.map(|u| u.input_tokens as i64);
+    let output_tokens = usage.map(|u| u.output_tokens as i64);
+    let cache_read = usage.and_then(|u| u.cache_read_tokens.map(|n| n as i64));
+    let cache_write = usage.and_then(|u| u.cache_write_tokens.map(|n| n as i64));
     tx.execute(
         "INSERT INTO messages
          (id, conversation_id, role, content, tool_calls, provider_id, model,
-          sequence, status, created_at, updated_at)
-         VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, ?7, 'complete', ?8, ?8)",
+          sequence, status, created_at, updated_at,
+          input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+         VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, ?7, 'complete', ?8, ?8,
+                 ?9, ?10, ?11, ?12)",
         rusqlite::params![
             Uuid::new_v4().to_string(),
             conversation_id,
@@ -435,7 +466,11 @@ pub fn persist_tool_round(
             provider_id,
             model,
             sequence,
-            now
+            now,
+            input_tokens,
+            output_tokens,
+            cache_read,
+            cache_write,
         ],
     )?;
     for (index, (call, result)) in results.iter().enumerate() {
@@ -697,6 +732,8 @@ fn row_to_summary(row: &rusqlite::Row<'_>) -> rusqlite::Result<ConversationSumma
 fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary> {
     let tool_calls: Option<String> = row.get(4)?;
     let status: String = row.get(7)?;
+    let input_tokens: Option<u32> = row.get(10)?;
+    let output_tokens: Option<u32> = row.get(11)?;
     Ok(MessageSummary {
         id: row.get(0)?,
         role: row.get(1)?,
@@ -714,6 +751,15 @@ fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary> {
         },
         error: row.get(8)?,
         updated_at: row.get(9)?,
+        usage: match (input_tokens, output_tokens) {
+            (Some(input_tokens), Some(output_tokens)) => Some(SseUsage {
+                input_tokens,
+                output_tokens,
+                cache_read_tokens: row.get(12)?,
+                cache_write_tokens: row.get(13)?,
+            }),
+            _ => None,
+        },
     })
 }
 
@@ -857,6 +903,7 @@ mod tests {
                 &turn.assistant_message_id,
                 std::slice::from_ref(&call),
                 &[(call.clone(), r#"{"ok":true,"result":"rain"}"#.into())],
+                None,
             )?;
             let messages = load_messages(conn, &turn.conversation.id)?;
             assert_eq!(messages.len(), 4);
@@ -907,4 +954,20 @@ mod tests {
         assert!(title.ends_with('…'));
         assert!(title.len() <= 62);
     }
+}
+
+/// Loads the latest summary message for a conversation, if any.
+pub fn load_latest_summary(
+    conn: &rusqlite::Connection,
+    conversation_id: &str,
+) -> anyhow::Result<Option<String>> {
+    conn.query_row(
+        "SELECT content FROM messages
+          WHERE conversation_id = ?1 AND role = 'summary'
+          ORDER BY sequence DESC LIMIT 1",
+        [conversation_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(anyhow::Error::from)
 }

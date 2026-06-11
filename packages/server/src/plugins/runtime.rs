@@ -60,7 +60,7 @@ const WASM_MEMORY_LIMIT: usize = 64 * 1024 * 1024;
 const WASM_FUEL_LIMIT: u64 = 1_000_000_000;
 const WASM_TIMEOUT: Duration = Duration::from_secs(30);
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(15);
-const MAX_TOOL_RESULT_BYTES: usize = 1024 * 1024;
+const MAX_TOOL_RESULT_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone)]
 struct RuntimeTool {
@@ -1742,6 +1742,44 @@ struct WasmHttpResponse {
     body: String,
 }
 
+/// Truncate a JSON response body to fit within `MAX_TOOL_RESULT_BYTES`.
+/// For arrays, drops trailing elements until the serialized size fits.
+/// For other types, serializes compactly or falls back to raw truncation.
+fn truncate_json_body(body: String) -> String {
+    if body.len() <= MAX_TOOL_RESULT_BYTES {
+        return body;
+    }
+    // Try compact re-serialization first (removes whitespace, ~20-30% savings)
+    if let Ok(value) = serde_json::from_str::<serde_json::Value>(&body) {
+        let compact = serde_json::to_string(&value).unwrap_or_default();
+        if compact.len() <= MAX_TOOL_RESULT_BYTES {
+            return compact;
+        }
+        // Still too large — if it's an array, drop elements binary-search style
+        if let serde_json::Value::Array(arr) = &value {
+            let mut lo = 0;
+            let mut hi = arr.len();
+            while lo + 1 < hi {
+                let mid = (lo + hi) / 2;
+                let subset = serde_json::Value::Array(arr[..mid].to_vec());
+                let serialized = serde_json::to_string(&subset).unwrap_or_default();
+                if serialized.len() <= MAX_TOOL_RESULT_BYTES {
+                    lo = mid;
+                } else {
+                    hi = mid;
+                }
+            }
+            let subset = serde_json::Value::Array(arr[..lo].to_vec());
+            return serde_json::to_string(&subset).unwrap_or_default();
+        }
+    }
+    // Not JSON or not an array — raw truncation
+    body.chars()
+        .take(MAX_TOOL_RESULT_BYTES / 4)
+        .collect::<String>()
+        + "…[TRUNCATED]"
+}
+
 impl helpcore::plugin::host::Host for WasmState {
     fn http_request(&mut self, request_json: String) -> Result<String, String> {
         self.require("outbound_http")?;
@@ -1758,9 +1796,7 @@ impl helpcore::plugin::host::Host for WasmState {
             })
             .collect();
         let body = response.text().map_err(|error| error.to_string())?;
-        if body.len() > MAX_TOOL_RESULT_BYTES {
-            return Err("HTTP response exceeds the 1 MiB limit".into());
-        }
+        let body = truncate_json_body(body);
         serde_json::to_string(&WasmHttpResponse {
             status,
             headers,
@@ -1784,10 +1820,15 @@ impl helpcore::plugin::host::Host for WasmState {
             })
             .collect();
         let bytes = response.bytes().map_err(|error| error.to_string())?;
-        if bytes.len() > MAX_TOOL_RESULT_BYTES {
-            return Err("HTTP response exceeds the 1 MiB limit".into());
-        }
         let body = base64::engine::general_purpose::STANDARD.encode(&bytes);
+        let body = if body.len() > MAX_TOOL_RESULT_BYTES {
+            body.chars()
+                .take(MAX_TOOL_RESULT_BYTES / 4)
+                .collect::<String>()
+                + "…[TRUNCATED]"
+        } else {
+            body
+        };
         serde_json::to_string(&WasmHttpResponse {
             status,
             headers,
@@ -1872,12 +1913,6 @@ impl WasmState {
             builder = builder.body(body);
         }
         let response = builder.send().map_err(|error| error.to_string())?;
-        if response
-            .content_length()
-            .is_some_and(|length| length > MAX_TOOL_RESULT_BYTES as u64)
-        {
-            return Err("HTTP response exceeds the 1 MiB limit".into());
-        }
         Ok(response)
     }
 }

@@ -10,7 +10,7 @@ use tokio_util::io::StreamReader;
 use super::{
     error::{ProviderError, http_error},
     traits::{ChatProvider, ProviderStream},
-    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition},
+    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition, Usage},
 };
 
 /// Default context window — Ollama's built-in default is 2048 which silently
@@ -107,6 +107,10 @@ struct OllamaOptions {
 struct OllamaStreamLine {
     message: OllamaMessage,
     done: bool,
+    #[serde(default)]
+    prompt_eval_count: Option<u32>,
+    #[serde(default)]
+    eval_count: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -242,7 +246,20 @@ impl ChatProvider for OllamaProvider {
                                 let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
                             }
                             if parsed.done {
-                                let _ = tx.send(Ok(StreamChunk::done())).await;
+                                let usage = match (parsed.prompt_eval_count, parsed.eval_count) {
+                                    (Some(input_tokens), Some(output_tokens)) => Some(Usage {
+                                        input_tokens,
+                                        output_tokens,
+                                        cache_read_tokens: None,
+                                        cache_write_tokens: None,
+                                    }),
+                                    _ => None,
+                                };
+                                if let Some(u) = usage {
+                                    let _ = tx.send(Ok(StreamChunk::done_with_usage(u))).await;
+                                } else {
+                                    let _ = tx.send(Ok(StreamChunk::done())).await;
+                                }
                                 break;
                             }
                         }

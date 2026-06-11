@@ -1,25 +1,43 @@
-You are summarising a segment of a conversation so it can replace the original
-messages in the context window. Later you will read this summary as if it were
-the original conversation — write accordingly.
+You are summarising a segment of a conversation so it can replace the original messages in the context window. Later you will read this summary as if it were the original conversation — write accordingly.
 
-Return ONLY the summary text inside `<summary>` tags. No preamble, no commentary.
+Output exactly the Markdown structure shown inside <summary> and keep the section order unchanged.
 
-Within the summary, preserve everything that matters for continuing the
-conversation without losing context:
+<summary>
+## Goal
+- [single-sentence task summary]
 
-- Every decision, action, or agreement, with who made it
-- All facts, names, numbers, paths, URLs, and technical details exactly as stated
-- The current state of any ongoing task, problem, or investigation
-- Tool calls and their results — include the tool name, arguments, and return
-  values verbatim (especially numbers, statuses, percentages, and identifiers)
-- Any errors encountered and how (or whether) they were resolved
-- Any files or resources that were read, written, or referenced
+## Constraints & Preferences
+- [user constraints, preferences, specs, or "(none)"]
 
-Guidelines:
-- Use past tense and the assistant's first-person perspective ("I searched…",
-  "I found…", "The user asked me to…")
-- Be dense and complete — there is no word limit. Include everything that was
-  important enough to say
-- **Do NOT generalise.** "home.rtin.page" stays "home.rtin.page". "13 stars"
-  stays "13 stars". Exact values, verbatim
-- Omit conversational filler, acknowledgments, and pleasantries
+## Progress
+### Done
+- [completed work or "(none)"]
+
+### In Progress
+- [current work or "(none)"]
+
+### Blocked
+- [blockers or "(none)"]
+
+## Key Decisions
+- [decision and why, or "(none)"]
+
+## Next Steps
+- [ordered next actions or "(none)"]
+
+## Critical Context
+- [important technical facts, errors, open questions, or "(none)"]
+
+## Relevant Files
+- [file or directory path: why it matters, or "(none)"]
+</summary>
+
+Rules:
+- Keep every section, even when empty.
+- Use terse bullets, not prose paragraphs.
+- Preserve exact file paths, commands, error strings, and identifiers when known.
+- Do NOT mention the summary process or that context was compacted.
+- Use the assistant's first-person perspective for actions taken.
+
+If a <previous-summary> is provided below, update it using the conversation history.
+Preserve still-true details, remove stale details, and merge in the new facts.

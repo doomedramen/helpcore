@@ -27,7 +27,7 @@ use crate::{
     conversation::{compact, context, context::ContextOptions, history, memory},
     plugins::{registry, runtime::ToolCatalog},
     providers::traits::ChatProvider,
-    providers::types::{ChatMessage, ToolCall},
+    providers::types::{ChatMessage, ToolCall, Usage},
     state::AppState,
 };
 
@@ -434,10 +434,24 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
 
     let mut round: u32 = 0;
     loop {
-        let (assistant_content, tool_calls) =
+        let (assistant_content, tool_calls, usage) =
             complete_provider_round(job, &messages, tool_catalog.definitions()).await?;
         if tool_calls.is_empty() {
             let message_id = job.assistant_message_id.clone();
+            let usage_for_done = usage.map(|u| helpcore_api::SseUsage {
+                input_tokens: u.input_tokens,
+                output_tokens: u.output_tokens,
+                cache_read_tokens: u.cache_read_tokens,
+                cache_write_tokens: u.cache_write_tokens,
+            });
+            let mid = message_id.clone();
+            if let Some(ref u) = usage {
+                let persisted = *u;
+                job.state
+                    .db
+                    .call(move |conn| history::set_message_usage(conn, &mid, &persisted))
+                    .await?;
+            }
             job.state
                 .db
                 .call(move |conn| history::finish_assistant_message(conn, &message_id))
@@ -447,6 +461,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
                 .json_data(SseDone {
                     conversation_id: job.conversation_id.clone(),
                     message_id: job.assistant_message_id.clone(),
+                    usage: usage_for_done,
                 })
                 .unwrap_or_else(|_| Event::default());
             let _ = job.tx.send(Ok(event)).await;
@@ -573,7 +588,13 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
         job.state
             .db
             .call(move |conn| {
-                history::persist_tool_round(conn, &message_id, &persisted_calls, &persisted_results)
+                history::persist_tool_round(
+                    conn,
+                    &message_id,
+                    &persisted_calls,
+                    &persisted_results,
+                    usage.as_ref(),
+                )
             })
             .await?;
         messages.push(ChatMessage::assistant_with_tools(
@@ -600,7 +621,7 @@ async fn complete_provider_round(
     job: &GenerationJob,
     messages: &[ChatMessage],
     tools: &[crate::providers::types::ToolDefinition],
-) -> anyhow::Result<(String, Vec<ToolCall>)> {
+) -> anyhow::Result<(String, Vec<ToolCall>, Option<Usage>)> {
     let mut stream = job
         .provider
         .complete(messages, tools, Some(&job.model_used))
@@ -630,7 +651,8 @@ async fn complete_provider_round(
                         tool_calls.extend(chunk.tool_calls);
                         if chunk.is_final {
                             flush_pending(job, &mut pending).await?;
-                            return Ok((assistant_content, tool_calls));
+                            let usage = chunk.usage;
+                            return Ok((assistant_content, tool_calls, usage));
                         }
                     }
                     Some(Err(error)) => {
@@ -1045,6 +1067,7 @@ mod tests {
             status: helpcore_api::MessageStatus::Complete,
             error: None,
             updated_at: "now".to_string(),
+            usage: None,
         }
     }
 

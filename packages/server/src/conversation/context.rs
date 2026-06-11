@@ -278,6 +278,7 @@ mod tests {
             status: helpcore_api::MessageStatus::Complete,
             error: None,
             updated_at: "now".to_string(),
+            usage: None,
         }
     }
 

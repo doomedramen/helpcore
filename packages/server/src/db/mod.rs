@@ -26,6 +26,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (13, include_str!("migrations/0013_provider_grants.sql")),
     (14, include_str!("migrations/0014_memory_leaning.sql")),
     (15, include_str!("migrations/0015_skill_brief.sql")),
+    (16, include_str!("migrations/0016_message_tokens.sql")),
 ];
 
 /// Thread-safe SQLite connection pool wrapping a single WAL-mode connection.

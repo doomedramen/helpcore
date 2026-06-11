@@ -139,10 +139,23 @@ impl ChatMessage {
     }
 }
 
+/// Token usage reported by a provider for a single generation turn.
+#[derive(Debug, Clone, Copy)]
+pub struct Usage {
+    /// Input (prompt) tokens consumed.
+    pub input_tokens: u32,
+    /// Output (completion) tokens generated.
+    pub output_tokens: u32,
+    /// Input tokens read from the provider's cache (Anthropic prompt caching, etc.).
+    pub cache_read_tokens: Option<u32>,
+    /// Input tokens written to the provider's cache.
+    pub cache_write_tokens: Option<u32>,
+}
+
 /// A token delta from a streaming provider response.
 ///
-/// Carries text content, optional tool calls, and a final flag that
-/// signals the end of the stream.
+/// Carries text content, optional tool calls, a final flag that
+/// signals the end of the stream, and optional token usage data.
 #[derive(Debug, Clone)]
 pub struct StreamChunk {
     /// Text content of this chunk.
@@ -151,6 +164,8 @@ pub struct StreamChunk {
     pub tool_calls: Vec<ToolCall>,
     /// True on the final (empty) chunk that signals end-of-stream.
     pub is_final: bool,
+    /// Token usage reported by the provider for this turn, when available.
+    pub usage: Option<Usage>,
 }
 
 impl StreamChunk {
@@ -160,6 +175,7 @@ impl StreamChunk {
             delta: text.into(),
             tool_calls: Vec::new(),
             is_final: false,
+            usage: None,
         }
     }
     /// Create a chunk carrying tool calls from the model.
@@ -168,6 +184,7 @@ impl StreamChunk {
             delta: String::new(),
             tool_calls,
             is_final: false,
+            usage: None,
         }
     }
     /// Create the terminal chunk that signals the end of the stream.
@@ -176,6 +193,16 @@ impl StreamChunk {
             delta: String::new(),
             tool_calls: Vec::new(),
             is_final: true,
+            usage: None,
+        }
+    }
+    /// Create the terminal chunk with token usage data.
+    pub fn done_with_usage(usage: Usage) -> Self {
+        Self {
+            delta: String::new(),
+            tool_calls: Vec::new(),
+            is_final: true,
+            usage: Some(usage),
         }
     }
 }

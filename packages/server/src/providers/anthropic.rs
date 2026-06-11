@@ -12,7 +12,7 @@ use tokio_util::io::StreamReader;
 use super::{
     error::{ProviderError, http_error},
     traits::{ChatProvider, ProviderStream},
-    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition, invalid_arguments_reason},
+    types::{ChatMessage, StreamChunk, ToolCall, ToolDefinition, Usage, invalid_arguments_reason},
 };
 
 const DEFAULT_BASE_URL: &str = "https://api.anthropic.com";
@@ -128,6 +128,11 @@ struct StreamState {
     /// response was cut off by the output token limit, so accumulated
     /// tool-call arguments may be incomplete.
     length_limited: bool,
+    /// Token usage accumulated from streaming events.
+    input_tokens: Option<u32>,
+    output_tokens: Option<u32>,
+    cache_read_tokens: Option<u32>,
+    cache_write_tokens: Option<u32>,
 }
 
 #[async_trait]
@@ -347,6 +352,22 @@ async fn handle_event(
         ))
     })?;
     match event.get("type").and_then(serde_json::Value::as_str) {
+        Some("message_start") => {
+            if let Some(usage) = event.get("message").and_then(|m| m.get("usage")) {
+                state.input_tokens = usage
+                    .get("input_tokens")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|n| n as u32);
+                state.cache_read_tokens = usage
+                    .get("cache_read_input_tokens")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|n| n as u32);
+                state.cache_write_tokens = usage
+                    .get("cache_creation_input_tokens")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|n| n as u32);
+            }
+        }
         Some("content_block_start") => {
             let index = event
                 .get("index")
@@ -420,6 +441,12 @@ async fn handle_event(
             }
         }
         Some("message_delta") => {
+            if let Some(usage) = event.get("usage") {
+                state.output_tokens = usage
+                    .get("output_tokens")
+                    .and_then(serde_json::Value::as_u64)
+                    .map(|n| n as u32);
+            }
             if event
                 .pointer("/delta/stop_reason")
                 .and_then(serde_json::Value::as_str)
@@ -434,7 +461,20 @@ async fn handle_event(
             if !calls.is_empty() {
                 let _ = tx.send(Ok(StreamChunk::tool_calls(calls))).await;
             }
-            let _ = tx.send(Ok(StreamChunk::done())).await;
+            let usage = match (state.input_tokens, state.output_tokens) {
+                (Some(input_tokens), Some(output_tokens)) => Some(Usage {
+                    input_tokens,
+                    output_tokens,
+                    cache_read_tokens: state.cache_read_tokens,
+                    cache_write_tokens: state.cache_write_tokens,
+                }),
+                _ => None,
+            };
+            if let Some(u) = usage {
+                let _ = tx.send(Ok(StreamChunk::done_with_usage(u))).await;
+            } else {
+                let _ = tx.send(Ok(StreamChunk::done())).await;
+            }
             return Ok(true);
         }
         Some("error") => {
