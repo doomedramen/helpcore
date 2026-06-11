@@ -6,7 +6,12 @@ use chrono::Utc;
 use helpcore_api::ConfigField;
 use rusqlite::{Connection, params};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, path::Path, time::Duration};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+    sync::Arc,
+    time::{Duration, Instant},
+};
 use uuid::Uuid;
 
 use crate::config::LocalPluginConfig;
@@ -107,6 +112,27 @@ pub struct PluginSkill {
     pub skill_md: Option<String>,
 }
 
+/// Compact plugin metadata injected into the assistant's routing context.
+#[derive(Debug, Clone)]
+pub struct PluginCatalogItem {
+    /// Stable plugin identifier.
+    pub id: String,
+    /// Human-readable plugin name.
+    pub name: String,
+    /// Concise routing description.
+    pub brief: String,
+    /// One of enabled, disabled, needs_configuration, available, unavailable, or blocked.
+    pub state: String,
+    /// Whether the current user may manage this plugin.
+    pub user_managed: bool,
+    /// Declared permissions.
+    pub permissions: Vec<String>,
+    /// Declared outbound hosts.
+    pub allowed_hosts: Vec<String>,
+    /// Optional setup guide URL.
+    pub setup_guide: Option<String>,
+}
+
 /// Summary state of a plugin install for API responses.
 #[derive(Debug, Clone)]
 pub struct InstalledState {
@@ -136,6 +162,9 @@ pub struct StorePlugin {
     pub name: String,
     /// Short description of the plugin.
     pub description: String,
+    /// Optional concise routing description for assistant recommendations.
+    #[serde(default)]
+    pub brief: Option<String>,
     /// Latest available version.
     pub version: String,
     /// Runtime tier: "wasm" or "bridge".
@@ -163,6 +192,56 @@ pub struct StorePlugin {
     pub setup_guide: Option<String>,
     /// Downloadable package metadata.
     pub package: Option<StorePluginPackage>,
+}
+
+#[derive(Clone)]
+struct CachedStore {
+    url: String,
+    loaded_at: Instant,
+    store: StoreRegistry,
+}
+
+/// Five-minute plugin-registry cache with last-known-good fallback.
+#[derive(Clone, Default)]
+pub struct RegistryCache {
+    inner: Arc<parking_lot::Mutex<Option<CachedStore>>>,
+}
+
+impl RegistryCache {
+    /// Returns a cached registry, refreshing entries older than five minutes.
+    /// If refresh fails, the last successfully loaded value is returned.
+    pub async fn get(&self, registry_url: &str) -> anyhow::Result<StoreRegistry> {
+        const TTL: Duration = Duration::from_secs(5 * 60);
+        {
+            let cached = self.inner.lock();
+            if let Some(entry) = cached.as_ref()
+                && entry.url == registry_url
+                && entry.loaded_at.elapsed() < TTL
+            {
+                return Ok(entry.store.clone());
+            }
+        }
+
+        match fetch_store(registry_url).await {
+            Ok(store) => {
+                *self.inner.lock() = Some(CachedStore {
+                    url: registry_url.to_string(),
+                    loaded_at: Instant::now(),
+                    store: store.clone(),
+                });
+                Ok(store)
+            }
+            Err(error) => {
+                let fallback = self
+                    .inner
+                    .lock()
+                    .as_ref()
+                    .filter(|entry| entry.url == registry_url)
+                    .map(|entry| entry.store.clone());
+                fallback.ok_or(error)
+            }
+        }
+    }
 }
 
 /// Downloadable package metadata for a store plugin entry.
@@ -527,6 +606,80 @@ pub async fn fetch_store(registry_url: &str) -> anyhow::Result<StoreRegistry> {
         .context("plugin registry returned invalid JSON")
 }
 
+/// Builds the assistant-visible catalog from installed state and the registry.
+/// Registry failures are tolerated so chat remains available.
+pub async fn plugin_catalog(
+    cache: &RegistryCache,
+    conn_plugins: Vec<InstalledPlugin>,
+    registry_url: &str,
+    blacklist: &[String],
+) -> Vec<PluginCatalogItem> {
+    let blocked: HashSet<&str> = blacklist.iter().map(String::as_str).collect();
+    let mut items = HashMap::new();
+    for plugin in conn_plugins {
+        let configured =
+            is_configured(&plugin.manifest.config_schema, &plugin.tier, &plugin.config);
+        let state = if blocked.contains(plugin.plugin_id.as_str()) {
+            "blocked"
+        } else if plugin.enabled {
+            "enabled"
+        } else if !configured {
+            "needs_configuration"
+        } else {
+            "disabled"
+        };
+        items.insert(
+            plugin.plugin_id.clone(),
+            PluginCatalogItem {
+                id: plugin.plugin_id,
+                name: plugin.name,
+                brief: plugin.brief,
+                state: state.to_string(),
+                user_managed: plugin.source_url.is_some(),
+                permissions: plugin.permissions,
+                allowed_hosts: plugin.manifest.allowed_hosts,
+                setup_guide: None,
+            },
+        );
+    }
+
+    if let Ok(store) = cache.get(registry_url).await {
+        for plugin in store.plugins {
+            if let Some(installed) = items.get_mut(&plugin.id) {
+                installed.setup_guide = plugin.setup_guide;
+                continue;
+            }
+            let state = if blocked.contains(plugin.id.as_str()) {
+                "blocked"
+            } else if plugin.package.is_some() {
+                "available"
+            } else {
+                "unavailable"
+            };
+            items.insert(
+                plugin.id.clone(),
+                PluginCatalogItem {
+                    id: plugin.id,
+                    name: plugin.name,
+                    brief: plugin
+                        .brief
+                        .filter(|brief| !brief.trim().is_empty())
+                        .unwrap_or(plugin.description),
+                    state: state.to_string(),
+                    user_managed: true,
+                    permissions: plugin.permissions,
+                    allowed_hosts: plugin.allowed_hosts,
+                    setup_guide: plugin.setup_guide,
+                },
+            );
+        }
+    }
+
+    let mut items: Vec<_> = items.into_values().collect();
+    items.sort_by_key(|item| item.name.to_lowercase());
+    items
+}
+
 /// Returns skill metadata for all enabled plugins (used in context assembly).
 ///
 /// Each entry carries a `brief` (injected into the system prompt) and the
@@ -629,6 +782,7 @@ pub fn load_local_plugins(
 mod tests {
     use super::*;
     use crate::db::open_in_memory;
+    use helpcore_api::ConfigField;
     use std::io::Write;
 
     fn make_user(conn: &Connection) -> String {
@@ -722,5 +876,140 @@ brief = "Use when testing bridge plugins."
         let (manifest, skill) = load_manifest(dir.path()).unwrap();
         assert_eq!(manifest.id, "test-bridge-plugin");
         assert_eq!(skill.as_deref(), Some("Test skill content."));
+    }
+
+    #[test]
+    fn config_values_never_expose_secret_contents() {
+        let schema = vec![
+            ConfigField {
+                key: "endpoint".into(),
+                label: "Endpoint".into(),
+                field_type: "url".into(),
+                required: true,
+                hint: None,
+                default: None,
+                options: Vec::new(),
+                min: None,
+                max: None,
+                role: None,
+            },
+            ConfigField {
+                key: "token".into(),
+                label: "Token".into(),
+                field_type: "secret".into(),
+                required: true,
+                hint: None,
+                default: None,
+                options: Vec::new(),
+                min: None,
+                max: None,
+                role: None,
+            },
+        ];
+        let values = config_values(
+            &schema,
+            &serde_json::json!({
+                "endpoint": "https://example.com",
+                "token": "must-not-leak",
+                "_secret_keys": ["token"]
+            }),
+        );
+        assert_eq!(values["endpoint"], "https://example.com");
+        assert_eq!(values["token"], serde_json::json!({"configured": true}));
+        assert!(!values.to_string().contains("must-not-leak"));
+    }
+
+    #[tokio::test]
+    async fn registry_cache_falls_back_and_catalog_reports_actionable_states() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("plugins.json");
+        std::fs::write(
+            &path,
+            serde_json::json!({
+                "plugins": [
+                    {
+                        "id": "available",
+                        "name": "Available",
+                        "description": "Available description",
+                        "brief": "Use the available plugin.",
+                        "version": "1.0.0",
+                        "tier": "wasm",
+                        "setup_guide": null,
+                        "package": {
+                            "url": "https://example.com/available.tar.gz",
+                            "sha256": "abc"
+                        }
+                    },
+                    {
+                        "id": "unavailable",
+                        "name": "Unavailable",
+                        "description": "Unavailable description",
+                        "version": "1.0.0",
+                        "tier": "bridge",
+                        "setup_guide": null,
+                        "package": null
+                    },
+                    {
+                        "id": "blocked",
+                        "name": "Blocked",
+                        "description": "Blocked description",
+                        "version": "1.0.0",
+                        "tier": "wasm",
+                        "setup_guide": null,
+                        "package": {
+                            "url": "https://example.com/blocked.tar.gz",
+                            "sha256": "def"
+                        }
+                    }
+                ]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let url = format!("file://{}", path.display());
+        let cache = RegistryCache::default();
+        cache.get(&url).await.unwrap();
+
+        let catalog = plugin_catalog(&cache, Vec::new(), &url, &["blocked".to_string()]).await;
+        assert_eq!(
+            catalog
+                .iter()
+                .find(|plugin| plugin.id == "available")
+                .unwrap()
+                .state,
+            "available"
+        );
+        assert_eq!(
+            catalog
+                .iter()
+                .find(|plugin| plugin.id == "available")
+                .unwrap()
+                .brief,
+            "Use the available plugin."
+        );
+        assert_eq!(
+            catalog
+                .iter()
+                .find(|plugin| plugin.id == "unavailable")
+                .unwrap()
+                .state,
+            "unavailable"
+        );
+        assert_eq!(
+            catalog
+                .iter()
+                .find(|plugin| plugin.id == "blocked")
+                .unwrap()
+                .state,
+            "blocked"
+        );
+
+        {
+            let mut cached = cache.inner.lock();
+            cached.as_mut().unwrap().loaded_at = Instant::now() - Duration::from_secs(5 * 60 + 1);
+        }
+        std::fs::remove_file(path).unwrap();
+        let fallback = cache.get(&url).await.unwrap();
+        assert_eq!(fallback.plugins.len(), 3);
     }
 }

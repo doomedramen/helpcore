@@ -23,6 +23,8 @@ import type {
   SseContext,
   SseDone,
   SseInterrupted,
+  SseInputRequired,
+  PendingInteraction,
   SseStarted,
   SseToolCall,
   SseToolResult,
@@ -225,7 +227,7 @@ export function listProviders(token: string): Promise<ProviderListResponse> {
  * @param args.onToolCall - Optional, called when the model requests a tool.
  * @param args.onToolResult - Optional, called with the result of a tool callback.
  * @param args.onDone - Called when the stream completes.
- * @param args.onInterrupted - Optional, called when the tool-call limit is reached and the response pauses.
+ * @param args.onInterrupted - Optional, called when generation is interrupted externally.
  * @param args.signal - Optional AbortSignal to cancel the stream.
  */
 export function retryMessage(args: {
@@ -240,6 +242,7 @@ export function retryMessage(args: {
   onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
   onInterrupted?: (data: SseInterrupted) => void;
+  onInputRequired?: (data: SseInputRequired) => void;
   signal?: AbortSignal;
 }): Promise<void> {
   return consumeChatStream({
@@ -254,6 +257,7 @@ export function retryMessage(args: {
     onToolResult: args.onToolResult,
     onDone: args.onDone,
     onInterrupted: args.onInterrupted,
+    onInputRequired: args.onInputRequired,
     signal: args.signal,
   });
 }
@@ -671,7 +675,7 @@ export async function submitFeedback(
  * @param args.onToolCall - Optional, called when the model requests a tool.
  * @param args.onToolResult - Optional, called with the result of a tool callback.
  * @param args.onDone - Called when the stream completes.
- * @param args.onInterrupted - Optional, called when the tool-call limit is reached and the response pauses.
+ * @param args.onInterrupted - Optional, called when generation is interrupted externally.
  * @param args.signal - Optional AbortSignal to cancel the stream.
  */
 export async function chat(args: {
@@ -686,6 +690,7 @@ export async function chat(args: {
   onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
   onInterrupted?: (data: SseInterrupted) => void;
+  onInputRequired?: (data: SseInputRequired) => void;
   signal?: AbortSignal;
 }): Promise<void> {
   const {
@@ -700,6 +705,7 @@ export async function chat(args: {
     onToolResult,
     onDone,
     onInterrupted,
+    onInputRequired,
     signal,
   } = args;
   return consumeChatStream({
@@ -714,6 +720,7 @@ export async function chat(args: {
     onToolResult,
     onDone,
     onInterrupted,
+    onInputRequired,
     signal,
   });
 }
@@ -730,6 +737,7 @@ async function consumeChatStream(args: {
   onToolResult?: (result: SseToolResult) => void;
   onDone: (done: SseDone) => void;
   onInterrupted?: (data: SseInterrupted) => void;
+  onInputRequired?: (data: SseInputRequired) => void;
   signal?: AbortSignal;
 }): Promise<void> {
   const resp = await fetch(args.url, {
@@ -798,6 +806,7 @@ function processChatEvent(
     onToolResult?: (result: SseToolResult) => void;
     onDone: (done: SseDone) => void;
     onInterrupted?: (data: SseInterrupted) => void;
+    onInputRequired?: (data: SseInputRequired) => void;
   },
 ): boolean {
   let eventName = "";
@@ -824,6 +833,9 @@ function processChatEvent(
   } else if (eventName === "interrupted") {
     handlers.onInterrupted?.(JSON.parse(eventData) as SseInterrupted);
     return true;
+  } else if (eventName === "input_required") {
+    handlers.onInputRequired?.(JSON.parse(eventData) as SseInputRequired);
+    return true;
   } else if (eventName === "error") {
     let message = eventData;
     try {
@@ -832,6 +844,47 @@ function processChatEvent(
     throw new ApiError(message || "Response generation failed.", 500);
   }
   return false;
+}
+
+/** Fetch the interaction currently awaiting input in a conversation. */
+export function getPendingInteraction(
+  conversationId: string,
+  token: string,
+): Promise<PendingInteraction | null> {
+  return req(`/conversations/${conversationId}/interaction`, {}, token);
+}
+
+/** Submit or dismiss a pending interaction and consume the resumed SSE stream. */
+export function respondToInteraction(args: {
+  conversationId: string;
+  interactionId: string;
+  response: Record<string, unknown>;
+  token: string;
+  onStarted: (started: SseStarted) => void;
+  onContext?: (context: SseContext) => void;
+  onChunk: (delta: string) => void;
+  onToolCall?: (call: SseToolCall) => void;
+  onToolResult?: (result: SseToolResult) => void;
+  onDone: (done: SseDone) => void;
+  onInterrupted?: (data: SseInterrupted) => void;
+  onInputRequired?: (data: SseInputRequired) => void;
+  signal?: AbortSignal;
+}): Promise<void> {
+  return consumeChatStream({
+    url: `/api/conversations/${args.conversationId}/interactions/${args.interactionId}/respond`,
+    token: args.token,
+    method: "POST",
+    body: JSON.stringify(args.response),
+    onStarted: args.onStarted,
+    onContext: args.onContext,
+    onChunk: args.onChunk,
+    onToolCall: args.onToolCall,
+    onToolResult: args.onToolResult,
+    onDone: args.onDone,
+    onInterrupted: args.onInterrupted,
+    onInputRequired: args.onInputRequired,
+    signal: args.signal,
+  });
 }
 
 /** Error thrown by API calls when the server returns a non-OK status. */

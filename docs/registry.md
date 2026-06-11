@@ -32,6 +32,7 @@ URL and blacklist policy remain admin-only.
   "id": "home-assistant",
   "name": "Home Assistant",
   "description": "Control your Home Assistant instance through the AI.",
+  "brief": "Use when the user wants to inspect or control Home Assistant devices.",
   "version": "1.0.0",
   "tier": "bridge",
   "author": "doomedramen",
@@ -58,6 +59,12 @@ URL and blacklist policy remain admin-only.
 |---|---|
 | `wasm` | Tier 1 — WASM module, runs in-process |
 | `bridge` | Tier 2 — external service, user deploys separately |
+
+### `brief`
+
+Optional concise routing guidance shown to the AI when deciding whether a
+plugin is relevant. Existing registries may omit it; the core falls back to
+`description`.
 
 ### `source`
 

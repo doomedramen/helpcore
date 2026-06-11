@@ -9,10 +9,12 @@ import {
   chat,
   compactConversation,
   generateTitle,
+  getPendingInteraction,
   getMessages,
   listConversations,
   listProviders,
   renameConversation,
+  respondToInteraction,
   retryMessage,
   submitFeedback,
 } from "@/lib/api";
@@ -20,6 +22,7 @@ import { useAuth } from "@/context/auth";
 import type {
   ConversationSummary,
   Message,
+  PendingInteraction,
   SseContext,
   SseDone,
   SseStarted,
@@ -85,6 +88,7 @@ import { SlashCommandMenu } from "./slash-command-menu";
 import { type SlashCommand } from "@/lib/commands";
 import BrandMark from "./brand-mark";
 import ToolMessageAdapter, { getToolLabel, getToolColor, getToolIcon } from "./tool-adapter";
+import InteractionComposer from "./interaction-composer";
 import { MessageContentWithAssets } from "./asset-renderer";
 import PromptAttachments from "./prompt-attachments";
 import CodeBlockInjector from "./code-copy-button";
@@ -172,6 +176,8 @@ export default function ChatWindow({
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [shuffleKey, setShuffleKey] = useState(0);
   const [liveToolCalls, setLiveToolCalls] = useState<Record<string, string>>({});
+  const [interactionSubmitting, setInteractionSubmitting] = useState(false);
+  const [interactionError, setInteractionError] = useState("");
   const [contextUsage, setContextUsage] = useState<{
     usedTokens: number;
     maxTokens: number;
@@ -198,6 +204,14 @@ export default function ChatWindow({
     revalidateOnFocus: true,
     keepPreviousData: false,
   });
+  const interactionKey =
+    accessToken && conversationId
+      ? ([`/conversations/${conversationId}/interaction`, accessToken] as const)
+      : null;
+  const { data: pendingInteraction = null, mutate: refreshInteraction } =
+    useSWR<PendingInteraction | null>(interactionKey, ([, token]) =>
+      getPendingInteraction(conversationId!, token as string),
+    );
 
   const { data: providerData } = useSWR(
     accessToken ? ["/api/providers", accessToken] : null,
@@ -252,6 +266,8 @@ export default function ChatWindow({
       setLiveToolCalls({});
       setContextUsage(null);
       setStreamUsage(null);
+      setInteractionError("");
+      setInteractionSubmitting(false);
       prevMessageCountRef.current = 0;
     }
   }, [conversationId]);
@@ -336,14 +352,21 @@ export default function ChatWindow({
         onDone: (done: SseDone) => {
           setLiveToolCalls({});
           if (done.usage) setStreamUsage(done.usage);
+          void refreshInteraction(null, { revalidate: false });
           void refreshConversation(done.conversation_id);
+        },
+        onInputRequired: (data: { interaction: PendingInteraction }) => {
+          setLiveToolCalls({});
+          setInteractionError("");
+          void refreshInteraction(data.interaction, { revalidate: false });
+          void refreshConversation(data.interaction.conversation_id);
         },
         onInterrupted: () => {
           if (activeConversationId) void refreshConversation(activeConversationId);
         },
       };
     },
-    [onConversationCreated, refreshConversation, router],
+    [onConversationCreated, refreshConversation, refreshInteraction, router],
   );
 
   const runWithRefresh = useCallback(
@@ -406,7 +429,7 @@ export default function ChatWindow({
   );
 
   useEffect(() => {
-    if (!active && queue.length > 0 && !processingRef.current) {
+    if (!active && !pendingInteraction && queue.length > 0 && !processingRef.current) {
       processingRef.current = true;
       const [first, ...rest] = queue;
       setQueue(rest);
@@ -414,7 +437,52 @@ export default function ChatWindow({
         processingRef.current = false;
       });
     }
-  }, [active, queue, sendMessage]);
+  }, [active, pendingInteraction, queue, sendMessage]);
+
+  const respondInteraction = useCallback(
+    async (response: Record<string, unknown>) => {
+      if (!conversationId || !pendingInteraction) return;
+      setInteractionSubmitting(true);
+      setInteractionError("");
+      const controller = new AbortController();
+      abortRef.current = controller;
+      generationConvRef.current = conversationId;
+      try {
+        await runWithRefresh((token) =>
+          respondToInteraction({
+            conversationId,
+            interactionId: pendingInteraction.id,
+            response,
+            token,
+            ...streamHandlers(conversationId, selectedProviderId),
+            signal: controller.signal,
+          }),
+        );
+      } catch (caught) {
+        if (caught instanceof DOMException && caught.name === "AbortError") return;
+        setInteractionError(
+          caught instanceof ApiError ? caught.message : "Could not submit your response.",
+        );
+        await refreshInteraction();
+        await refreshMessages();
+      } finally {
+        if (generationConvRef.current === conversationId) {
+          generationConvRef.current = null;
+        }
+        if (abortRef.current === controller) abortRef.current = null;
+        setInteractionSubmitting(false);
+      }
+    },
+    [
+      conversationId,
+      pendingInteraction,
+      refreshInteraction,
+      refreshMessages,
+      runWithRefresh,
+      selectedProviderId,
+      streamHandlers,
+    ],
+  );
 
   const handleSend = useCallback(
     (text: string) => {
@@ -955,7 +1023,7 @@ export default function ChatWindow({
                             className={`text-xs ${message.status === "interrupted" ? "text-amber-600 dark:text-amber-400" : "text-destructive"}`}
                           >
                             {message.status === "interrupted"
-                              ? message.error || "Paused at tool call limit. Continue?"
+                              ? message.error || "This response was interrupted."
                               : message.error || "This response did not finish."}
                           </p>
                           <button
@@ -968,11 +1036,7 @@ export default function ChatWindow({
                                 : "hover:bg-muted"
                             }`}
                           >
-                            {retryingId === message.id
-                              ? "Resuming…"
-                              : message.status === "interrupted"
-                                ? "Continue"
-                                : "Retry response"}
+                            {retryingId === message.id ? "Retrying…" : "Retry response"}
                           </button>
                         </div>
                       )}
@@ -1040,79 +1104,89 @@ export default function ChatWindow({
 
       {/* Input */}
       <div className="mx-auto w-full max-w-4xl px-3 pb-3 pt-2 sm:px-5 sm:pb-5">
-        <PromptInputProvider>
-          <PromptInput globalDrop multiple onSubmit={handlePromptSubmit}>
-            <PromptAttachments />
-            <SlashCommandMenu commands={commandActions} />
-            <PromptInputBody>
-              <PromptInputTextarea
-                placeholder={
-                  providers.length === 0
-                    ? "Configure a chat provider to begin."
-                    : "Message helpcore…"
-                }
-              />
-            </PromptInputBody>
-            <PromptInputFooter>
-              <PromptInputTools>
-                <PromptInputActionMenu>
-                  <PromptInputActionMenuTrigger />
-                  <PromptInputActionMenuContent>
-                    <PromptInputActionAddAttachments />
-                    <PromptInputActionAddScreenshot />
-                  </PromptInputActionMenuContent>
-                </PromptInputActionMenu>
-                <ModelSelector
-                  open={modelSelectorOpen}
-                  onOpenChange={(open) => setModelSelectorOpen(open)}
-                >
-                  <ModelSelectorTrigger
-                    render={
-                      <PromptInputButton size="xs" className="max-w-[13rem]">
-                        {(() => {
-                          const p = providers.find((p) => p.id === selectedProviderId);
-                          return p ? (
+        {pendingInteraction ? (
+          <InteractionComposer
+            interaction={pendingInteraction}
+            submitting={interactionSubmitting}
+            error={interactionError}
+            onSubmit={respondInteraction}
+            onDismiss={() => respondInteraction({ kind: "dismiss" })}
+          />
+        ) : (
+          <PromptInputProvider>
+            <PromptInput globalDrop multiple onSubmit={handlePromptSubmit}>
+              <PromptAttachments />
+              <SlashCommandMenu commands={commandActions} />
+              <PromptInputBody>
+                <PromptInputTextarea
+                  placeholder={
+                    providers.length === 0
+                      ? "Configure a chat provider to begin."
+                      : "Message helpcore…"
+                  }
+                />
+              </PromptInputBody>
+              <PromptInputFooter>
+                <PromptInputTools>
+                  <PromptInputActionMenu>
+                    <PromptInputActionMenuTrigger />
+                    <PromptInputActionMenuContent>
+                      <PromptInputActionAddAttachments />
+                      <PromptInputActionAddScreenshot />
+                    </PromptInputActionMenuContent>
+                  </PromptInputActionMenu>
+                  <ModelSelector
+                    open={modelSelectorOpen}
+                    onOpenChange={(open) => setModelSelectorOpen(open)}
+                  >
+                    <ModelSelectorTrigger
+                      render={
+                        <PromptInputButton size="xs" className="max-w-[13rem]">
+                          {(() => {
+                            const p = providers.find((p) => p.id === selectedProviderId);
+                            return p ? (
+                              <ModelSelectorName>{p.name}</ModelSelectorName>
+                            ) : (
+                              <span className="text-muted-foreground">
+                                {providers.length === 0 ? "No chat provider" : "Select provider"}
+                              </span>
+                            );
+                          })()}
+                        </PromptInputButton>
+                      }
+                    />
+                    <ModelSelectorContent>
+                      <ModelSelectorInput placeholder="Search providers..." />
+                      <ModelSelectorList>
+                        {providers.map((p) => (
+                          <ModelSelectorItem
+                            key={p.id}
+                            value={p.id}
+                            onSelect={() => {
+                              handleProviderChange(p.id);
+                              setModelSelectorOpen(false);
+                            }}
+                          >
                             <ModelSelectorName>{p.name}</ModelSelectorName>
-                          ) : (
-                            <span className="text-muted-foreground">
-                              {providers.length === 0 ? "No chat provider" : "Select provider"}
+                            <span className="ml-auto text-xs text-muted-foreground">
+                              {p.default_model}
                             </span>
-                          );
-                        })()}
-                      </PromptInputButton>
-                    }
-                  />
-                  <ModelSelectorContent>
-                    <ModelSelectorInput placeholder="Search providers..." />
-                    <ModelSelectorList>
-                      {providers.map((p) => (
-                        <ModelSelectorItem
-                          key={p.id}
-                          value={p.id}
-                          onSelect={() => {
-                            handleProviderChange(p.id);
-                            setModelSelectorOpen(false);
-                          }}
-                        >
-                          <ModelSelectorName>{p.name}</ModelSelectorName>
-                          <span className="ml-auto text-xs text-muted-foreground">
-                            {p.default_model}
-                          </span>
-                        </ModelSelectorItem>
-                      ))}
-                    </ModelSelectorList>
-                  </ModelSelectorContent>
-                </ModelSelector>
-              </PromptInputTools>
-              <div className="flex items-center gap-2">
-                <span className="hidden text-[11px] text-muted-foreground sm:block">
-                  Enter to send · Shift + Enter for new line
-                </span>
-                <PromptInputSubmit status={active ? "streaming" : "ready"} onStop={handleStop} />
-              </div>
-            </PromptInputFooter>
-          </PromptInput>
-        </PromptInputProvider>
+                          </ModelSelectorItem>
+                        ))}
+                      </ModelSelectorList>
+                    </ModelSelectorContent>
+                  </ModelSelector>
+                </PromptInputTools>
+                <div className="flex items-center gap-2">
+                  <span className="hidden text-[11px] text-muted-foreground sm:block">
+                    Enter to send · Shift + Enter for new line
+                  </span>
+                  <PromptInputSubmit status={active ? "streaming" : "ready"} onStop={handleStop} />
+                </div>
+              </PromptInputFooter>
+            </PromptInput>
+          </PromptInputProvider>
+        )}
       </div>
     </div>
   );

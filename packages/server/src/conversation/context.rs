@@ -6,7 +6,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use crate::{
     conversation::memory::MemoryResult,
-    plugins::registry::PluginSkill,
+    plugins::registry::{PluginCatalogItem, PluginSkill},
     providers::types::{ChatMessage, ToolCall},
 };
 
@@ -42,6 +42,8 @@ pub struct ContextOptions<'a> {
     /// Plugin skill metadata — brief index injected into prompt, full skill.md
     /// loaded on demand via the `skill_read` tool.
     pub plugin_skills: &'a [PluginSkill],
+    /// All known plugins and their user-specific availability state.
+    pub plugin_catalog: &'a [PluginCatalogItem],
     /// IANA timezone for the current user (e.g. "America/New_York").
     /// Defaults to UTC when absent or unrecognised.
     pub timezone: Option<&'a str>,
@@ -74,6 +76,20 @@ pub struct ContextOptions<'a> {
 pub fn assemble(
     history: &[MessageSummary],
     user_message: &str,
+    opts: ContextOptions<'_>,
+) -> Vec<ChatMessage> {
+    assemble_inner(history, Some(user_message), opts)
+}
+
+/// Assembles provider messages when the current user turn is already present
+/// in persisted history, such as after a durable interaction resumes.
+pub fn assemble_history(history: &[MessageSummary], opts: ContextOptions<'_>) -> Vec<ChatMessage> {
+    assemble_inner(history, None, opts)
+}
+
+fn assemble_inner(
+    history: &[MessageSummary],
+    user_message: Option<&str>,
     opts: ContextOptions<'_>,
 ) -> Vec<ChatMessage> {
     let system_prompt = build_system_prompt(&opts);
@@ -114,7 +130,9 @@ pub fn assemble(
         });
     }
 
-    messages.push(ChatMessage::user(user_message));
+    if let Some(user_message) = user_message {
+        messages.push(ChatMessage::user(user_message));
+    }
     messages
 }
 
@@ -231,6 +249,33 @@ fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
         }
     }
 
+    if !opts.plugin_catalog.is_empty() {
+        out.push_str("\n\n## Plugin catalog\n\n");
+        out.push_str(
+            "The following plugins may help with user tasks. `enabled` plugins are already \
+             usable. For `disabled`, `needs_configuration`, or `available` plugins, call \
+             `request_plugin_action` only when the plugin is materially useful to the current \
+             task. Recommend one plugin at a time. Never recommend `blocked`, `unavailable`, \
+             or non-user-managed plugins for an action. Do not claim a plugin was installed \
+             or enabled until the tool result confirms it.\n\n",
+        );
+        for plugin in opts.plugin_catalog {
+            out.push_str(&format!(
+                "- `{}` ({}, state={}, user_managed={}): {}\n",
+                plugin.id, plugin.name, plugin.state, plugin.user_managed, plugin.brief
+            ));
+        }
+    }
+
+    out.push_str(
+        "\n\n## User interactions\n\n\
+         Use `request_user_input` only for unresolved choices that materially affect the task. \
+         Ask one to three questions at a time and choose `single_select`, `multi_select`, or \
+         `text` deliberately. Every select option must include a concise description of its \
+         effect or tradeoff because the interface exposes that text through a help control. \
+         Call interactive tools alone in their tool round.\n",
+    );
+
     // Always include the current date so the assistant can reason about time.
     let tz: Tz = opts
         .timezone
@@ -336,6 +381,44 @@ mod tests {
             !system.contains("## Current memories"),
             "current-memories section should be omitted when there are no results"
         );
+    }
+
+    #[test]
+    fn plugin_catalog_and_interaction_guidance_are_injected() {
+        let catalog = vec![
+            PluginCatalogItem {
+                id: "weather".into(),
+                name: "Weather".into(),
+                brief: "Use for current weather.".into(),
+                state: "available".into(),
+                user_managed: true,
+                permissions: vec!["outbound_http".into()],
+                allowed_hosts: vec!["api.weather.example".into()],
+                setup_guide: None,
+            },
+            PluginCatalogItem {
+                id: "blocked".into(),
+                name: "Blocked".into(),
+                brief: "Must not be suggested.".into(),
+                state: "blocked".into(),
+                user_managed: true,
+                permissions: Vec::new(),
+                allowed_hosts: Vec::new(),
+                setup_guide: None,
+            },
+        ];
+        let messages = assemble(
+            &[],
+            "hi",
+            ContextOptions {
+                plugin_catalog: &catalog,
+                ..Default::default()
+            },
+        );
+        let system = &messages[0].content;
+        assert!(system.contains("`weather` (Weather, state=available, user_managed=true)"));
+        assert!(system.contains("Never recommend `blocked`"));
+        assert!(system.contains("Every select option must include a concise description"));
     }
 
     #[test]

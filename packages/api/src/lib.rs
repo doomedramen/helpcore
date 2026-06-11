@@ -285,6 +285,155 @@ pub struct SseToolResult {
     pub truncated: bool,
 }
 
+/// A selectable answer to a structured user question.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionOption {
+    /// Stable option identifier returned when selected.
+    pub id: String,
+    /// Short option label.
+    pub label: String,
+    /// Explanation of the option's effect or tradeoff.
+    pub description: String,
+}
+
+/// A structured question presented to the user.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct InteractionQuestion {
+    /// Stable question identifier.
+    pub id: String,
+    /// Short heading shown above the question.
+    pub header: String,
+    /// Full question text.
+    pub question: String,
+    /// Input control used to answer this question.
+    pub question_type: InteractionQuestionType,
+    /// Selectable answers for single- and multi-select questions.
+    #[serde(default)]
+    pub options: Vec<QuestionOption>,
+}
+
+/// Supported structured question controls.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum InteractionQuestionType {
+    /// Exactly one option may be selected.
+    SingleSelect,
+    /// One or more options may be selected.
+    MultiSelect,
+    /// The user supplies free-form text.
+    Text,
+}
+
+/// Metadata shown when the assistant proposes a plugin lifecycle action.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginProposal {
+    /// Plugin identifier.
+    pub id: String,
+    /// Human-readable plugin name.
+    pub name: String,
+    /// Why the assistant believes the plugin is useful for the current task.
+    pub rationale: String,
+    /// Action that approval will perform.
+    pub action: String,
+    /// Current plugin state.
+    pub state: String,
+    /// Permissions granted during installation.
+    pub permissions: Vec<String>,
+    /// Network hosts the plugin may contact.
+    #[serde(default)]
+    pub allowed_hosts: Vec<String>,
+    /// Optional setup guide URL.
+    pub setup_guide: Option<String>,
+}
+
+/// The content of an interaction waiting for user input.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InteractionPayload {
+    /// One to three general questions from the assistant.
+    Questions {
+        /// Questions to present in order.
+        questions: Vec<InteractionQuestion>,
+    },
+    /// Approval for an install or enable workflow.
+    PluginApproval {
+        /// Authoritative plugin proposal.
+        plugin: PluginProposal,
+    },
+    /// Schema-driven plugin configuration.
+    PluginConfig {
+        /// Plugin being configured.
+        plugin: PluginProposal,
+        /// Configuration fields declared by the installed plugin.
+        fields: Vec<ConfigField>,
+        /// Existing non-secret values and secret configured-status markers.
+        current_values: serde_json::Value,
+        /// Most recent validation or health-check error.
+        error: Option<String>,
+    },
+}
+
+/// A durable interaction that has paused an assistant turn.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingInteraction {
+    /// Interaction identifier.
+    pub id: String,
+    /// Owning conversation identifier.
+    pub conversation_id: String,
+    /// Assistant placeholder that will resume after the response.
+    pub message_id: String,
+    /// Provider tool-call identifier awaiting a result.
+    pub tool_call_id: String,
+    /// Interaction content.
+    #[serde(flatten)]
+    pub payload: InteractionPayload,
+    /// ISO-8601 creation timestamp.
+    pub created_at: String,
+}
+
+/// Answer supplied for one structured question.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QuestionAnswer {
+    /// Stable question identifier.
+    pub question_id: String,
+    /// Selected option identifiers for single- or multi-select questions.
+    #[serde(default)]
+    pub option_ids: Vec<String>,
+    /// User-authored answer for a text question or custom select response.
+    pub custom_response: Option<String>,
+}
+
+/// A response to a pending interaction.
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum InteractionResponse {
+    /// Dismiss the interaction without performing its proposed action.
+    Dismiss,
+    /// Answers to a general question interaction.
+    Questions {
+        /// One answer for every question.
+        answers: Vec<QuestionAnswer>,
+    },
+    /// Approve or decline a plugin action.
+    PluginApproval {
+        /// Whether the proposed action is approved.
+        approved: bool,
+    },
+    /// Plugin configuration values keyed by schema field key.
+    PluginConfig {
+        /// Typed configuration values. Secret values are consumed immediately
+        /// and are never persisted in interaction or conversation records.
+        values: serde_json::Value,
+    },
+}
+
+/// SSE event emitted when generation pauses for user input.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SseInputRequired {
+    /// The interaction to render.
+    pub interaction: PendingInteraction,
+}
+
 // ── Conversations ─────────────────────────────────────────────────────────────
 
 /// Request to rename an existing conversation.
@@ -348,6 +497,8 @@ pub enum MessageStatus {
     Pending,
     /// Response is currently being streamed to the client.
     Streaming,
+    /// Response is paused until the user answers a durable interaction.
+    AwaitingInput,
     /// Message has been fully delivered and processed.
     Complete,
     /// Message processing failed.
@@ -359,7 +510,7 @@ pub enum MessageStatus {
 impl MessageStatus {
     /// Returns true if the message is still being processed.
     pub fn is_active(&self) -> bool {
-        matches!(self, Self::Pending | Self::Streaming)
+        matches!(self, Self::Pending | Self::Streaming | Self::AwaitingInput)
     }
 }
 

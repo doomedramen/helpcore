@@ -9,17 +9,26 @@ use tokio_util::io::StreamReader;
 use helpcore_api::{
     AdminConfigResponse, AdminConfigUpdateRequest, ApiKeyInfo, ChatRequest, CompactResponse,
     ConversationSummary, CreateApiKeyRequest, CreateApiKeyResponse, CurrentUserResponse,
-    ListApiKeysResponse, LoginRequest, LoginResponse, LogoutRequest, MemoryEntry,
-    MemoryListResponse, MemoryReadResponse, MemoryWriteRequest, MessageSummary,
+    InteractionResponse, ListApiKeysResponse, LoginRequest, LoginResponse, LogoutRequest,
+    MemoryEntry, MemoryListResponse, MemoryReadResponse, MemoryWriteRequest, MessageSummary,
     PersonalityResponse, PersonalityWriteRequest, PluginInfo, PluginListResponse,
     PluginTokenRequest, PluginTokenResponse, RefreshRequest, RefreshResponse, SetupRequest,
-    SetupStatusResponse, SseChunk, SseDone,
+    SetupStatusResponse, SseChunk, SseDone, SseInputRequired,
 };
 
 /// Sentinel string returned by `chat()` on a 401 so callers can detect an
 /// expired access token and attempt a refresh without string-matching on
 /// localised error messages.
 const TOKEN_EXPIRED: &str = "access_token_expired";
+
+/// Terminal event returned by a chat or interaction SSE stream.
+#[derive(Debug)]
+pub enum ChatOutcome {
+    /// The assistant turn completed.
+    Done(SseDone),
+    /// The assistant turn paused for user input.
+    InputRequired(Box<SseInputRequired>),
+}
 
 /// Thin HTTP client for the helpcore server API.
 pub struct Client {
@@ -158,13 +167,13 @@ impl Client {
     // ── Chat ──────────────────────────────────────────────────────────────────
 
     /// Sends a chat request and calls `on_chunk` for each streaming token.
-    /// Returns the `SseDone` event (contains conversation_id and message_id).
+    /// Returns the terminal `done` or `input_required` event.
     pub async fn chat(
         &self,
         access_token: &str,
         request: &ChatRequest,
         mut on_chunk: impl FnMut(&str),
-    ) -> anyhow::Result<SseDone> {
+    ) -> anyhow::Result<ChatOutcome> {
         let resp = self
             .inner
             .post(format!("{}/api/chat", self.server_url))
@@ -180,6 +189,32 @@ impl Client {
 
         let resp = require_success(resp).await?;
         parse_sse(resp, &mut on_chunk).await
+    }
+
+    /// Answers a durable interaction and streams the resumed assistant turn.
+    pub async fn respond_interaction(
+        &self,
+        access_token: &str,
+        conversation_id: &str,
+        interaction_id: &str,
+        response: &InteractionResponse,
+        mut on_chunk: impl FnMut(&str),
+    ) -> anyhow::Result<ChatOutcome> {
+        let resp = self
+            .inner
+            .post(format!(
+                "{}/api/conversations/{conversation_id}/interactions/{interaction_id}/respond",
+                self.server_url
+            ))
+            .bearer_auth(access_token)
+            .json(response)
+            .send()
+            .await
+            .context("failed to reach server")?;
+        if resp.status() == reqwest::StatusCode::UNAUTHORIZED {
+            bail!(TOKEN_EXPIRED);
+        }
+        parse_sse(require_success(resp).await?, &mut on_chunk).await
     }
 
     /// Returns true when `e` is the sentinel error emitted by `chat()` on a 401.
@@ -554,7 +589,7 @@ impl Client {
 async fn parse_sse(
     response: reqwest::Response,
     on_chunk: &mut impl FnMut(&str),
-) -> anyhow::Result<SseDone> {
+) -> anyhow::Result<ChatOutcome> {
     let byte_stream = response.bytes_stream().map_err(std::io::Error::other);
     let reader = StreamReader::new(byte_stream);
     let mut lines = BufReader::new(reader).lines();
@@ -575,7 +610,14 @@ async fn parse_sse(
                     }
                     "done" => {
                         return serde_json::from_str::<SseDone>(&event_data)
+                            .map(ChatOutcome::Done)
                             .context("failed to parse done event");
+                    }
+                    "input_required" => {
+                        return serde_json::from_str::<SseInputRequired>(&event_data)
+                            .map(Box::new)
+                            .map(ChatOutcome::InputRequired)
+                            .context("failed to parse input_required event");
                     }
                     "error" => {
                         bail!("server error: {}", event_data);
@@ -651,7 +693,7 @@ mod tests {
 
         let client = Client::new(server.uri());
         let mut collected = String::new();
-        let done = client
+        let outcome = client
             .chat(
                 "token",
                 &ChatRequest {
@@ -664,6 +706,9 @@ mod tests {
             )
             .await
             .unwrap();
+        let ChatOutcome::Done(done) = outcome else {
+            panic!("expected done event");
+        };
 
         assert_eq!(collected, "Hello world");
         assert_eq!(done.conversation_id, "conv1");
@@ -767,7 +812,10 @@ mod tests {
         let tokens = client.refresh("old-refresh").await.unwrap();
         assert_eq!(tokens.access_token, "new-token");
 
-        let done = client.chat("new-token", &request, |_| {}).await.unwrap();
+        let outcome = client.chat("new-token", &request, |_| {}).await.unwrap();
+        let ChatOutcome::Done(done) = outcome else {
+            panic!("expected done event");
+        };
         assert_eq!(done.conversation_id, "c1");
     }
 }

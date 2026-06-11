@@ -33,7 +33,7 @@ Conversations are stored in SQLite. Each conversation belongs to one user.
 | tool_calls | JSON | For `assistant` messages that invoke tools |
 | provider_id | TEXT | Which provider generated this (assistant messages) |
 | model | TEXT | Which model generated this |
-| status | TEXT | `pending`, `streaming`, `complete`, `failed`, or `interrupted` |
+| status | TEXT | `pending`, `streaming`, `awaiting_input`, `complete`, `failed`, or `interrupted` |
 | error | TEXT | Terminal generation error, when present |
 | updated_at | TIMESTAMP | Last persisted chunk or state transition |
 | sequence | INTEGER | Ordering within the conversation |
@@ -142,7 +142,38 @@ cause API 400 errors.
 
 Ollama tool calls are persisted as an assistant message with `tool_calls`,
 followed by `tool` role result rows linked through `tool_call_id`. The provider
-loop allows at most eight tool rounds.
+loop has fixed server-owned limits:
+
+- At most eight tool rounds and 180 seconds of tool-phase work per turn.
+- The third consecutive identical tool call is rejected before execution.
+- Four failed calls, two all-failed rounds, or a terminal auth/config/policy
+  error stop tool use early.
+- Once stopped, the provider gets one tool-free response with a 30-second
+  timeout. If that fails, helpcore returns a concise inability-to-verify
+  fallback instead of leaving the turn resumable.
+
+The model cannot extend these budgets. Retrying a failed or externally
+interrupted response starts a fresh attempt without instructions to continue
+the previous strategy.
+
+### Durable user interactions
+
+`request_user_input` and `request_plugin_action` must be called alone in a tool
+round. The server persists the tool call and an `interactions` row, changes the
+assistant placeholder to `awaiting_input`, and ends the SSE stream with
+`input_required` instead of `done`.
+
+Only one interaction may be pending per conversation. New turns and retries
+remain blocked until it is answered or dismissed. The web UI and `hc ask`
+restore the pending interaction through
+`GET /api/conversations/{id}/interaction`; responses are submitted to
+`POST /api/conversations/{id}/interactions/{interaction_id}/respond`, which
+streams the resumed assistant turn.
+
+Question interactions support single select, multi-select, and text input.
+Every selectable option carries required help text. Plugin configuration
+values bypass conversation and interaction storage; secrets are written
+directly to encrypted plugin storage.
 
 ---
 

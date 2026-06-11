@@ -3,4 +3,5 @@
 pub mod compact;
 pub mod context;
 pub mod history;
+pub mod interaction;
 pub mod memory;

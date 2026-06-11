@@ -6,6 +6,11 @@ managing long-running processes. It is implemented in
 `packages/server/src/sandbox/mod.rs` (container lifecycle) and exposed as
 built-in tools in `packages/server/src/plugins/runtime.rs`.
 
+It is a development workspace, not a fallback web browser. General web search,
+maps, local-business discovery, and booking lookups require a purpose-built
+tool; the assistant is instructed to explain the limitation when one is not
+available.
+
 ## Architecture
 
 Commands run inside a single long-lived **session container** via the Docker
@@ -88,11 +93,15 @@ change.
 
 - **Timeouts** are enforced in-container with `timeout(1)`, plus a host-side
   backstop that recreates the container if it stops responding entirely.
+  During chat, a requested command timeout is also clamped to the remaining
+  180-second tool-phase budget.
 - **Output** is capped per stream (100 kB by default), keeping the first 40%
   and last 60% so the end of build/test output — where the errors are —
   survives truncation.
 - **Network access is enabled** (bridge networking): cloning, pushing, and
   package installs are part of the intended workflow.
+- **Non-zero exits are tool failures**, not successful JSON results. Their
+  stdout and stderr are bounded before being returned to the model.
 
 ## Security posture
 

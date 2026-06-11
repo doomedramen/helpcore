@@ -161,6 +161,7 @@ async fn main() -> anyhow::Result<()> {
         providers: provider_registry,
         config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
         sandbox,
+        registry_cache: Default::default(),
     });
 
     let port = state.config.server.port;

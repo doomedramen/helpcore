@@ -40,7 +40,9 @@ pub async fn list_plugins(
 ) -> Result<Json<PluginListResponse>, AppError> {
     let config = load_config(&state).await?;
     let blacklist = config.plugins.blacklist.into_iter().collect::<HashSet<_>>();
-    let available = registry::fetch_store(&config.registry.url)
+    let available = state
+        .registry_cache
+        .get(&config.registry.url)
         .await
         .map(|store| {
             store
@@ -118,7 +120,9 @@ pub async fn list_store(
 ) -> Result<Json<PluginStoreResponse>, AppError> {
     let config = load_config(&state).await?;
     let registry_url = config.registry.url.clone();
-    let store = registry::fetch_store(&registry_url)
+    let store = state
+        .registry_cache
+        .get(&registry_url)
         .await
         .map_err(|error| AppError::Upstream(error.to_string()))?;
 
@@ -174,13 +178,24 @@ pub async fn install_plugin(
     Path(plugin_id): Path<String>,
     Json(request): Json<PluginInstallRequest>,
 ) -> Result<StatusCode, AppError> {
-    let config = load_config(&state).await?;
-    ensure_not_blocked(&config, &plugin_id)?;
-    let plugin = fetch_store_plugin(&config, &plugin_id).await?;
-    let permissions = approved_permissions(&plugin, request.permissions)?;
+    install_for_user(&state, &auth_user.id, &plugin_id, request.permissions).await?;
+    Ok(StatusCode::CREATED)
+}
 
-    let uid = auth_user.id.clone();
-    let pid = plugin_id.clone();
+/// Installs a store plugin for a user using the same validation as the REST endpoint.
+pub(crate) async fn install_for_user(
+    state: &AppState,
+    user_id: &str,
+    plugin_id: &str,
+    requested_permissions: Vec<String>,
+) -> Result<(), AppError> {
+    let config = load_config(state).await?;
+    ensure_not_blocked(&config, plugin_id)?;
+    let plugin = fetch_store_plugin(state, &config, plugin_id).await?;
+    let permissions = approved_permissions(&plugin, requested_permissions)?;
+
+    let uid = user_id.to_string();
+    let pid = plugin_id.to_string();
     let exists = state
         .db
         .call(move |conn| {
@@ -195,16 +210,14 @@ pub async fn install_plugin(
         return Err(AppError::Conflict("plugin is already installed".into()));
     }
 
-    let package = package::install_store_package(&state.data_dir, &auth_user.id, &plugin)
+    let package = package::install_store_package(&state.data_dir, user_id, &plugin)
         .await
         .map_err(|error| AppError::BadRequest(error.to_string()))?;
-    if let Err(error) =
-        persist_install(&state, &auth_user.id, &plugin, &package, &permissions).await
-    {
+    if let Err(error) = persist_install(state, user_id, &plugin, &package, &permissions).await {
         let _ = std::fs::remove_dir_all(&package.version_path);
         return Err(error);
     }
-    Ok(StatusCode::CREATED)
+    Ok(())
 }
 
 /// POST /api/plugins/{id}/update — updates an installed plugin to the latest version.
@@ -217,7 +230,7 @@ pub async fn update_plugin(
     ensure_user_managed(&state, &auth_user.id, &plugin_id).await?;
     let config = load_config(&state).await?;
     ensure_not_blocked(&config, &plugin_id)?;
-    let plugin = fetch_store_plugin(&config, &plugin_id).await?;
+    let plugin = fetch_store_plugin(&state, &config, &plugin_id).await?;
     let permissions = approved_permissions(&plugin, request.permissions)?;
 
     let uid = auth_user.id.clone();
@@ -458,8 +471,19 @@ pub async fn configure_plugin(
     Path(plugin_id): Path<String>,
     Json(request): Json<PluginConfigureRequest>,
 ) -> Result<StatusCode, AppError> {
-    let uid = auth_user.id.clone();
-    let pid = plugin_id.clone();
+    configure_for_user(&state, &auth_user.id, &plugin_id, request.values).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Configures a plugin for a user without exposing secret values to chat storage.
+pub(crate) async fn configure_for_user(
+    state: &AppState,
+    user_id: &str,
+    plugin_id: &str,
+    request_values: serde_json::Value,
+) -> Result<(), AppError> {
+    let uid = user_id.to_string();
+    let pid = plugin_id.to_string();
     let install: Option<(Manifest, serde_json::Value, Option<String>)> = state
         .db
         .call(move |conn| {
@@ -490,13 +514,13 @@ pub async fn configure_plugin(
         return Err(AppError::NotFound("plugin not installed".into()));
     };
 
-    let values = request
-        .values
+    let values = request_values
         .as_object()
         .ok_or_else(|| AppError::BadRequest("values must be a JSON object".into()))?;
 
     // Split values by field type based on the declared schema.
-    let mut config_map = serde_json::Map::new();
+    let mut config_map = existing_config.as_object().cloned().unwrap_or_default();
+    config_map.remove("_secret_keys");
     let mut new_secret_map = serde_json::Map::new();
     let mut cleared_secret_keys: Vec<&str> = Vec::new();
 
@@ -523,8 +547,8 @@ pub async fn configure_plugin(
         let mut merged = if let Some(encrypted) = &existing_secrets {
             decrypt_plugin_secrets(
                 state.data_dir.clone(),
-                auth_user.id.clone(),
-                plugin_id.clone(),
+                user_id.to_string(),
+                plugin_id.to_string(),
                 encrypted.clone(),
             )
             .await?
@@ -551,8 +575,8 @@ pub async fn configure_plugin(
         let value = serde_json::Value::Object(merged_obj.clone());
         let encrypted = tokio::task::spawn_blocking({
             let data_dir = state.data_dir.clone();
-            let uid = auth_user.id.clone();
-            let pid = plugin_id.clone();
+            let uid = user_id.to_string();
+            let pid = plugin_id.to_string();
             move || secrets::encrypt(&data_dir, &uid, &pid, &value)
         })
         .await
@@ -580,8 +604,8 @@ pub async fn configure_plugin(
             Some(
                 decrypt_plugin_secrets(
                     state.data_dir.clone(),
-                    auth_user.id.clone(),
-                    plugin_id.clone(),
+                    user_id.to_string(),
+                    plugin_id.to_string(),
                     encrypted.to_string(),
                 )
                 .await?,
@@ -593,8 +617,8 @@ pub async fn configure_plugin(
     }
 
     let config_json = serde_json::to_string(&serde_json::Value::Object(config_map))?;
-    let uid = auth_user.id;
-    let pid = plugin_id;
+    let uid = user_id.to_string();
+    let pid = plugin_id.to_string();
     state
         .db
         .call(move |conn| {
@@ -613,7 +637,7 @@ pub async fn configure_plugin(
             Ok(())
         })
         .await?;
-    Ok(StatusCode::NO_CONTENT)
+    Ok(())
 }
 
 /// PUT /api/plugins/{id}/enable — enables or disables a plugin.
@@ -623,14 +647,25 @@ pub async fn set_enabled(
     Path(plugin_id): Path<String>,
     Json(request): Json<PluginEnableRequest>,
 ) -> Result<StatusCode, AppError> {
-    ensure_user_managed(&state, &auth_user.id, &plugin_id).await?;
-    let config = load_config(&state).await?;
-    if request.enabled {
-        ensure_not_blocked(&config, &plugin_id)?;
+    set_enabled_for_user(&state, &auth_user.id, &plugin_id, request.enabled).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// Enables or disables a user-managed plugin using the REST endpoint's checks.
+pub(crate) async fn set_enabled_for_user(
+    state: &AppState,
+    user_id: &str,
+    plugin_id: &str,
+    enabled: bool,
+) -> Result<(), AppError> {
+    ensure_user_managed(state, user_id, plugin_id).await?;
+    let config = load_config(state).await?;
+    if enabled {
+        ensure_not_blocked(&config, plugin_id)?;
     }
 
-    let uid = auth_user.id.clone();
-    let pid = plugin_id.clone();
+    let uid = user_id.to_string();
+    let pid = plugin_id.to_string();
     let install: Option<(String, String, String, Option<String>)> = state
         .db
         .call(move |conn| {
@@ -652,15 +687,14 @@ pub async fn set_enabled(
     let manifest: Manifest = serde_json::from_str(&manifest_raw)?;
     let plugin_config: serde_json::Value = serde_json::from_str(&config_raw)?;
 
-    if request.enabled
-        && !registry::is_configured(&manifest.config_schema, &manifest.tier, &plugin_config)
+    if enabled && !registry::is_configured(&manifest.config_schema, &manifest.tier, &plugin_config)
     {
         return Err(AppError::Conflict(
             "complete configuration before enabling this plugin".into(),
         ));
     }
 
-    if request.enabled && manifest.tier == "bridge" {
+    if enabled && manifest.tier == "bridge" {
         let endpoint = registry::bridge_endpoint(&manifest.config_schema, &plugin_config)
             .ok_or_else(|| {
                 AppError::Conflict("configure the bridge endpoint before enabling".into())
@@ -669,8 +703,8 @@ pub async fn set_enabled(
             Some(
                 decrypt_plugin_secrets(
                     state.data_dir.clone(),
-                    auth_user.id.clone(),
-                    plugin_id.clone(),
+                    user_id.to_string(),
+                    plugin_id.to_string(),
                     encrypted,
                 )
                 .await?,
@@ -680,29 +714,24 @@ pub async fn set_enabled(
         };
         check_bridge_health(endpoint, &manifest, effective_secrets.as_ref()).await?;
     }
-    if request.enabled {
-        ensure_no_tool_conflicts(&state, &auth_user.id, &plugin_id, &tools_raw).await?;
+    if enabled {
+        ensure_no_tool_conflicts(state, user_id, plugin_id, &tools_raw).await?;
     }
 
-    let uid = auth_user.id;
-    let pid = plugin_id;
+    let uid = user_id.to_string();
+    let pid = plugin_id.to_string();
     let updated = state
         .db
         .call(move |conn| {
             Ok(conn.execute(
                 "UPDATE plugin_installs SET enabled = ?1, updated_at = ?2
                  WHERE user_id = ?3 AND plugin_id = ?4",
-                rusqlite::params![
-                    request.enabled as i32,
-                    chrono::Utc::now().to_rfc3339(),
-                    uid,
-                    pid
-                ],
+                rusqlite::params![enabled as i32, chrono::Utc::now().to_rfc3339(), uid, pid],
             )? > 0)
         })
         .await?;
     if updated {
-        Ok(StatusCode::NO_CONTENT)
+        Ok(())
     } else {
         Err(AppError::NotFound("plugin not installed".into()))
     }
@@ -857,8 +886,14 @@ async fn load_config(state: &AppState) -> Result<Config, AppError> {
     .map_err(AppError::Internal)
 }
 
-async fn fetch_store_plugin(config: &Config, plugin_id: &str) -> Result<StorePlugin, AppError> {
-    registry::fetch_store(&config.registry.url)
+async fn fetch_store_plugin(
+    state: &AppState,
+    config: &Config,
+    plugin_id: &str,
+) -> Result<StorePlugin, AppError> {
+    state
+        .registry_cache
+        .get(&config.registry.url)
         .await
         .map_err(|error| AppError::Upstream(error.to_string()))?
         .plugins

@@ -9,10 +9,6 @@ use std::{
     fs,
     net::IpAddr,
     path::{Component as PathComponent, Path, PathBuf},
-    sync::{
-        Arc,
-        atomic::{AtomicU32, Ordering},
-    },
     time::Duration,
 };
 use wasmtime::{
@@ -61,6 +57,7 @@ const WASM_FUEL_LIMIT: u64 = 1_000_000_000;
 const WASM_TIMEOUT: Duration = Duration::from_secs(30);
 const BRIDGE_TIMEOUT: Duration = Duration::from_secs(15);
 const MAX_TOOL_RESULT_BYTES: usize = 4 * 1024 * 1024;
+const SANDBOX_ERROR_OUTPUT_CHARS: usize = 2_000;
 
 #[derive(Clone)]
 struct RuntimeTool {
@@ -71,7 +68,6 @@ struct RuntimeTool {
 pub struct ToolCatalog {
     definitions: Vec<ToolDefinition>,
     tools: HashMap<String, RuntimeTool>,
-    max_rounds: Arc<AtomicU32>,
 }
 
 impl ToolCatalog {
@@ -109,34 +105,12 @@ impl ToolCatalog {
                 );
             }
         }
-        Ok(Self {
-            definitions,
-            tools,
-            max_rounds: Arc::new(AtomicU32::new(75)),
-        })
+        Ok(Self { definitions, tools })
     }
 
     /// Returns the tool definitions visible to the model.
     pub fn definitions(&self) -> &[ToolDefinition] {
         &self.definitions
-    }
-
-    /// Returns the current maximum number of tool-call rounds for this turn.
-    /// Defaults to 75, but may be increased by the model via `request_rounds`.
-    pub fn max_rounds(&self) -> u32 {
-        self.max_rounds.load(Ordering::Relaxed)
-    }
-
-    /// Increases the tool-call round limit by `count`, capped at 500 total.
-    /// Returns the new maximum.
-    pub fn request_rounds(&self, count: u32) -> u32 {
-        let clamped = count.min(100);
-        self.max_rounds
-            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
-                Some((cur + clamped).min(500))
-            })
-            .map(|old| (old + clamped).min(500))
-            .unwrap_or(500)
     }
 
     /// Dispatches a tool call to the appropriate runtime (built-in, WASM, or bridge).
@@ -148,7 +122,7 @@ impl ToolCatalog {
         call: &ToolCall,
     ) -> anyhow::Result<String> {
         if is_builtin_tool(&call.name) {
-            return execute_builtin(state, user_id, conversation_id, call, &self.max_rounds).await;
+            return execute_builtin(state, user_id, conversation_id, call).await;
         }
         let runtime = self
             .tools
@@ -186,7 +160,8 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "personality_append",
     "conversation_rename",
     "skill_read",
-    "request_rounds",
+    "request_user_input",
+    "request_plugin_action",
     "sandbox_list",
     "sandbox_read",
     "sandbox_write",
@@ -206,6 +181,11 @@ const SANDBOX_PROC_DIR: &str = "/tmp/helpcore-proc";
 
 pub(crate) fn is_builtin_tool(name: &str) -> bool {
     BUILTIN_TOOL_NAMES.contains(&name)
+}
+
+/// Returns true for tools that pause generation for a user response.
+pub(crate) fn is_interactive_tool(name: &str) -> bool {
+    matches!(name, "request_user_input" | "request_plugin_action")
 }
 
 fn builtin_tool_definitions() -> Vec<ToolDefinition> {
@@ -397,29 +377,77 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
             }),
         },
         ToolDefinition {
-            name: "request_rounds".into(),
-            description: "Request more tool-call rounds for the current turn. \
-                You start with 75 rounds per turn (each round = one text reply + \
-                optional tool calls). Use this when you know you'll need many tool \
-                calls in one burst (e.g. reading a large codebase or doing extensive \
-                research). After each tool result you see [Tool round: N/M] so you \
-                know how many rounds remain."
+            name: "request_user_input".into(),
+            description: "Pause and ask the user one to three decision-relevant questions. \
+                Each question must declare `single_select`, `multi_select`, or `text`. \
+                Select questions require two or three meaningful options, and every option \
+                must include a description that explains its effect or tradeoff. The interface \
+                also permits a custom typed response to select questions. \
+                Call this tool alone in its tool round. Do not use it for plugin installation \
+                or enablement; use request_plugin_action for those."
                 .into(),
             input_schema: serde_json::json!({
                 "type": "object",
                 "properties": {
-                    "reason": {
-                        "type": "string",
-                        "description": "Why you need more rounds (e.g. 'I need to read ~20 files to understand this codebase')"
-                    },
-                    "count": {
-                        "type": "integer",
-                        "minimum": 1,
-                        "maximum": 100,
-                        "description": "Number of ADDITIONAL rounds you need (capped at 500 total)"
+                    "questions": {
+                        "type": "array",
+                        "minItems": 1,
+                        "maxItems": 3,
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "id": { "type": "string" },
+                                "header": { "type": "string" },
+                                "question": { "type": "string" },
+                                "question_type": {
+                                    "type": "string",
+                                    "enum": ["single_select", "multi_select", "text"]
+                                },
+                                "options": {
+                                    "type": "array",
+                                    "minItems": 2,
+                                    "maxItems": 3,
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": { "type": "string" },
+                                            "label": { "type": "string" },
+                                            "description": { "type": "string" }
+                                        },
+                                        "required": ["id", "label", "description"],
+                                        "additionalProperties": false
+                                    }
+                                }
+                            },
+                            "required": ["id", "header", "question", "question_type"],
+                            "additionalProperties": false
+                        }
                     }
                 },
-                "required": ["reason", "count"],
+                "required": ["questions"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "request_plugin_action".into(),
+            description: "Propose installing, configuring, or enabling one materially useful \
+                plugin from the plugin catalog. The server determines the required lifecycle \
+                steps and asks for explicit user approval. Call this tool alone in its tool \
+                round. Never call it for enabled, blocked, unavailable, or server-managed plugins."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "plugin_id": {
+                        "type": "string",
+                        "description": "Exact plugin id from the plugin catalog"
+                    },
+                    "rationale": {
+                        "type": "string",
+                        "description": "Concise explanation of how this plugin helps the current task"
+                    }
+                },
+                "required": ["plugin_id", "rationale"],
                 "additionalProperties": false
             }),
         },
@@ -588,12 +616,14 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
         ToolDefinition {
             name: "sandbox_exec".into(),
             description: "Execute a shell command in the sandbox: a persistent Linux \
-                          container with network access (git clone/push, curl, and \
-                          package installs all work). /workspace is on a persistent \
+                          development workspace. Network access is intended for git \
+                          and package-manager operations, not general web searches or \
+                          business lookups. /workspace is on a persistent \
                           volume and survives across commands; toolchain caches \
                           (cargo, pip, npm) persist under /workspace/.cache, so \
                           repeated builds are incremental. Use this for builds, \
-                          tests, git operations, and installs. Set background=true \
+                          tests, local service checks, git operations, and installs. \
+                          Set background=true \
                           to start a long-running process (e.g. a dev server) and \
                           manage it with sandbox_ps / sandbox_logs / sandbox_kill."
                 .into(),
@@ -771,6 +801,30 @@ fn parse_env_arg(arguments: &serde_json::Value) -> anyhow::Result<Vec<String>> {
     Ok(pairs)
 }
 
+fn sandbox_exec_result(result: &crate::sandbox::SandboxResult) -> anyhow::Result<String> {
+    if result.exit_code != 0 {
+        let stdout = result
+            .stdout
+            .trim()
+            .chars()
+            .take(SANDBOX_ERROR_OUTPUT_CHARS)
+            .collect::<String>();
+        let stderr = result
+            .stderr
+            .trim()
+            .chars()
+            .take(SANDBOX_ERROR_OUTPUT_CHARS)
+            .collect::<String>();
+        anyhow::bail!(
+            "command exited with status {}\nstdout:\n{}\nstderr:\n{}",
+            result.exit_code,
+            stdout,
+            stderr
+        );
+    }
+    Ok(serde_json::to_string(result)?)
+}
+
 /// Validates a background process id (as returned by `sandbox_exec` with
 /// `background=true`) so it can be safely interpolated into shell commands.
 fn validate_process_id(id: &str) -> anyhow::Result<&str> {
@@ -905,7 +959,6 @@ async fn execute_builtin(
     user_id: &str,
     conversation_id: Option<&str>,
     call: &ToolCall,
-    max_rounds: &Arc<AtomicU32>,
 ) -> anyhow::Result<String> {
     let uid = user_id.to_string();
     match call.name.as_str() {
@@ -1094,31 +1147,8 @@ async fn execute_builtin(
                 )),
             }
         }
-        "request_rounds" => {
-            let count = call
-                .arguments
-                .get("count")
-                .and_then(serde_json::Value::as_u64)
-                .context("request_rounds requires a numeric 'count' argument")?;
-            let count = count.min(100) as u32;
-            let current = max_rounds.load(Ordering::Relaxed);
-            let new_max = max_rounds
-                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |cur| {
-                    Some((cur + count).min(500))
-                })
-                .map(|old| (old + count).min(500))
-                .unwrap_or_else(|_| (current + count).min(500));
-            Ok(serde_json::json!({
-                "action": "request_rounds",
-                "previous_max": current,
-                "new_max": new_max,
-                "rounds_added": new_max.saturating_sub(current),
-                "message": format!(
-                    "Tool call limit increased from {} to {} for this turn ({} rounds added).",
-                    current, new_max, new_max.saturating_sub(current)
-                )
-            })
-            .to_string())
+        "request_user_input" | "request_plugin_action" => {
+            anyhow::bail!("interactive tools must be handled by the conversation loop")
         }
         "sandbox_list" => {
             let sandbox = state
@@ -1454,7 +1484,7 @@ async fn execute_builtin(
                 },
             )
             .await?;
-            Ok(serde_json::to_string(&result)?)
+            sandbox_exec_result(&result)
         }
         "sandbox_ps" => {
             let sandbox = state
@@ -2311,58 +2341,48 @@ mod tests {
     }
 
     #[test]
-    fn request_rounds_increases_limit() {
-        let catalog = ToolCatalog {
-            definitions: Vec::new(),
-            tools: HashMap::new(),
-            max_rounds: Arc::new(AtomicU32::new(75)),
-        };
-
-        assert_eq!(catalog.max_rounds(), 75);
-
-        let new = catalog.request_rounds(5);
-        assert_eq!(new, 80);
-        assert_eq!(catalog.max_rounds(), 80);
-
-        let new = catalog.request_rounds(10);
-        assert_eq!(new, 90);
-        assert_eq!(catalog.max_rounds(), 90);
+    fn request_user_input_schema_requires_option_help_and_limits_questions() {
+        let definition = builtin_tool_definitions()
+            .into_iter()
+            .find(|definition| definition.name == "request_user_input")
+            .unwrap();
+        let questions = &definition.input_schema["properties"]["questions"];
+        assert_eq!(questions["minItems"], 1);
+        assert_eq!(questions["maxItems"], 3);
+        let required = questions["items"]["properties"]["options"]["items"]["required"]
+            .as_array()
+            .unwrap();
+        assert!(required.iter().any(|value| value == "description"));
+        assert_eq!(
+            questions["items"]["properties"]["question_type"]["enum"],
+            serde_json::json!(["single_select", "multi_select", "text"])
+        );
     }
 
     #[test]
-    fn request_rounds_caps_at_500() {
-        let catalog = ToolCatalog {
-            definitions: Vec::new(),
-            tools: HashMap::new(),
-            max_rounds: Arc::new(AtomicU32::new(75)),
+    fn sandbox_exec_nonzero_exit_is_a_tool_failure() {
+        let result = crate::sandbox::SandboxResult {
+            stdout: "partial output".into(),
+            stderr: "curl failed".into(),
+            exit_code: 22,
+            duration_ms: 10,
+            truncated: false,
         };
-
-        // Each call adds at most 100, total capped at 500
-        let new = catalog.request_rounds(100);
-        assert_eq!(new, 175);
-        let new = catalog.request_rounds(100);
-        assert_eq!(new, 275);
-        let new = catalog.request_rounds(100);
-        assert_eq!(new, 375);
-        let new = catalog.request_rounds(100);
-        assert_eq!(new, 475);
-        let new = catalog.request_rounds(100);
-        assert_eq!(new, 500, "should cap at 500");
-        assert_eq!(catalog.max_rounds(), 500);
-
-        // Already at 500 — further calls shouldn't increase
-        let new = catalog.request_rounds(1);
-        assert_eq!(new, 500, "should stay at 500");
-        assert_eq!(catalog.max_rounds(), 500);
+        let error = sandbox_exec_result(&result).unwrap_err().to_string();
+        assert!(error.contains("command exited with status 22"));
+        assert!(error.contains("curl failed"));
     }
 
     #[test]
-    fn request_rounds_defaults_to_75() {
-        let catalog = ToolCatalog {
-            definitions: Vec::new(),
-            tools: HashMap::new(),
-            max_rounds: Arc::new(AtomicU32::new(75)),
+    fn sandbox_exec_zero_exit_is_serialized() {
+        let result = crate::sandbox::SandboxResult {
+            stdout: "ok".into(),
+            stderr: String::new(),
+            exit_code: 0,
+            duration_ms: 10,
+            truncated: false,
         };
-        assert_eq!(catalog.max_rounds(), 75);
+        let output = sandbox_exec_result(&result).unwrap();
+        assert!(output.contains("\"exit_code\":0"));
     }
 }

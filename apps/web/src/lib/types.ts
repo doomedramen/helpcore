@@ -126,7 +126,7 @@ export interface Message {
   tool_calls: unknown[] | null;
   sequence: number;
   created_at: string;
-  status: "pending" | "streaming" | "complete" | "failed" | "interrupted";
+  status: "pending" | "streaming" | "awaiting_input" | "complete" | "failed" | "interrupted";
   error: string | null;
   updated_at: string;
   /** Token usage for assistant messages, when reported by the provider. */
@@ -156,6 +156,67 @@ export interface SseToolResult {
   truncated?: boolean;
 }
 
+/** A selectable answer for a structured interaction question. */
+export interface InteractionQuestionOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
+/** A structured question requested by the assistant. */
+export interface InteractionQuestion {
+  id: string;
+  header: string;
+  question: string;
+  question_type: "single_select" | "multi_select" | "text";
+  options: InteractionQuestionOption[];
+}
+
+/** Authoritative metadata for a proposed plugin lifecycle action. */
+export interface PluginProposal {
+  id: string;
+  name: string;
+  rationale: string;
+  action: "install_configure_enable" | "configure_enable" | "enable";
+  state: string;
+  permissions: string[];
+  allowed_hosts: string[];
+  setup_guide: string | null;
+}
+
+interface PendingInteractionBase {
+  id: string;
+  conversation_id: string;
+  message_id: string;
+  tool_call_id: string;
+  created_at: string;
+}
+
+/** A durable assistant interaction waiting for user input. */
+export type PendingInteraction = PendingInteractionBase &
+  (
+    | {
+        kind: "questions";
+        questions: InteractionQuestion[];
+      }
+    | {
+        kind: "plugin_approval";
+        plugin: PluginProposal;
+      }
+    | {
+        kind: "plugin_config";
+        plugin: PluginProposal;
+        fields: ConfigField[];
+        current_values: ConfigValues;
+        error: string | null;
+      }
+  );
+
+/** SSE event signalling that the assistant turn is paused for input. */
+export interface SseInputRequired {
+  interaction: PendingInteraction;
+}
+
 /** SSE event signalling the stream has finished cleanly. */
 export interface SseDone {
   conversation_id: string;
@@ -176,7 +237,7 @@ export interface SseUsage {
   cache_write_tokens?: number | null;
 }
 
-/** SSE event emitted when the tool-call round limit is reached. */
+/** SSE event emitted when generation is interrupted externally. */
 export interface SseInterrupted {
   message: string;
 }

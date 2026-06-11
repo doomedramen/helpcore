@@ -27,6 +27,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (14, include_str!("migrations/0014_memory_leaning.sql")),
     (15, include_str!("migrations/0015_skill_brief.sql")),
     (16, include_str!("migrations/0016_message_tokens.sql")),
+    (17, include_str!("migrations/0017_interactions.sql")),
 ];
 
 /// Thread-safe SQLite connection pool wrapping a single WAL-mode connection.
@@ -166,6 +167,7 @@ pub mod tests {
                 "plugins",
                 "plugin_installs",
                 "plugin_tokens",
+                "interactions",
             ] {
                 assert!(
                     tables.contains(&expected.to_string()),

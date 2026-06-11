@@ -65,6 +65,13 @@ User: "install home-assistant"
 Registry URL, blacklist, and `[[plugins.local]]` provisioning are admin-only.
 Saving a blacklist immediately disables matching installs for every user.
 
+The AI receives a compact catalog containing enabled, disabled,
+configuration-required, available, unavailable, and blocked plugins. It may
+propose one materially useful user-managed plugin at a time. Approval,
+configuration, health validation, and enablement use a durable interaction
+that survives reloads; plugin secrets go directly to encrypted storage and are
+never added to conversation history.
+
 ---
 
 ## Storage

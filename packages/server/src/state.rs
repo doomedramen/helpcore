@@ -3,7 +3,8 @@
 use std::{path::PathBuf, sync::Arc};
 
 use crate::{
-    config::Config, db::DbPool, providers::registry::ProviderRegistry, sandbox::SandboxState,
+    config::Config, db::DbPool, plugins::registry::RegistryCache,
+    providers::registry::ProviderRegistry, sandbox::SandboxState,
 };
 
 /// Shared application state available to all handlers.
@@ -23,4 +24,6 @@ pub struct AppState {
     pub config_update_lock: Arc<tokio::sync::Mutex<()>>,
     /// Shared sandbox state, if enabled.
     pub sandbox: Option<SandboxState>,
+    /// Cached plugin registry used by chat recommendations and store views.
+    pub registry_cache: RegistryCache,
 }

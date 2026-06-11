@@ -468,6 +468,7 @@ brief = "Use when testing package installation."
             id: "test-plugin".into(),
             name: "Test Plugin".into(),
             description: "Test".into(),
+            brief: Some("Use when testing package installation.".into()),
             version: "1.0.0".into(),
             tier: "bridge".into(),
             author: "Test".into(),

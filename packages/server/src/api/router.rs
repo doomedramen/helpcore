@@ -65,6 +65,14 @@ pub fn create(state: Arc<AppState>, web_ui: bool) -> Router {
             get(handlers::chat::get_messages),
         )
         .route(
+            "/conversations/{id}/interaction",
+            get(handlers::chat::get_interaction),
+        )
+        .route(
+            "/conversations/{id}/interactions/{interaction_id}/respond",
+            post(handlers::chat::respond_interaction),
+        )
+        .route(
             "/conversations/{id}/messages/{message_id}/retry",
             post(handlers::chat::retry_message),
         )

@@ -139,8 +139,8 @@ pub fn start_turn(
 /// Retries a failed or interrupted assistant response from a previous turn.
 ///
 /// Returns the conversation, history, user message, provider id, model, and
-/// the previous error text (if any) so callers can build resume context for
-/// interrupted messages.
+/// previous error text. Retries are fresh attempts and do not instruct the
+/// model to continue the failed approach.
 #[allow(clippy::type_complexity)]
 pub fn retry_turn(
     conn: &Connection,
@@ -185,7 +185,7 @@ pub fn retry_turn(
         )
         .context("assistant message not found")?;
 
-    if matches!(status.as_str(), "pending" | "streaming" | "complete") {
+    if !matches!(status.as_str(), "failed" | "interrupted") {
         anyhow::bail!("only failed or interrupted responses can be retried");
     }
 
@@ -245,7 +245,7 @@ fn ensure_no_active_generation(
         "SELECT COUNT(*) FROM messages
          WHERE conversation_id = ?1
            AND role = 'assistant'
-           AND status IN ('pending', 'streaming')
+           AND status IN ('pending', 'streaming', 'awaiting_input')
            AND (?2 IS NULL OR id != ?2)",
         rusqlite::params![conversation_id, except_message_id],
         |row| row.get(0),
@@ -369,6 +369,18 @@ pub fn append_assistant_content(
             "append_assistant_content: message is no longer active (cancelled or completed)"
         );
     }
+    Ok(())
+}
+
+/// Clears partially streamed content while keeping an assistant message active.
+pub fn clear_assistant_content(conn: &Connection, message_id: &str) -> anyhow::Result<()> {
+    let now = Utc::now().to_rfc3339();
+    conn.execute(
+        "UPDATE messages
+         SET content = '', status = 'pending', updated_at = ?1
+         WHERE id = ?2 AND role = 'assistant' AND status IN ('pending', 'streaming')",
+        rusqlite::params![now, message_id],
+    )?;
     Ok(())
 }
 
@@ -530,9 +542,7 @@ pub fn fail_assistant_message(
     Ok(())
 }
 
-/// Marks an assistant message as interrupted, e.g. when the tool-call limit is
-/// reached mid-turn. The error argument carries an informational summary
-/// (not a failure message) describing which tools were called.
+/// Marks an assistant message as interrupted by an external event.
 pub fn interrupt_assistant_message(
     conn: &Connection,
     message_id: &str,
@@ -745,6 +755,7 @@ fn row_to_message(row: &rusqlite::Row<'_>) -> rusqlite::Result<MessageSummary> {
         status: match status.as_str() {
             "pending" => MessageStatus::Pending,
             "streaming" => MessageStatus::Streaming,
+            "awaiting_input" => MessageStatus::AwaitingInput,
             "failed" => MessageStatus::Failed,
             "interrupted" => MessageStatus::Interrupted,
             _ => MessageStatus::Complete,

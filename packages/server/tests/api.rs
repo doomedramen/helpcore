@@ -61,6 +61,7 @@ url  = "http://localhost:3000""#,
         providers: ProviderRegistry::from_providers(providers),
         config_update_lock: Arc::new(tokio::sync::Mutex::new(())),
         sandbox: None,
+        registry_cache: Default::default(),
     })
 }
 
