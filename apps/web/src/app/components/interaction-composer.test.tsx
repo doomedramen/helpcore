@@ -75,6 +75,21 @@ describe("InteractionComposer", () => {
     });
   });
 
+  it("submits immediately when clicking a single-select option", () => {
+    const { onSubmit } = renderComposer(interaction("single_select"));
+    fireEvent.click(screen.getByRole("button", { name: "Careful" }));
+    expect(onSubmit).toHaveBeenCalledWith({
+      kind: "questions",
+      answers: [
+        {
+          question_id: "answer",
+          option_ids: ["careful"],
+          custom_response: null,
+        },
+      ],
+    });
+  });
+
   it("supports multiple choices plus a custom response", () => {
     const { onSubmit } = renderComposer(interaction("multi_select"));
     fireEvent.click(screen.getByRole("button", { name: "Fast" }));

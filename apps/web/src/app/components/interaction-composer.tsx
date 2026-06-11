@@ -62,6 +62,17 @@ export default function InteractionComposer({
     onSubmit(buildResponse(interaction, answers, config));
   }
 
+  function advanceWithAnswer(answer: DraftAnswer) {
+    if (submitting) return;
+    const nextAnswers = { ...answers, [page.id]: answer };
+    setAnswers(nextAnswers);
+    if (index < pages.length - 1) {
+      setIndex((current) => current + 1);
+      return;
+    }
+    onSubmit(buildResponse(interaction, nextAnswers, config));
+  }
+
   useEffect(() => {
     function onKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {
@@ -78,22 +89,20 @@ export default function InteractionComposer({
         const option = page.options[Number(event.key) - 1];
         if (option) {
           event.preventDefault();
-          setAnswers((current) => {
-            const selected = current[page.id]?.optionIds ?? [];
-            const optionIds =
-              page.selectionMode === "multi"
-                ? selected.includes(option.id)
-                  ? selected.filter((id) => id !== option.id)
-                  : [...selected, option.id]
-                : [option.id];
-            return {
-              ...current,
-              [page.id]: {
-                optionIds,
-                custom: page.selectionMode === "single" ? "" : current[page.id]?.custom,
-              },
-            };
-          });
+          if (page.selectionMode === "single") {
+            advanceWithAnswer({ optionIds: [option.id], custom: "" });
+          } else {
+            setAnswers((current) => {
+              const selected = current[page.id]?.optionIds ?? [];
+              const optionIds = selected.includes(option.id)
+                ? selected.filter((id) => id !== option.id)
+                : [...selected, option.id];
+              return {
+                ...current,
+                [page.id]: { optionIds, custom: current[page.id]?.custom },
+              };
+            });
+          }
         }
       }
       if (event.key === "Enter" && !event.shiftKey) {
@@ -149,6 +158,7 @@ export default function InteractionComposer({
             page={page}
             answer={answers[page.id]}
             onChange={(answer) => setAnswers((current) => ({ ...current, [page.id]: answer }))}
+            onSelectSingle={advanceWithAnswer}
           />
         ) : page.kind === "text" ? (
           <TextPage
@@ -314,10 +324,12 @@ function ChoicePage({
   page,
   answer,
   onChange,
+  onSelectSingle,
 }: {
   page: ChoicePageData;
   answer?: DraftAnswer;
   onChange: (answer: DraftAnswer) => void;
+  onSelectSingle: (answer: DraftAnswer) => void;
 }) {
   return (
     <TooltipProvider>
@@ -338,14 +350,15 @@ function ChoicePage({
                 aria-pressed={selected}
                 onClick={() => {
                   const selectedIds = answer?.optionIds ?? [];
+                  if (page.selectionMode === "single") {
+                    onSelectSingle({ optionIds: [option.id], custom: "" });
+                    return;
+                  }
                   onChange({
-                    optionIds:
-                      page.selectionMode === "multi"
-                        ? selectedIds.includes(option.id)
-                          ? selectedIds.filter((id) => id !== option.id)
-                          : [...selectedIds, option.id]
-                        : [option.id],
-                    custom: page.selectionMode === "single" ? "" : answer?.custom,
+                    optionIds: selectedIds.includes(option.id)
+                      ? selectedIds.filter((id) => id !== option.id)
+                      : [...selectedIds, option.id],
+                    custom: answer?.custom,
                   });
                 }}
                 className="flex min-w-0 flex-1 items-center gap-3 py-1 text-left"

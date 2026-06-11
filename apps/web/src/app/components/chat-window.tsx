@@ -444,6 +444,7 @@ export default function ChatWindow({
       if (!conversationId || !pendingInteraction) return;
       setInteractionSubmitting(true);
       setInteractionError("");
+      void refreshInteraction(null, { revalidate: false });
       const controller = new AbortController();
       abortRef.current = controller;
       generationConvRef.current = conversationId;
