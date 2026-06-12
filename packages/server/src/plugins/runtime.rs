@@ -160,6 +160,7 @@ const BUILTIN_TOOL_NAMES: &[&str] = &[
     "personality_append",
     "conversation_rename",
     "skill_read",
+    "tool_result_read",
     "request_user_input",
     "request_plugin_action",
     "sandbox_list",
@@ -373,6 +374,40 @@ fn builtin_tool_definitions() -> Vec<ToolDefinition> {
                     }
                 },
                 "required": ["name"],
+                "additionalProperties": false
+            }),
+        },
+        ToolDefinition {
+            name: "tool_result_read".into(),
+            description: "Continue reading a tool result that HelpCore paginated because it was \
+                too large for one model-context response. Use the continuation_token returned \
+                by that tool result, then follow next_start_line and next_start_column while \
+                truncated is true. The token is valid only during the current assistant turn."
+                .into(),
+            input_schema: serde_json::json!({
+                "type": "object",
+                "properties": {
+                    "continuation_token": {
+                        "type": "string",
+                        "description": "Opaque token from a truncated tool result"
+                    },
+                    "start_line": {
+                        "type": "integer",
+                        "description": "First line to read (1-based, default 1)",
+                        "minimum": 1
+                    },
+                    "start_column": {
+                        "type": "integer",
+                        "description": "Character column within start_line (1-based, default 1). Use the returned next_start_column when continuing within one long line.",
+                        "minimum": 1
+                    },
+                    "end_line": {
+                        "type": "integer",
+                        "description": "Last line to read (1-based, inclusive). Defaults to a bounded window and is capped at 200 lines.",
+                        "minimum": 1
+                    }
+                },
+                "required": ["continuation_token"],
                 "additionalProperties": false
             }),
         },
@@ -1146,6 +1181,9 @@ async fn execute_builtin(
                      Check the skill index above for exact plugin names."
                 )),
             }
+        }
+        "tool_result_read" => {
+            anyhow::bail!("tool_result_read is only available during an active tool-use turn")
         }
         "request_user_input" | "request_plugin_action" => {
             anyhow::bail!("interactive tools must be handled by the conversation loop")
@@ -2357,6 +2395,22 @@ mod tests {
             questions["items"]["properties"]["question_type"]["enum"],
             serde_json::json!(["single_select", "multi_select", "text"])
         );
+    }
+
+    #[test]
+    fn tool_result_read_schema_exposes_continuation_coordinates() {
+        let definition = builtin_tool_definitions()
+            .into_iter()
+            .find(|definition| definition.name == "tool_result_read")
+            .unwrap();
+        let properties = &definition.input_schema["properties"];
+        assert_eq!(
+            definition.input_schema["required"],
+            serde_json::json!(["continuation_token"])
+        );
+        assert_eq!(properties["start_line"]["minimum"], 1);
+        assert_eq!(properties["start_column"]["minimum"], 1);
+        assert_eq!(properties["end_line"]["minimum"], 1);
     }
 
     #[test]

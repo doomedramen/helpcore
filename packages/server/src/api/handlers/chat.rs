@@ -3,6 +3,7 @@
 //! All endpoints under `/api/chat` and `/api/conversations`.
 
 use std::{
+    collections::HashMap,
     convert::Infallible,
     sync::Arc,
     time::{Duration, Instant},
@@ -18,7 +19,7 @@ use axum::{
 use futures_util::StreamExt;
 use tokio_stream::wrappers::ReceiverStream;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use helpcore_api::{
     ChatRequest, CompactResponse, ConfigField, ConversationSummary, GenerateTitleResponse,
@@ -41,11 +42,14 @@ use crate::{
     state::AppState,
 };
 
-/// Maximum characters of a tool result forwarded to the model.
-/// Results beyond this length are truncated to avoid exhausting the output token budget
-/// when the model re-emits content in downstream tool calls.
+/// Maximum serialized bytes of a complete tool result forwarded to the model.
+/// Larger text results are paginated through `tool_result_read`.
 const MAX_TOOL_RESULT_CHARS: usize = 10_000;
 const MAX_TOOL_ERROR_CHARS: usize = 4_000;
+const TOOL_RESULT_PAGE_CONTENT_BYTES: usize = 7_500;
+const TOOL_RESULT_DEFAULT_LINES: usize = 100;
+const TOOL_RESULT_MAX_LINES: usize = 200;
+const MAX_CACHED_TOOL_RESULT_BYTES: usize = 16 * 1024 * 1024;
 const MAX_TOOL_ROUNDS: u32 = 8;
 const TOOL_PHASE_TIMEOUT: Duration = Duration::from_secs(180);
 const FINAL_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
@@ -540,7 +544,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
     let initial_est = job
         .history
         .iter()
-        .map(|m| m.content.len() / 4 + 4)
+        .map(|m| context::model_visible_content(&m.role, &m.content).len() / 4 + 4)
         .sum::<usize>()
         + job.user_content.len() / 4
         + 4;
@@ -577,7 +581,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
     let est = job
         .history
         .iter()
-        .map(|m| m.content.len() / 4 + 4)
+        .map(|m| context::model_visible_content(&m.role, &m.content).len() / 4 + 4)
         .sum::<usize>()
         + job.user_content.len() / 4
         + 4;
@@ -599,6 +603,7 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
     let _ = job.tx.send(Ok(context_event)).await;
 
     let mut guard = ToolLoopGuard::new();
+    let mut cached_tool_results = CachedToolResults::default();
     loop {
         if let Some(stop) = guard.before_provider() {
             return finalize_without_tools(job, &mut messages, stop).await;
@@ -737,7 +742,8 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
             }
         }
 
-        let mut results = Vec::with_capacity(tool_calls.len());
+        let mut persisted_results = Vec::with_capacity(tool_calls.len());
+        let mut model_results = Vec::with_capacity(tool_calls.len());
         let mut successes = 0;
         let mut stop_after_round: Option<ToolStop> = None;
         for call in &tool_calls {
@@ -751,21 +757,17 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
                 .unwrap_or_else(|_| Event::default());
             let _ = job.tx.send(Ok(call_event)).await;
 
-            let (truncated, result, failure_code) = if let Some(stop) = &stop_after_round {
-                (
-                    false,
-                    tool_failure_result(
-                        &format!("Skipped because tool use is stopping: {}", stop.message),
-                        "BUDGET_EXHAUSTED",
-                    ),
-                    Some("BUDGET_EXHAUSTED"),
-                )
+            let (truncated, persisted_result, model_result, failure_code) = if let Some(stop) =
+                &stop_after_round
+            {
+                let result = tool_failure_result(
+                    &format!("Skipped because tool use is stopping: {}", stop.message),
+                    "BUDGET_EXHAUSTED",
+                );
+                (false, result.clone(), result, Some("BUDGET_EXHAUSTED"))
             } else if let Some(reason) = call.invalid.as_deref() {
-                (
-                    false,
-                    tool_failure_result(reason, "INVALID_ARGS"),
-                    Some("INVALID_ARGS"),
-                )
+                let result = tool_failure_result(reason, "INVALID_ARGS");
+                (false, result.clone(), result, Some("INVALID_ARGS"))
             } else {
                 let Some(remaining) = guard.remaining().filter(|value| !value.is_zero()) else {
                     let stop = ToolStop {
@@ -777,52 +779,74 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
                     };
                     stop_after_round = Some(stop.clone());
                     let result = tool_failure_result(&stop.message, stop.code);
-                    results.push((call.clone(), result.clone()));
+                    persisted_results.push((call.clone(), result.clone()));
+                    model_results.push((call.clone(), result.clone()));
                     emit_tool_result(job, call, result, false).await;
                     continue;
                 };
-                let execution_call = clamp_sandbox_timeout(call, remaining);
-                match tokio::time::timeout(
-                    remaining,
-                    tool_catalog.execute(
-                        &job.state,
-                        &job.user_id,
-                        Some(&job.conversation_id),
-                        &execution_call,
-                    ),
-                )
-                .await
-                {
-                    Ok(Ok(raw)) => {
-                        let (body, trunc) = truncate_tool_text(&raw, MAX_TOOL_RESULT_CHARS);
-                        successes += 1;
-                        (
-                            trunc,
-                            serde_json::json!({"ok": true, "result": body, "truncated": trunc})
-                                .to_string(),
-                            None,
-                        )
+
+                if call.name == "tool_result_read" {
+                    match read_cached_tool_result(call, &cached_tool_results) {
+                        Ok((trunc, result)) => {
+                            successes += 1;
+                            (trunc, result.clone(), result, None)
+                        }
+                        Err(error) => {
+                            let code = tool_error_code(&error);
+                            let result = tool_failure_result(&error, code);
+                            (false, result.clone(), result, Some(code))
+                        }
                     }
-                    Ok(Err(error)) => {
-                        let msg = error.to_string();
-                        let code = tool_error_code(&msg);
-                        (false, tool_failure_result(&msg, code), Some(code))
-                    }
-                    Err(_) => {
-                        let stop = ToolStop {
-                            code: "TOOL_TIME_LIMIT",
-                            message: format!(
-                                "The {} second tool-use time budget expired during `{}`.",
-                                TOOL_PHASE_TIMEOUT.as_secs(),
-                                call.name
-                            ),
-                        };
-                        stop_after_round = Some(stop.clone());
-                        (
-                            false,
-                            tool_failure_result(&stop.message, stop.code),
-                            Some(stop.code),
-                        )
+                } else {
+                    let execution_call = clamp_sandbox_timeout(call, remaining);
+                    match tokio::time::timeout(
+                        remaining,
+                        tool_catalog.execute(
+                            &job.state,
+                            &job.user_id,
+                            Some(&job.conversation_id),
+                            &execution_call,
+                        ),
+                    )
+                    .await
+                    {
+                        Ok(Ok(raw)) => {
+                            successes += 1;
+                            if let Some(asset_type) = data_asset_type(&raw) {
+                                let (persisted, model) =
+                                    package_data_asset_result(&raw, asset_type);
+                                (false, persisted, model, None)
+                            } else {
+                                match package_text_tool_result(&raw, &mut cached_tool_results) {
+                                    Ok((trunc, result)) => (trunc, result.clone(), result, None),
+                                    Err(error) => {
+                                        successes -= 1;
+                                        let code = tool_error_code(&error);
+                                        let result = tool_failure_result(&error, code);
+                                        (false, result.clone(), result, Some(code))
+                                    }
+                                }
+                            }
+                        }
+                        Ok(Err(error)) => {
+                            let msg = error.to_string();
+                            let code = tool_error_code(&msg);
+                            let result = tool_failure_result(&msg, code);
+                            (false, result.clone(), result, Some(code))
+                        }
+                        Err(_) => {
+                            let stop = ToolStop {
+                                code: "TOOL_TIME_LIMIT",
+                                message: format!(
+                                    "The {} second tool-use time budget expired during `{}`.",
+                                    TOOL_PHASE_TIMEOUT.as_secs(),
+                                    call.name
+                                ),
+                            };
+                            stop_after_round = Some(stop.clone());
+                            let result = tool_failure_result(&stop.message, stop.code);
+                            (false, result.clone(), result, Some(stop.code))
+                        }
                     }
                 }
             };
@@ -833,12 +857,13 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
             {
                 stop_after_round.get_or_insert(stop);
             }
-            emit_tool_result(job, call, result.clone(), truncated).await;
-            results.push((call.clone(), result));
+            emit_tool_result(job, call, persisted_result.clone(), truncated).await;
+            persisted_results.push((call.clone(), persisted_result));
+            model_results.push((call.clone(), model_result));
         }
 
-        persist_tool_round(job, &tool_calls, &results, usage.as_ref()).await?;
-        append_tool_round(&mut messages, assistant_content, tool_calls, results);
+        persist_tool_round(job, &tool_calls, &persisted_results, usage.as_ref()).await?;
+        append_tool_round(&mut messages, assistant_content, tool_calls, model_results);
 
         let round_stop = guard.record_round(successes);
         if let Some(stop) = stop_after_round.or(round_stop) {
@@ -852,6 +877,251 @@ async fn generate(job: &mut GenerationJob) -> anyhow::Result<()> {
             MAX_TOOL_ROUNDS.saturating_sub(guard.rounds),
         )));
     }
+}
+
+#[derive(Default)]
+struct CachedToolResults {
+    entries: HashMap<String, String>,
+    total_bytes: usize,
+}
+
+impl CachedToolResults {
+    fn insert(&mut self, value: &str) -> Result<String, String> {
+        let new_total = self.total_bytes.saturating_add(value.len());
+        if new_total > MAX_CACHED_TOOL_RESULT_BYTES {
+            return Err(format!(
+                "oversized tool-result cache limit exceeded ({} MiB)",
+                MAX_CACHED_TOOL_RESULT_BYTES / (1024 * 1024)
+            ));
+        }
+        let token = uuid::Uuid::new_v4().to_string();
+        self.entries.insert(token.clone(), value.to_string());
+        self.total_bytes = new_total;
+        Ok(token)
+    }
+
+    fn get(&self, token: &str) -> Result<&str, String> {
+        self.entries.get(token).map(String::as_str).ok_or_else(|| {
+            "continuation_token was not found or has expired; rerun the original tool".to_string()
+        })
+    }
+}
+
+#[derive(Serialize)]
+struct ToolResultPage {
+    content: String,
+    continuation_token: String,
+    start_line: usize,
+    start_column: usize,
+    end_line: usize,
+    end_column: usize,
+    total_lines: usize,
+    truncated: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_start_line: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    next_start_column: Option<usize>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    hint: Option<String>,
+}
+
+fn positive_tool_result_arg(
+    arguments: &serde_json::Value,
+    key: &str,
+    default: usize,
+) -> Result<usize, String> {
+    match arguments.get(key) {
+        None => Ok(default),
+        Some(value) => {
+            let raw = value
+                .as_u64()
+                .ok_or_else(|| format!("{key} must be a positive integer"))?;
+            let parsed = usize::try_from(raw)
+                .map_err(|_| format!("{key} is too large for this platform"))?;
+            if parsed == 0 {
+                return Err(format!("{key} must be at least 1"));
+            }
+            Ok(parsed)
+        }
+    }
+}
+
+fn json_escaped_char_bytes(c: char) -> usize {
+    serde_json::to_string(&c.to_string())
+        .map(|encoded| encoded.len().saturating_sub(2))
+        .unwrap_or(c.len_utf8())
+}
+
+fn paginate_tool_result(
+    value: &str,
+    continuation_token: &str,
+    arguments: &serde_json::Value,
+) -> Result<ToolResultPage, String> {
+    let lines: Vec<&str> = value.lines().collect();
+    let total_lines = lines.len();
+    let start_line = positive_tool_result_arg(arguments, "start_line", 1)?;
+    let start_column = positive_tool_result_arg(arguments, "start_column", 1)?;
+
+    if total_lines == 0 {
+        return Ok(ToolResultPage {
+            content: String::new(),
+            continuation_token: continuation_token.to_string(),
+            start_line: 1,
+            start_column: 1,
+            end_line: 0,
+            end_column: 0,
+            total_lines: 0,
+            truncated: false,
+            next_start_line: None,
+            next_start_column: None,
+            hint: None,
+        });
+    }
+    if start_line > total_lines {
+        return Err(format!(
+            "start_line {start_line} exceeds the result's {total_lines} lines"
+        ));
+    }
+
+    let first_line_chars = lines[start_line - 1].chars().count();
+    if start_column > first_line_chars.max(1) {
+        return Err(format!(
+            "start_column {start_column} exceeds line {start_line}'s {first_line_chars} characters"
+        ));
+    }
+
+    let default_end = start_line.saturating_add(TOOL_RESULT_DEFAULT_LINES - 1);
+    let requested_end =
+        positive_tool_result_arg(arguments, "end_line", default_end)?.max(start_line);
+    let max_end = start_line.saturating_add(TOOL_RESULT_MAX_LINES - 1);
+    let selected_end = requested_end.min(max_end).min(total_lines);
+
+    let mut content = String::new();
+    let mut escaped_bytes = 0;
+    let mut end_line = start_line;
+    let mut end_column = start_column.saturating_sub(1);
+    let mut next_position = None;
+
+    'lines: for line_number in start_line..=selected_end {
+        let line = lines[line_number - 1];
+        let column_offset = if line_number == start_line {
+            start_column - 1
+        } else {
+            0
+        };
+
+        if line_number > start_line {
+            if escaped_bytes + 2 > TOOL_RESULT_PAGE_CONTENT_BYTES {
+                next_position = Some((line_number, 1));
+                break;
+            }
+            content.push('\n');
+            escaped_bytes += 2;
+        }
+
+        let mut consumed_column = column_offset;
+        for c in line.chars().skip(column_offset) {
+            let encoded_len = json_escaped_char_bytes(c);
+            if escaped_bytes + encoded_len > TOOL_RESULT_PAGE_CONTENT_BYTES {
+                next_position = Some((line_number, consumed_column + 1));
+                end_line = line_number;
+                end_column = consumed_column;
+                break 'lines;
+            }
+            content.push(c);
+            escaped_bytes += encoded_len;
+            consumed_column += 1;
+        }
+        end_line = line_number;
+        end_column = consumed_column;
+    }
+
+    if next_position.is_none() && selected_end < total_lines {
+        next_position = Some((selected_end + 1, 1));
+    }
+
+    let (next_start_line, next_start_column) = next_position
+        .map(|(line, column)| (Some(line), Some(column)))
+        .unwrap_or((None, None));
+    let hint = next_position.map(|(line, column)| {
+        format!(
+            "Continue with tool_result_read using continuation_token={continuation_token}, \
+             start_line={line}, start_column={column}."
+        )
+    });
+
+    Ok(ToolResultPage {
+        content,
+        continuation_token: continuation_token.to_string(),
+        start_line,
+        start_column,
+        end_line,
+        end_column,
+        total_lines,
+        truncated: next_position.is_some(),
+        next_start_line,
+        next_start_column,
+        hint,
+    })
+}
+
+fn package_text_tool_result(
+    raw: &str,
+    cache: &mut CachedToolResults,
+) -> Result<(bool, String), String> {
+    let complete = serde_json::json!({"ok": true, "result": raw, "truncated": false}).to_string();
+    if complete.len() <= MAX_TOOL_RESULT_CHARS {
+        return Ok((false, complete));
+    }
+
+    let token = cache.insert(raw)?;
+    let page = paginate_tool_result(raw, &token, &serde_json::json!({}))?;
+    let truncated = page.truncated;
+    let result =
+        serde_json::json!({"ok": true, "result": page, "truncated": truncated}).to_string();
+    Ok((truncated, result))
+}
+
+fn read_cached_tool_result(
+    call: &ToolCall,
+    cache: &CachedToolResults,
+) -> Result<(bool, String), String> {
+    let token = call
+        .arguments
+        .get("continuation_token")
+        .and_then(serde_json::Value::as_str)
+        .ok_or("continuation_token is required")?;
+    let raw = cache.get(token)?;
+    let page = paginate_tool_result(raw, token, &call.arguments)?;
+    let truncated = page.truncated;
+    let result =
+        serde_json::json!({"ok": true, "result": page, "truncated": truncated}).to_string();
+    Ok((truncated, result))
+}
+
+fn data_asset_type(value: &str) -> Option<&str> {
+    let rest = value.strip_prefix("data:")?;
+    let (media_type, _) = rest.split_once(';')?;
+    matches!(
+        media_type.split_once('/').map(|(kind, _)| kind),
+        Some("image" | "audio" | "video")
+    )
+    .then_some(media_type)
+}
+
+fn package_data_asset_result(raw: &str, asset_type: &str) -> (String, String) {
+    let persisted = serde_json::json!({"ok": true, "result": raw, "truncated": false}).to_string();
+    let model = serde_json::json!({
+        "ok": true,
+        "result": {
+            "asset_type": asset_type,
+            "displayed_in_tool_result": true,
+            "message": "The generated asset is available to the user in the tool result. Do not repeat its data URI."
+        },
+        "truncated": false
+    })
+    .to_string();
+    (persisted, model)
 }
 
 fn tool_failure_result(error: &str, code: &str) -> String {
@@ -2212,6 +2482,97 @@ mod tests {
         let (value, truncated) = truncate_tool_text("ééé", 5);
         assert!(truncated);
         assert!(value.starts_with("éé"));
+    }
+
+    #[test]
+    fn oversized_tool_results_can_be_reconstructed_by_line() {
+        let raw = (1..=101)
+            .map(|line| format!("line {line}: {}", "x".repeat(140)))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let mut cache = CachedToolResults::default();
+
+        let (truncated, first_result) = package_text_tool_result(&raw, &mut cache).unwrap();
+        assert!(truncated);
+        assert!(first_result.len() <= MAX_TOOL_RESULT_CHARS);
+
+        let mut wrapper: serde_json::Value = serde_json::from_str(&first_result).unwrap();
+        let mut rebuilt = wrapper["result"]["content"].as_str().unwrap().to_string();
+        let token = wrapper["result"]["continuation_token"]
+            .as_str()
+            .unwrap()
+            .to_string();
+
+        while wrapper["result"]["truncated"].as_bool().unwrap() {
+            let next_line = wrapper["result"]["next_start_line"].as_u64().unwrap();
+            let next_column = wrapper["result"]["next_start_column"].as_u64().unwrap();
+            let call = ToolCall::new(
+                "continue",
+                "tool_result_read",
+                serde_json::json!({
+                    "continuation_token": token,
+                    "start_line": next_line,
+                    "start_column": next_column
+                }),
+            );
+            let (_, next_result) = read_cached_tool_result(&call, &cache).unwrap();
+            assert!(next_result.len() <= MAX_TOOL_RESULT_CHARS);
+            wrapper = serde_json::from_str(&next_result).unwrap();
+            if next_column == 1 {
+                rebuilt.push('\n');
+            }
+            rebuilt.push_str(wrapper["result"]["content"].as_str().unwrap());
+        }
+
+        assert_eq!(rebuilt, raw);
+    }
+
+    #[test]
+    fn oversized_single_line_uses_column_continuation() {
+        let raw = "x".repeat(12_000);
+        let mut cache = CachedToolResults::default();
+        let (_, first_result) = package_text_tool_result(&raw, &mut cache).unwrap();
+        let first: serde_json::Value = serde_json::from_str(&first_result).unwrap();
+        let page = &first["result"];
+        assert_eq!(page["next_start_line"], 1);
+        assert!(page["next_start_column"].as_u64().unwrap() > 1);
+
+        let call = ToolCall::new(
+            "continue-1",
+            "tool_result_read",
+            serde_json::json!({
+                "continuation_token": page["continuation_token"],
+                "start_line": page["next_start_line"],
+                "start_column": page["next_start_column"]
+            }),
+        );
+        let (_, second_result) = read_cached_tool_result(&call, &cache).unwrap();
+        let second: serde_json::Value = serde_json::from_str(&second_result).unwrap();
+        assert_eq!(
+            format!(
+                "{}{}",
+                page["content"].as_str().unwrap(),
+                second["result"]["content"].as_str().unwrap()
+            ),
+            raw
+        );
+    }
+
+    #[test]
+    fn paginated_wrapper_stays_within_model_result_limit() {
+        let raw = "\"".repeat(12_000);
+        let mut cache = CachedToolResults::default();
+        let (_, result) = package_text_tool_result(&raw, &mut cache).unwrap();
+        assert!(result.len() <= MAX_TOOL_RESULT_CHARS);
+    }
+
+    #[test]
+    fn data_assets_are_preserved_for_ui_but_not_model_context() {
+        let raw = format!("data:audio/mpeg;base64,{}", "A".repeat(12_000));
+        let (persisted, model) = package_data_asset_result(&raw, "audio/mpeg");
+        assert!(persisted.contains(&raw));
+        assert!(!model.contains(&"A".repeat(100)));
+        assert!(model.contains("displayed_in_tool_result"));
     }
 
     #[test]

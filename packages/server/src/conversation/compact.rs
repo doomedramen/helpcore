@@ -9,7 +9,7 @@ use anyhow::Context;
 use futures_util::StreamExt;
 
 use crate::{
-    conversation::history,
+    conversation::{context, history},
     db::DbPool,
     providers::{traits::ChatProvider, types::ChatMessage},
 };
@@ -106,7 +106,7 @@ pub async fn compact_conversation(
     let mut tail_tokens = 0;
     let mut tail_len = 0;
     for msg in messages.iter().rev() {
-        tail_tokens += msg.content.len() / 4 + 4;
+        tail_tokens += context::model_visible_content(&msg.role, &msg.content).len() / 4 + 4;
         tail_len += 1;
         // Keep at least MIN_PRESERVE_MESSAGES and at least PRESERVE_RECENT_TOKENS.
         if tail_tokens >= PRESERVE_RECENT_TOKENS && tail_len >= MIN_PRESERVE_MESSAGES {
@@ -131,7 +131,13 @@ pub async fn compact_conversation(
     // 3. Format the segment and summary for the call.
     let formatted_history = segment
         .iter()
-        .map(|m| format!("{}: {}", m.role, m.content))
+        .map(|m| {
+            format!(
+                "{}: {}",
+                m.role,
+                context::model_visible_content(&m.role, &m.content)
+            )
+        })
         .collect::<Vec<_>>()
         .join("\n\n");
 

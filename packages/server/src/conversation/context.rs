@@ -2,7 +2,10 @@
 
 use chrono_tz::Tz;
 use helpcore_api::MessageSummary;
-use std::collections::{BTreeMap, HashMap};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, HashMap},
+};
 
 use crate::{
     conversation::memory::MemoryResult,
@@ -118,6 +121,11 @@ fn assemble_inner(
                 "user".to_string(),
                 format!("[Earlier conversation summary]\n{}", msg.content),
             )
+        } else if msg.role == "tool" {
+            (
+                msg.role.clone(),
+                model_visible_content(&msg.role, &msg.content).into_owned(),
+            )
         } else {
             (msg.role.clone(), msg.content.clone())
         };
@@ -134,6 +142,39 @@ fn assemble_inner(
         messages.push(ChatMessage::user(user_message));
     }
     messages
+}
+
+pub(crate) fn model_visible_content<'a>(role: &str, content: &'a str) -> Cow<'a, str> {
+    if role != "tool" {
+        return Cow::Borrowed(content);
+    }
+    let Ok(mut value) = serde_json::from_str::<serde_json::Value>(content) else {
+        return Cow::Borrowed(content);
+    };
+    let Some(result) = value.get("result").and_then(serde_json::Value::as_str) else {
+        return Cow::Borrowed(content);
+    };
+    let Some(rest) = result.strip_prefix("data:") else {
+        return Cow::Borrowed(content);
+    };
+    let Some((media_type, _)) = rest.split_once(';') else {
+        return Cow::Borrowed(content);
+    };
+    if !matches!(
+        media_type.split_once('/').map(|(kind, _)| kind),
+        Some("image" | "audio" | "video")
+    ) {
+        return Cow::Borrowed(content);
+    }
+
+    value["result"] = serde_json::json!({
+        "asset_type": media_type,
+        "displayed_in_tool_result": true,
+        "message": "Generated asset omitted from model context."
+    });
+    serde_json::to_string(&value)
+        .map(Cow::Owned)
+        .unwrap_or(Cow::Borrowed(content))
 }
 
 fn build_system_prompt(opts: &ContextOptions<'_>) -> String {
@@ -344,6 +385,24 @@ mod tests {
         assert_eq!(messages[1].content, "first");
         assert_eq!(messages[2].content, "reply");
         assert_eq!(messages[3].content, "follow up");
+    }
+
+    #[test]
+    fn data_assets_are_omitted_from_model_history() {
+        let asset = "data:image/svg+xml;base64,PHN2Zy8+";
+        let history = vec![msg(
+            "tool",
+            &serde_json::json!({"ok": true, "result": asset, "truncated": false}).to_string(),
+        )];
+
+        let messages = assemble(&history, "continue", ContextOptions::default());
+        let tool = messages
+            .iter()
+            .find(|message| message.role == "tool")
+            .unwrap();
+        assert!(!tool.content.contains("PHN2Zy8+"));
+        assert!(tool.content.contains("image/svg+xml"));
+        assert!(tool.content.contains("displayed_in_tool_result"));
     }
 
     #[test]

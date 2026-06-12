@@ -201,7 +201,7 @@ overflow handling activates.
 4. Insert a `summary` role message into the DB at the correct sequence position
 5. Mark the summarised messages as compacted (soft-delete, retained for export)
 6. Re-estimate tokens with summary replacing the segment
-7. If still over budget: trim tool result content (keep structure, truncate body)
+7. If still over budget: compact oversized tool result pages while preserving continuation metadata
 8. If still over budget: drop oldest tool-use/result pairs atomically
    (emergency fallback — log a warning, this should be rare)
 ```
@@ -212,6 +212,23 @@ away. Losing the original framing causes silent context drift.
 Compacted messages are retained in the DB (flagged, not deleted) so the full
 conversation history is always available for export or review, even after
 summarisation.
+
+### Oversized tool results
+
+Tool results whose serialized model payload exceeds 10,000 bytes are retained
+in a bounded, in-memory cache for the active assistant turn. The model receives
+the first page with `total_lines`, exact line/column coordinates, a
+`continuation_token`, and a hint to call `tool_result_read`. Each page is capped
+at 200 lines and may continue within a single long line.
+
+The continuation cache is intentionally turn-scoped: it prevents large plugin
+responses from inflating persisted conversation context while still allowing
+the model to retrieve every part needed for the current task.
+
+Image, audio, and video data URLs use a separate path. Their full payload is
+persisted and rendered in the tool result UI, while model context receives only
+compact asset metadata. Token estimation and conversation compaction also use
+that compact representation.
 
 ---
 

@@ -26,6 +26,7 @@ import { CodeBlock } from "@/components/ai-elements/code-block";
 import { Badge } from "@/app/components/ui/badge";
 import { CollapsibleTrigger } from "@/app/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { MessageContentWithAssets } from "./asset-renderer";
 
 interface ToolCallInfo {
   id: string;
@@ -600,13 +601,21 @@ function ReadWriteOutput({
 function GenericOutput({ content }: { content: string }) {
   const result = unwrapResult(content);
   const display = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+  const isAsset =
+    typeof result === "string" && /^data:(image|audio|video)\/[^;]+;base64,/.test(result);
 
   return (
     <div className="space-y-2">
       <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">Result</h4>
-      <div className="rounded-md bg-muted/50">
-        <CodeBlock code={display} language="json" />
-      </div>
+      {isAsset ? (
+        <div className="rounded-md bg-muted/50 p-3">
+          <MessageContentWithAssets>{display}</MessageContentWithAssets>
+        </div>
+      ) : (
+        <div className="rounded-md bg-muted/50">
+          <CodeBlock code={display} language="json" />
+        </div>
+      )}
     </div>
   );
 }
