@@ -1,105 +1,33 @@
 "use client";
 
 import { useMemo } from "react";
-import type { ReactNode } from "react";
 import { diffLines } from "diff";
-import {
-  AlertTriangle,
-  BarChart3,
-  FileText,
-  FolderOpen,
-  GitGraph,
-  MoveRight,
-  Pencil,
-  Plus,
-  Search,
-  Trash2,
-  Brain,
-  WrenchIcon,
-  ChevronDownIcon,
-  CheckCircleIcon,
-  XCircleIcon,
-} from "lucide-react";
-import type { Message } from "@/lib/types";
+import { ChevronDownIcon, FileText } from "lucide-react";
 import { Tool, ToolContent } from "@/components/ai-elements/tool";
 import { CodeBlock } from "@/components/ai-elements/code-block";
-import { Badge } from "@/app/components/ui/badge";
 import { CollapsibleTrigger } from "@/app/components/ui/collapsible";
-import { cn } from "@/lib/utils";
 import { MessageContentWithAssets } from "./asset-renderer";
 
-interface ToolCallInfo {
+export interface ToolCallInfo {
   id: string;
   name: string;
   arguments: Record<string, unknown>;
 }
 
-const TOOL_META: Record<string, { icon: ReactNode; label: string; color: string }> = {
-  memory_list: {
-    icon: <FolderOpen size={11} />,
-    label: "List memory",
-    color: "text-slate-500 dark:text-slate-400",
-  },
-  memory_read: {
-    icon: <FileText size={11} />,
-    label: "Read",
-    color: "text-blue-500 dark:text-blue-400",
-  },
-  memory_write: {
-    icon: <Pencil size={11} />,
-    label: "Write",
-    color: "text-emerald-500 dark:text-emerald-400",
-  },
-  memory_append: {
-    icon: <Plus size={11} />,
-    label: "Append",
-    color: "text-emerald-500 dark:text-emerald-400",
-  },
-  memory_move: {
-    icon: <MoveRight size={11} />,
-    label: "Move",
-    color: "text-amber-500 dark:text-amber-400",
-  },
-  memory_delete: {
-    icon: <Trash2 size={11} />,
-    label: "Delete",
-    color: "text-red-500 dark:text-red-400",
-  },
-  memory_search: {
-    icon: <Search size={11} />,
-    label: "Search",
-    color: "text-violet-500 dark:text-violet-400",
-  },
-  personality_write: {
-    icon: <Brain size={11} />,
-    label: "Personality",
-    color: "text-fuchsia-500 dark:text-fuchsia-400",
-  },
-  personality_append: {
-    icon: <Brain size={11} />,
-    label: "Personality",
-    color: "text-fuchsia-500 dark:text-fuchsia-400",
-  },
-  chart_generate: {
-    icon: <BarChart3 size={11} />,
-    label: "Chart",
-    color: "text-cyan-500 dark:text-cyan-400",
-  },
-  mermaid_render: {
-    icon: <GitGraph size={11} />,
-    label: "Diagram",
-    color: "text-orange-500 dark:text-orange-400",
-  },
-  conversation_rename: {
-    icon: <Pencil size={11} />,
-    label: "Rename",
-    color: "text-slate-500 dark:text-slate-400",
-  },
-  skill_read: {
-    icon: <FileText size={11} />,
-    label: "Skill",
-    color: "text-indigo-500 dark:text-indigo-400",
-  },
+const TOOL_LABELS: Record<string, string> = {
+  memory_list: "List memory",
+  memory_read: "Read",
+  memory_write: "Write",
+  memory_append: "Append",
+  memory_move: "Move",
+  memory_delete: "Delete",
+  memory_search: "Search",
+  personality_write: "Personality",
+  personality_append: "Personality",
+  chart_generate: "Chart",
+  mermaid_render: "Diagram",
+  conversation_rename: "Rename",
+  skill_read: "Skill",
 };
 
 function parseToolResult(content: string): {
@@ -139,33 +67,8 @@ function unwrapResult(content: string): unknown {
   return parseToolResult(content).result;
 }
 
-export function getToolIcon(name: string): ReactNode {
-  return TOOL_META[name]?.icon ?? <WrenchIcon size={11} />;
-}
-
 export function getToolLabel(name: string): string {
-  return TOOL_META[name]?.label ?? name;
-}
-
-export function getToolColor(name: string): string {
-  return TOOL_META[name]?.color ?? "text-indigo-500 dark:text-indigo-400";
-}
-
-function toolArgsPreview(name: string, args: Record<string, unknown>): string {
-  if (name === "personality_write") return `/${(args.name as string) ?? "?"}`;
-  if (name === "chart_generate") return (args.type as string) ?? "chart";
-  if (name === "mermaid_render") {
-    const def = (args.definition as string) ?? "";
-    const firstLine = def.split("\n")[0]?.trim() ?? "";
-    return firstLine.length > 50 ? `${firstLine.slice(0, 47)}\u2026` : firstLine;
-  }
-  const path = args.path ?? args.from ?? null;
-  if (path && typeof path === "string") {
-    const label = path.split("/").pop() ?? path;
-    if (name === "memory_move") return `${label} \u2192 ${(args.to as string) ?? "?"}`;
-    return label;
-  }
-  return "";
+  return TOOL_LABELS[name] ?? name;
 }
 
 function inferResultKind(content: string): { kind: string; data?: Record<string, unknown> } {
@@ -204,49 +107,26 @@ function inferResultKind(content: string): { kind: string; data?: Record<string,
 }
 
 interface ToolMessageAdapterProps {
-  message: Message;
+  result?: string;
   call?: ToolCallInfo;
 }
 
-export default function ToolMessageAdapter({ message, call }: ToolMessageAdapterProps) {
-  const { ok, error } = parseToolResult(message.content);
-  const isError = !ok;
-  const inferred = inferResultKind(message.content);
+export default function ToolMessageAdapter({ result, call }: ToolMessageAdapterProps) {
+  const hasResult = result !== undefined;
+  const parsed = hasResult ? parseToolResult(result) : null;
+  const isError = parsed?.ok === false;
+  const error = parsed?.error;
+  const inferred = hasResult ? inferResultKind(result) : { kind: "running" };
   const kind = inferred.kind;
   const data = inferred.data;
 
   const toolName = call?.name ?? (isError ? "error" : "unknown");
-  const meta = TOOL_META[toolName];
-  const icon = meta?.icon ?? (isError ? <AlertTriangle size={11} /> : <WrenchIcon size={11} />);
-  const label = meta?.label ?? toolName;
-  const color = isError
-    ? "text-red-500 dark:text-red-400"
-    : (meta?.color ?? "text-indigo-500 dark:text-indigo-400");
-  const preview = call ? toolArgsPreview(call.name, call.arguments) : undefined;
-
-  const statusBadge = isError ? (
-    <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
-      <XCircleIcon className="size-4 text-red-600" />
-      Error
-    </Badge>
-  ) : (
-    <Badge className="gap-1.5 rounded-full text-xs" variant="secondary">
-      <CheckCircleIcon className="size-4 text-green-600" />
-      Completed
-    </Badge>
-  );
+  const label = getToolLabel(toolName);
 
   return (
-    <Tool defaultOpen={false}>
-      <CollapsibleTrigger className="flex w-full items-center justify-between gap-4 p-3">
-        <div className="flex min-w-0 items-center gap-2">
-          <span className={cn("flex shrink-0 items-center", color)}>{icon}</span>
-          <span className="font-medium text-sm truncate">{label}</span>
-          {preview && (
-            <span className="truncate text-muted-foreground text-xs">\u00b7 {preview}</span>
-          )}
-          {statusBadge}
-        </div>
+    <Tool className="mb-0" defaultOpen={false}>
+      <CollapsibleTrigger className="flex w-full items-center justify-between gap-4 px-3 py-2.5">
+        <span className="truncate text-sm font-medium">{label}</span>
         <ChevronDownIcon className="size-4 shrink-0 text-muted-foreground transition-transform group-data-[state=open]:rotate-180" />
       </CollapsibleTrigger>
       <ToolContent>
@@ -261,7 +141,9 @@ export default function ToolMessageAdapter({ message, call }: ToolMessageAdapter
           </div>
         )}
 
-        {isError ? (
+        {!hasResult ? (
+          <p className="animate-pulse text-xs text-muted-foreground">Running…</p>
+        ) : isError ? (
           <div className="space-y-2">
             <h4 className="font-medium text-muted-foreground text-xs uppercase tracking-wide">
               Error
@@ -275,11 +157,11 @@ export default function ToolMessageAdapter({ message, call }: ToolMessageAdapter
         ) : kind === "mermaid" ? (
           <MermaidOutput data={data} />
         ) : kind === "memory_list" || kind === "memory_search" ? (
-          <MemoryListOutput content={message.content} kind={kind} />
+          <MemoryListOutput content={result} kind={kind} />
         ) : kind === "move" || kind === "memory_move" ? (
           <MoveOutput data={data} call={call} />
         ) : kind === "delete" || kind === "memory_delete" ? (
-          <DeleteOutput data={data} content={message.content} />
+          <DeleteOutput data={data} content={result} />
         ) : kind === "read" ||
           kind === "memory_read" ||
           kind === "write" ||
@@ -288,9 +170,9 @@ export default function ToolMessageAdapter({ message, call }: ToolMessageAdapter
           kind === "memory_append" ||
           kind === "personality_write" ||
           kind === "personality_append" ? (
-          <ReadWriteOutput data={data} call={call} content={message.content} kind={kind} />
+          <ReadWriteOutput data={data} call={call} content={result} kind={kind} />
         ) : (
-          <GenericOutput content={message.content} />
+          <GenericOutput content={result} />
         )}
       </ToolContent>
     </Tool>

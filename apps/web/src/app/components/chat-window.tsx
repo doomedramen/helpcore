@@ -87,19 +87,22 @@ import {
 import { SlashCommandMenu } from "./slash-command-menu";
 import { type SlashCommand } from "@/lib/commands";
 import BrandMark from "./brand-mark";
-import ToolMessageAdapter, { getToolLabel, getToolColor, getToolIcon } from "./tool-adapter";
+import ToolMessageAdapter, { type ToolCallInfo } from "./tool-adapter";
 import InteractionComposer from "./interaction-composer";
 import { MessageContentWithAssets } from "./asset-renderer";
 import PromptAttachments from "./prompt-attachments";
 import CodeBlockInjector from "./code-copy-button";
-import { Badge } from "@/app/components/ui/badge";
 import { cn } from "@/lib/utils";
-import { Check, Copy, ScrollText, Shuffle, Terminal } from "lucide-react";
+import { Check, Copy, ScrollText, Shuffle } from "lucide-react";
 
 interface QueueItem {
   id: string;
   text: string;
   providerId: string;
+}
+
+interface LiveToolCall extends ToolCallInfo {
+  result?: string;
 }
 
 interface Props {
@@ -161,21 +164,10 @@ export default function ChatWindow({
   const [error, setError] = useState("");
   const [infoMessage, setInfoMessage] = useState("");
   const [queue, setQueue] = useState<QueueItem[]>([]);
-  const [showToolLogs, setShowToolLogs] = useState(true);
-  useEffect(() => {
-    const stored = localStorage.getItem("showToolLogs");
-    if (stored !== null) setShowToolLogs(stored === "true");
-  }, []);
-  const toggleToolLogs = useCallback(() => {
-    setShowToolLogs((v) => {
-      localStorage.setItem("showToolLogs", String(!v));
-      return !v;
-    });
-  }, []);
   const [selectedProviderId, setSelectedProviderId] = useState("");
   const [modelSelectorOpen, setModelSelectorOpen] = useState(false);
   const [shuffleKey, setShuffleKey] = useState(0);
-  const [liveToolCalls, setLiveToolCalls] = useState<Record<string, string>>({});
+  const [liveToolCalls, setLiveToolCalls] = useState<Record<string, LiveToolCall>>({});
   const [interactionSubmitting, setInteractionSubmitting] = useState(false);
   const [interactionError, setInteractionError] = useState("");
   const [contextUsage, setContextUsage] = useState<{
@@ -321,6 +313,14 @@ export default function ChatWindow({
   const streamHandlers = useCallback(
     (fallbackConversationId: string | undefined, providerId: string) => {
       let activeConversationId = fallbackConversationId;
+      const streamToolCallIds = new Set<string>();
+      const clearStreamToolCalls = () => {
+        setLiveToolCalls((prev) => {
+          const next = { ...prev };
+          for (const id of streamToolCallIds) delete next[id];
+          return next;
+        });
+      };
       return {
         onStarted: (started: SseStarted) => {
           activeConversationId = started.conversation_id;
@@ -340,29 +340,37 @@ export default function ChatWindow({
           if (id) void refreshConversation(id);
         },
         onToolCall: (call: SseToolCall) => {
-          setLiveToolCalls((prev) => ({ ...prev, [call.id]: call.name }));
+          streamToolCallIds.add(call.id);
+          setLiveToolCalls((prev) => ({ ...prev, [call.id]: call }));
         },
         onToolResult: (result: SseToolResult) => {
-          setLiveToolCalls((prev) => {
-            const next = { ...prev };
-            delete next[result.id];
-            return next;
-          });
+          streamToolCallIds.add(result.id);
+          setLiveToolCalls((prev) => ({
+            ...prev,
+            [result.id]: {
+              id: result.id,
+              name: result.name,
+              arguments: prev[result.id]?.arguments ?? {},
+              result: result.result,
+            },
+          }));
         },
         onDone: (done: SseDone) => {
-          setLiveToolCalls({});
           if (done.usage) setStreamUsage(done.usage);
           void refreshInteraction(null, { revalidate: false });
-          void refreshConversation(done.conversation_id);
+          void refreshConversation(done.conversation_id).finally(clearStreamToolCalls);
         },
         onInputRequired: (data: { interaction: PendingInteraction }) => {
-          setLiveToolCalls({});
           setInteractionError("");
           void refreshInteraction(data.interaction, { revalidate: false });
-          void refreshConversation(data.interaction.conversation_id);
+          void refreshConversation(data.interaction.conversation_id).finally(clearStreamToolCalls);
         },
         onInterrupted: () => {
-          if (activeConversationId) void refreshConversation(activeConversationId);
+          if (activeConversationId) {
+            void refreshConversation(activeConversationId).finally(clearStreamToolCalls);
+          } else {
+            clearStreamToolCalls();
+          }
         },
       };
     },
@@ -411,6 +419,7 @@ export default function ChatWindow({
           }),
         );
       } catch (caught) {
+        setLiveToolCalls({});
         if (caught instanceof DOMException && caught.name === "AbortError") {
           return;
         }
@@ -460,6 +469,7 @@ export default function ChatWindow({
           }),
         );
       } catch (caught) {
+        setLiveToolCalls({});
         if (caught instanceof DOMException && caught.name === "AbortError") return;
         setInteractionError(
           caught instanceof ApiError ? caught.message : "Could not submit your response.",
@@ -636,6 +646,7 @@ export default function ChatWindow({
   const handleStop = useCallback(async () => {
     setError("");
     generationConvRef.current = null;
+    setLiveToolCalls({});
     abortRef.current?.abort();
     abortRef.current = null;
     if (conversationId && accessToken) {
@@ -674,6 +685,7 @@ export default function ChatWindow({
           }),
         );
       } catch (caught) {
+        setLiveToolCalls({});
         if (caught instanceof DOMException && caught.name === "AbortError") {
           return;
         }
@@ -692,9 +704,11 @@ export default function ChatWindow({
     [conversationId, refreshMessages, runWithRefresh, selectedProviderId, streamHandlers],
   );
 
-  const toolCount = messages.filter((m) => m.role === "tool").length;
-  const visibleMessages = showToolLogs ? messages : messages.filter((m) => m.role !== "tool");
-  const empty = !historyLoading && messages.length === 0 && queue.length === 0;
+  const empty =
+    !historyLoading &&
+    messages.length === 0 &&
+    queue.length === 0 &&
+    Object.keys(liveToolCalls).length === 0;
   const historyErrorMessage =
     historyError instanceof ApiError && historyError.status === 404
       ? ""
@@ -763,13 +777,13 @@ export default function ChatWindow({
     [suggestionPool, shuffleKey],
   );
 
-  const allToolCalls = useMemo(() => {
-    const result: { id: string; name: string; arguments: Record<string, unknown> }[] = [];
+  const toolCallsById = useMemo(() => {
+    const result = new Map<string, ToolCallInfo>();
     for (const msg of messages) {
       if (msg.role === "assistant" && Array.isArray(msg.tool_calls)) {
         for (const item of msg.tool_calls as Record<string, unknown>[]) {
           if (typeof item.id === "string" && typeof item.name === "string") {
-            result.push({
+            result.set(item.id, {
               id: item.id,
               name: item.name,
               arguments: (item.arguments as Record<string, unknown>) ?? {},
@@ -780,6 +794,20 @@ export default function ChatWindow({
     }
     return result;
   }, [messages]);
+
+  const toolResultsByCallId = useMemo(() => {
+    const result = new Map<string, string>();
+    for (const message of messages) {
+      if (message.role === "tool" && message.tool_call_id) {
+        result.set(message.tool_call_id, message.content);
+      }
+    }
+    return result;
+  }, [messages]);
+
+  const pendingLiveToolCalls = Object.values(liveToolCalls).filter(
+    (call) => !toolCallsById.has(call.id),
+  );
 
   const selectedProvider = providers.find((p) => p.id === selectedProviderId);
   const contextMaxTokens = contextUsage?.maxTokens ?? selectedProvider?.context_limit ?? 0;
@@ -818,14 +846,6 @@ export default function ChatWindow({
           </p>
         </div>
         <div className="flex items-center gap-1.5">
-          {Object.keys(liveToolCalls).length > 0 && (
-            <span className="flex items-center gap-1.5 text-[11px] text-indigo-600 dark:text-indigo-400">
-              <span className="size-1.5 rounded-full bg-current animate-pulse" />
-              {Object.values(liveToolCalls)
-                .map((n) => getToolLabel(n))
-                .join(", ")}
-            </span>
-          )}
           {contextMaxTokens > 0 && conversationId && (
             <Context
               usedTokens={contextUsedTokens}
@@ -847,21 +867,6 @@ export default function ChatWindow({
                 </ContextContentBody>
               </ContextContent>
             </Context>
-          )}
-          {toolCount > 0 && (
-            <button
-              type="button"
-              onClick={toggleToolLogs}
-              className={`flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs transition ${
-                showToolLogs
-                  ? "bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300"
-                  : "text-slate-400 hover:bg-white hover:text-slate-700 dark:text-slate-500 dark:hover:bg-slate-800 dark:hover:text-slate-300"
-              }`}
-            >
-              <Terminal size={12} />
-              <span>Tool logs</span>
-              {!showToolLogs && <span className="ml-0.5 tabular-nums">({toolCount})</span>}
-            </button>
           )}
         </div>
       </div>
@@ -910,14 +915,10 @@ export default function ChatWindow({
             </ConversationEmptyState>
           ) : (
             <div className="mx-auto w-full max-w-4xl space-y-5">
-              {visibleMessages.map((message) => {
+              {messages.map((message) => {
                 if (message.role === "tool") {
-                  const matchingCall = message.tool_call_id
-                    ? allToolCalls.find((c) => c.id === message.tool_call_id)
-                    : undefined;
-                  return (
-                    <ToolMessageAdapter key={message.id} message={message} call={matchingCall} />
-                  );
+                  if (message.tool_call_id && toolCallsById.has(message.tool_call_id)) return null;
+                  return <ToolMessageAdapter key={message.id} result={message.content} />;
                 }
 
                 if (message.role === "user") {
@@ -981,22 +982,17 @@ export default function ChatWindow({
                 return (
                   <AIMessage key={message.id} from="assistant">
                     <MessageContent>
-                      {/* Tool call badges */}
                       {calls.length > 0 && (
-                        <div className="flex flex-wrap gap-1 pb-2 mb-2 border-b border-border">
+                        <div className="mt-3 space-y-2">
                           {calls.map((call) => {
-                            const label = getToolLabel(call.name);
-                            const color = getToolColor(call.name);
-                            const icon = getToolIcon(call.name);
                             return (
-                              <Badge
+                              <ToolMessageAdapter
                                 key={call.id}
-                                variant="secondary"
-                                className="gap-1 text-[11px] font-medium"
-                              >
-                                <span className={color}>{icon}</span>
-                                {label}
-                              </Badge>
+                                call={call}
+                                result={
+                                  toolResultsByCallId.get(call.id) ?? liveToolCalls[call.id]?.result
+                                }
+                              />
                             );
                           })}
                         </div>
@@ -1048,6 +1044,14 @@ export default function ChatWindow({
                   </AIMessage>
                 );
               })}
+
+              {pendingLiveToolCalls.length > 0 && (
+                <div className="space-y-2">
+                  {pendingLiveToolCalls.map((call) => (
+                    <ToolMessageAdapter key={call.id} call={call} result={call.result} />
+                  ))}
+                </div>
+              )}
 
               {infoMessage && (
                 <div className="rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-sm text-blue-700 dark:border-blue-800 dark:bg-blue-950/40 dark:text-blue-300">
