@@ -571,7 +571,8 @@ export default function ConfigForm({ accessToken, config, onSaved }: Props) {
                           type="number"
                           min={1}
                           {...register(`providers.${index}.num_predict`, {
-                            setValueAs: (v) => (v === "" ? null : Number(v)),
+                            setValueAs: (v) =>
+                              v === "" || v === null || v === undefined ? null : Number(v),
                           })}
                           placeholder="2048"
                           className={inputClass}
