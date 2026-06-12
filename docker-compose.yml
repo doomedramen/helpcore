@@ -13,6 +13,15 @@
 # helpcore + Ollama + voice:
 #   docker compose --profile with-ollama --profile voice up
 #
+# helpcore + SearXNG (recommended self-hosted web search):
+#   docker compose --profile search up
+#   Configure the web-search plugin with provider "searxng" and
+#   base URL "http://searxng:8080".
+#
+# helpcore + Whoogle (experimental; Google may block it):
+#   docker compose --profile search-whoogle up
+#   Configure provider "whoogle" and base URL "http://whoogle:5000".
+#
 # Use piper-http instead of speaches for TTS (set TTS_BACKEND=piper_http):
 #   docker compose --profile with-ollama --profile voice-piper up
 #
@@ -93,7 +102,73 @@ services:
       MODEL_DOWNLOAD_LINK: "${PIPER_MODEL_URL:-https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/lessac/medium/en_US-lessac-medium.onnx}"
     restart: unless-stopped
 
+  # Recommended self-hosted search backend. JSON output is enabled by the
+  # embedded settings file below; this private deployment does not need Valkey.
+  searxng:
+    profiles: [search]
+    image: docker.io/searxng/searxng:${SEARXNG_VERSION:-latest}
+    ports:
+      - "${SEARXNG_BIND_ADDRESS:-127.0.0.1}:${SEARXNG_HOST_PORT:-8080}:8080"
+    environment:
+      SEARXNG_SECRET: "${SEARXNG_SECRET:-helpcore-local-search-change-me}"
+      SEARXNG_LIMITER: "false"
+      SEARXNG_PUBLIC_INSTANCE: "false"
+    configs:
+      - source: searxng_settings
+        target: /etc/searxng/settings.yml
+    volumes:
+      - searxng_data:/var/cache/searxng
+    restart: unless-stopped
+
+  # Experimental fallback. Whoogle's final release warns that Google often
+  # blocks its no-JavaScript scraping, so prefer SearXNG for reliable use.
+  whoogle:
+    profiles: [search-whoogle]
+    image: ${WHOOGLE_IMAGE:-benbusby/whoogle-search:1.2.4}
+    ports:
+      - "${WHOOGLE_BIND_ADDRESS:-127.0.0.1}:${WHOOGLE_HOST_PORT:-5000}:5000"
+    environment:
+      WHOOGLE_CONFIG_DISABLE: "1"
+      WHOOGLE_CONFIG_GET_ONLY: "1"
+      WHOOGLE_CONFIG_SAFE: "1"
+      WHOOGLE_MINIMAL: "1"
+      WHOOGLE_TOR_SERVICE: "0"
+      WHOOGLE_UPDATE_CHECK: "0"
+    pids_limit: 50
+    mem_limit: 256m
+    memswap_limit: 256m
+    user: whoogle
+    security_opt:
+      - no-new-privileges
+    cap_drop:
+      - ALL
+    tmpfs:
+      - /config/:size=10M,uid=927,gid=927,mode=1700
+      - /var/lib/tor/:size=15M,uid=927,gid=927,mode=1700
+      - /run/tor/:size=1M,uid=927,gid=927,mode=1700
+    restart: unless-stopped
+
+configs:
+  searxng_settings:
+    content: |
+      use_default_settings: true
+
+      general:
+        instance_name: "HelpCore Search"
+
+      search:
+        safe_search: 1
+        formats:
+          - html
+          - json
+
+      server:
+        secret_key: "overridden-by-SEARXNG_SECRET"
+        limiter: false
+        public_instance: false
+
 volumes:
   helpcore_data:
   ollama_data:
+  searxng_data:
   speaches_data:

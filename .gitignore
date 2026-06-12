@@ -5,3 +5,4 @@ references/zeroclaw/
 *.db
 /data/
 .env
+/node_modules
